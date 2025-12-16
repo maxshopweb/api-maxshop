@@ -33,34 +33,6 @@ model roles {
   usuarios    usuarios[]
 }
 
-model usuarios {
-  id_usuario     String      @id @unique @db.VarChar(150)
-  nombre         String?     @db.VarChar(100)
-  apellido       String?     @db.VarChar(100)
-  email          String?     @db.VarChar(255)
-  telefono       String?     @db.VarChar(50)
-  username       String?     @db.VarChar(100)
-  password       String?     @db.VarChar(255)
-  id_rol         Int?
-  estado         Int?
-  creado_en      DateTime?   @default(now()) @db.Timestamp(6)
-  actualizado_en DateTime?   @default(now()) @db.Timestamp(6)
-  img            String?     @db.VarChar(255)
-  ultimo_login   DateTime?   @db.Timestamp(6)
-  login_ip       String?     @db.VarChar(50)
-  nacimiento     DateTime?   @db.Date
-  token          String?     @db.Uuid
-  token_expira   DateTime?   @db.Timestamp(6)
-  admin          admin?
-  auditoria      auditoria[]
-  cliente        cliente?
-  roles          roles?      @relation(fields: [id_rol], references: [id_rol], onDelete: NoAction, onUpdate: NoAction)
-  venta_usuario  venta[]     @relation("venta_usuario")
-
-  @@index([email], map: "idx_usuarios_email")
-  @@index([username], map: "idx_usuarios_username")
-  @@index([id_usuario], map: "idx_usuarios_id_usuario")
-}
 
 model admin {
   id_admin   String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid

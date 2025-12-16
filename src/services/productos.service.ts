@@ -4,10 +4,27 @@ import { ICategoria, ISubcategoria } from '../types/categoria.type';
 import { ICrearProductoContenido, ICreateProductoDTO, IProductoFilters, IProductos, IUpdateProductoDTO } from '../types/product.type';
 import fs from 'fs';
 import path from 'path';
+import cacheService from './cache.service';
 
 export class ProductosService {
 
+    private TTL_PRODUCTO = 3600;      // 1 hora
+    private TTL_CATALOGO = 1800;      // 30 minutos
+    private TTL_DESTACADOS = 900;     // 15 minutos
+    private TTL_CONTENIDO_CREAR = 7200; // 2 horas (marcas, categorías, etc)
+
     async getAll(filters: IProductoFilters): Promise<IPaginatedResponse<IProductos>> {
+        // Generar clave de cache basada en los filtros
+        const cacheKey = `productos:all:${JSON.stringify(filters)}`;
+        
+        const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
+        if (cached) {
+            console.log(`✅ Lista de productos encontrada en cache`);
+            return cached;
+        }
+
+        console.log(`❌ Lista de productos no encontrada en cache`);
+
         const {
             page = 1,
             limit = 100,
@@ -41,14 +58,14 @@ export class ProductosService {
         if (!whereClause.AND) {
             whereClause.AND = [];
         }
-        whereClause.AND.push(
-            { img_principal: { not: null } },
-            { img_principal: { not: { equals: '' } } }
-        );
+        // whereClause.AND.push(
+        //     { img_principal: { not: null } },
+        //     { img_principal: { not: { equals: '' } } }
+        // );
 
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
-        
+
         // Filtros usando códigos del CSV
         // Si id_marca es un número, buscar el código primero
         if (id_marca) {
@@ -101,7 +118,7 @@ export class ProductosService {
         // Filtro por stock bajo - se aplicará después de obtener los resultados
         // porque necesitamos comparar Decimal (stock) con Int (stock_min)
         const aplicarFiltroStockBajo = stock_bajo === true;
-        
+
         // Si se requiere filtro de stock bajo, agregamos condiciones básicas
         if (aplicarFiltroStockBajo) {
             whereClause.AND = [
@@ -167,22 +184,38 @@ export class ProductosService {
             }) as unknown as IProductos[];
         }
 
-        return {
+        const result = {
             data: productosFiltrados,
             total: aplicarFiltroStockBajo ? productosFiltrados.length : total,
             page,
             limit,
-            totalPages: aplicarFiltroStockBajo 
+            totalPages: aplicarFiltroStockBajo
                 ? Math.ceil(productosFiltrados.length / limit)
                 : Math.ceil(total / limit),
         };
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_CATALOGO);
+
+        return result;
     }
 
     async getById(id: number): Promise<IProductos | null> {
+        const cachekey = `producto:${id}`;
+        
+        const cached = await cacheService.get<IProductos>(cachekey);
+
+        if (cached) {
+            console.log(`✅ Producto ${id} encontrado en cache`);
+            return cached;
+        }
+
+        console.log(`❌ Producto ${id} no encontrado en cache`);
+
         const producto = await prisma.productos.findFirst({
-            where: { 
+            where: {
                 id_prod: id,
-                estado: 1 // ⭐ Solo productos activos
+                estado: 1 // Solo productos activos
             },
             include: {
                 categoria: true,  // Relación por codi_categoria
@@ -192,12 +225,29 @@ export class ProductosService {
             },
         });
 
-        return producto as unknown as IProductos | null;
+        const result = producto as unknown as IProductos | null;
+
+        // Guardar en cache si existe
+        if (result) {
+            await cacheService.set(cachekey, result, this.TTL_PRODUCTO);
+        }
+
+        return result;
     }
 
     async getByCodigo(codi_arti: string): Promise<IProductos | null> {
+        const cacheKey = `producto:codigo:${codi_arti}`;
+        
+        const cached = await cacheService.get<IProductos>(cacheKey);
+        if (cached) {
+            console.log(`✅ Producto ${codi_arti} encontrado en cache`);
+            return cached;
+        }
+
+        console.log(`❌ Producto ${codi_arti} no encontrado en cache`);
+
         const producto = await prisma.productos.findUnique({
-            where: { 
+            where: {
                 codi_arti
             },
             include: {
@@ -212,7 +262,14 @@ export class ProductosService {
             return null;
         }
 
-        return producto as unknown as IProductos | null;
+        const result = producto as unknown as IProductos | null;
+
+        // Guardar en cache
+        if (result) {
+            await cacheService.set(cacheKey, result, this.TTL_PRODUCTO);
+        }
+
+        return result;
     }
 
     async create(data: ICreateProductoDTO): Promise<IProductos> {
@@ -237,11 +294,28 @@ export class ProductosService {
             }
         });
 
-        return nuevoProducto as unknown as IProductos;
+        const result = nuevoProducto as unknown as IProductos;
+
+        // Invalidar cache relacionado
+        await cacheService.deletePattern('productos:*');
+        await cacheService.delete(`producto:${result.id_prod}`);
+        await cacheService.delete(`producto:codigo:${result.codi_arti}`);
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.delete('productos:stock-bajo');
+        await cacheService.delete('productos:con-imagenes:*');
+
+        return result;
     }
 
     async update(id: number, data: IUpdateProductoDTO): Promise<IProductos> {
         const { id_cat, id_subcat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, estado, ...cleanData } = data;
+        
+        // Obtener producto antes de actualizar para invalidar cache por código
+        const productoAnterior = await prisma.productos.findUnique({
+            where: { id_prod: id },
+            select: { codi_arti: true }
+        });
+
         const productoActualizado = await prisma.productos.update({
             where: { id_prod: id },
             data: {
@@ -261,10 +335,31 @@ export class ProductosService {
             }
         });
 
-        return productoActualizado as unknown as IProductos;
+        const result = productoActualizado as unknown as IProductos;
+
+        // Invalidar cache relacionado
+        await cacheService.deletePattern('productos:*');
+        await cacheService.delete(`producto:${id}`);
+        if (productoAnterior) {
+            await cacheService.delete(`producto:codigo:${productoAnterior.codi_arti}`);
+        }
+        if (result.codi_arti) {
+            await cacheService.delete(`producto:codigo:${result.codi_arti}`);
+        }
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.delete('productos:stock-bajo');
+        await cacheService.delete('productos:con-imagenes:*');
+
+        return result;
     }
 
     async delete(id: number): Promise<void> {
+        // Obtener producto antes de eliminar para invalidar cache por código
+        const producto = await prisma.productos.findUnique({
+            where: { id_prod: id },
+            select: { codi_arti: true }
+        });
+
         // Soft delete: cambiar estado a 0
         await prisma.productos.update({
             where: { id_prod: id },
@@ -273,11 +368,21 @@ export class ProductosService {
                 actualizado_en: new Date()
             }
         });
+
+        // Invalidar cache relacionado
+        await cacheService.deletePattern('productos:*');
+        await cacheService.delete(`producto:${id}`);
+        if (producto) {
+            await cacheService.delete(`producto:codigo:${producto.codi_arti}`);
+        }
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.delete('productos:stock-bajo');
+        await cacheService.delete('productos:con-imagenes:*');
     }
 
     async exists(id: number): Promise<boolean> {
         const count = await prisma.productos.count({
-            where: { 
+            where: {
                 id_prod: id,
                 estado: 1 // ⭐ Solo contar productos activos
             }
@@ -287,7 +392,7 @@ export class ProductosService {
 
     async updateStock(id: number, cantidad: number): Promise<IProductos> {
         const producto = await prisma.productos.findFirst({
-            where: { 
+            where: {
                 id_prod: id,
                 estado: 1 // ⭐ Solo productos activos
             }
@@ -305,19 +410,33 @@ export class ProductosService {
             throw new Error(`Stock insuficiente. Stock actual: ${stockActual}, intentando reducir: ${Math.abs(cantidad)}`);
         }
 
-        return await this.update(id, { stock: nuevoStock });
+        // update() ya invalida el cache, pero también invalidamos stock-bajo específicamente
+        const result = await this.update(id, { stock: nuevoStock });
+        await cacheService.delete('productos:stock-bajo');
+
+        return result;
     }
 
     async getDestacados(limit: number = 10): Promise<IProductos[]> {
+        const cacheKey = `productos:destacados:${limit}`;
+        
+        const cached = await cacheService.get<IProductos[]>(cacheKey);
+        if (cached) {
+            console.log(`✅ Productos destacados encontrados en cache`);
+            return cached;
+        }
+
+        console.log(`❌ Productos destacados no encontrados en cache`);
+
         const productos = await prisma.productos.findMany({
             where: {
                 destacado: true,
                 estado: 1,
                 // ⚠️ VALIDACIÓN TEMPORAL: Solo productos con imagen principal
-                AND: [
-                    { img_principal: { not: null } },
-                    { img_principal: { not: { equals: '' } } }
-                ]
+                // AND: [
+                //     { img_principal: { not: null } },
+                //     { img_principal: { not: { equals: '' } } }
+                // ]
             },
             include: {
                 categoria: true,
@@ -331,10 +450,25 @@ export class ProductosService {
             }
         });
 
-        return productos as unknown as IProductos[];
+        const result = productos as unknown as IProductos[];
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_DESTACADOS);
+
+        return result;
     }
 
     async getStockBajo(): Promise<IProductos[]> {
+        const cacheKey = 'productos:stock-bajo';
+        
+        const cached = await cacheService.get<IProductos[]>(cacheKey);
+        if (cached) {
+            console.log(`✅ Productos con stock bajo encontrados en cache`);
+            return cached;
+        }
+
+        console.log(`❌ Productos con stock bajo no encontrados en cache`);
+
         // Obtener todos los productos activos con stock y stock_min
         const productos = await prisma.productos.findMany({
             where: {
@@ -359,10 +493,25 @@ export class ProductosService {
             return Number(producto.stock) <= Number(producto.stock_min);
         });
 
-        return productosStockBajo as unknown as IProductos[];
+        const result = productosStockBajo as unknown as IProductos[];
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_CATALOGO);
+
+        return result;
     }
 
     async getContenidoCrearProducto(): Promise<ICrearProductoContenido> {
+        const cacheKey = 'productos:contenido-crear';
+        
+        const cached = await cacheService.get<ICrearProductoContenido>(cacheKey);
+        if (cached) {
+            console.log(`✅ Contenido para crear producto encontrado en cache`);
+            return cached;
+        }
+
+        console.log(`❌ Contenido para crear producto no encontrado en cache`);
+
         const [marcas, categorias, grupos, ivas] = await Promise.all([
             prisma.marca.findMany({
                 orderBy: { nombre: 'asc' }
@@ -378,19 +527,24 @@ export class ProductosService {
             })
         ]);
 
-        return {
+        const result = {
             marcas: marcas as IMarca[],
             categorias: categorias as ICategoria[],
             grupos: grupos as any[], // Agregar tipo IGrupo si es necesario
             ivas: ivas as IIva[]
         };
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_CONTENIDO_CREAR);
+
+        return result;
     }
 
     // Método removido - ya no hay subcategorías en el nuevo schema
 
     async toggleDestacado(id: number): Promise<IProductos> {
         const producto = await prisma.productos.findFirst({
-            where: { 
+            where: {
                 id_prod: id,
                 estado: 1 // Solo productos activos pueden ser destacados
             }
@@ -416,7 +570,14 @@ export class ProductosService {
             }
         });
 
-        return productoActualizado as unknown as IProductos;
+        const result = productoActualizado as unknown as IProductos;
+
+        // Invalidar cache relacionado
+        await cacheService.delete(`producto:${id}`);
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.deletePattern('productos:*');
+
+        return result;
     }
 
     /**
@@ -424,6 +585,17 @@ export class ProductosService {
      * Verifica si existe alguna imagen cuyo nombre comience con el codi_arti del producto
      */
     async getProductosConImagenes(filters?: IProductoFilters): Promise<IPaginatedResponse<IProductos>> {
+        // Generar clave de cache basada en los filtros
+        const cacheKey = `productos:con-imagenes:${JSON.stringify(filters || {})}`;
+        
+        const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
+        if (cached) {
+            console.log(`✅ Productos con imágenes encontrados en cache`);
+            return cached;
+        }
+
+        console.log(`❌ Productos con imágenes no encontrados en cache`);
+
         // Obtener la ruta del directorio de imágenes (relativa a src/)
         const imagenesDir = path.join(process.cwd(), 'src/resources/IMAGENES/img-art');
 
@@ -479,7 +651,7 @@ export class ProductosService {
         });
 
         // Filtrar productos que tienen imágenes
-        const productosConImagen = allProducts.data.filter((producto: any) => 
+        const productosConImagen = allProducts.data.filter((producto: any) =>
             codigosConImagen.has(producto.codi_arti)
         );
 
@@ -490,12 +662,17 @@ export class ProductosService {
         const endIndex = startIndex + limit;
         const productosPaginados = productosConImagen.slice(startIndex, endIndex);
 
-        return {
+        const result = {
             data: productosPaginados,
             total: productosConImagen.length,
             page,
             limit,
             totalPages: Math.ceil(productosConImagen.length / limit)
         };
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_CATALOGO);
+
+        return result;
     }
 }

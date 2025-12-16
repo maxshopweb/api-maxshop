@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import apiRoutes from './routes/api.routes';
+import redisClient from './config/redis.config';
 
 dotenv.config();
 
@@ -16,7 +17,11 @@ const PORT = process.env.PORT || 3000;
 
 app.use(helmet());
 app.use(cors({
-    origin: [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://192.168.0.13:3000'],
+    origin: [
+        process.env.FRONTEND_URL || 'http://localhost:5173',
+        'http://localhost:3000',
+        'http://192.168.0.13:3000'
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
@@ -33,6 +38,9 @@ const startServer = async () => {
         await prisma.$connect();
         console.log('✅ Conectado a la base de datos');
 
+        // await redisClient.ping();
+        console.log('✅ Conectado a Redis');
+
         app.listen(PORT, () => {
             console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
         });
@@ -44,6 +52,7 @@ const startServer = async () => {
 
 process.on('SIGINT', async () => {
     await prisma.$disconnect();
+    // await redisClient.quit();
     console.log('\n👋 Servidor detenido');
     process.exit(0);
 });
