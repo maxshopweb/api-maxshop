@@ -218,5 +218,102 @@ export class VentasController {
             });
         }
     }
+
+    /**
+     * Obtiene los pedidos del usuario autenticado
+     * Requiere autenticación
+     */
+    async getMyPedidos(req: Request, res: Response): Promise<void> {
+        try {
+            const idUsuario = req.authenticatedUser?.id;
+            
+            if (!idUsuario) {
+                res.status(401).json({
+                    success: false,
+                    error: 'Usuario no autenticado'
+                });
+                return;
+            }
+
+            const filters: IVentaFilters = {
+                page: parseInt(req.query.page as string) || 1,
+                limit: parseInt(req.query.limit as string) || 25,
+                order_by: (req.query.order_by as any) || 'fecha',
+                order: (req.query.order as any) || 'desc',
+                estado_pago: req.query.estado_pago as any,
+                estado_envio: req.query.estado_envio as any,
+            };
+
+            const result = await ventasService.getMyPedidos(idUsuario, filters);
+            res.json(result);
+        } catch (error: any) {
+            console.error('Error en getMyPedidos:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message || 'Error al obtener pedidos'
+            });
+        }
+    }
+
+    /**
+     * Endpoint específico para crear pedidos desde el checkout
+     * Requiere autenticación
+     */
+    async createFromCheckout(req: Request, res: Response): Promise<void> {
+        try {
+            const data = req.body;
+            // Obtener id_usuario del usuario autenticado (del middleware loadUserFromDatabase)
+            // Convertir null a undefined para cumplir con el tipo esperado
+            const idUsuario = req.authenticatedUser?.id || req.decodedToken?.uid || undefined;
+            
+            console.log('📝 [VentasController] createFromCheckout - idUsuario:', idUsuario);
+            console.log('📝 [VentasController] createFromCheckout - authenticatedUser:', req.authenticatedUser);
+            console.log('📝 [VentasController] createFromCheckout - decodedToken:', req.decodedToken?.uid);
+
+            // Validaciones
+            if (!data.detalles || data.detalles.length === 0) {
+                res.status(400).json({
+                    success: false,
+                    error: 'El pedido debe tener al menos un producto'
+                });
+                return;
+            }
+
+            if (!data.metodo_pago) {
+                res.status(400).json({
+                    success: false,
+                    error: 'El método de pago es requerido'
+                });
+                return;
+            }
+
+            // Validar que los productos existan y tengan stock
+            for (const detalle of data.detalles) {
+                if (!detalle.id_prod || !detalle.cantidad || !detalle.precio_unitario) {
+                    res.status(400).json({
+                        success: false,
+                        error: 'Todos los detalles deben tener id_prod, cantidad y precio_unitario'
+                    });
+                    return;
+                }
+            }
+
+            const venta = await ventasService.createFromCheckout(data, idUsuario);
+
+            const response: IApiResponse = {
+                success: true,
+                data: venta,
+                message: 'Pedido creado exitosamente'
+            };
+
+            res.status(201).json(response);
+        } catch (error: any) {
+            console.error('❌ Error en createFromCheckout:', error);
+            res.status(400).json({
+                success: false,
+                error: error.message || 'Error al crear pedido'
+            });
+        }
+    }
 }
 

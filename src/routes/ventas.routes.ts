@@ -1,8 +1,28 @@
 import { Router } from 'express';
 import { VentasController } from '../controllers/ventas.controller';
+import { verifyFirebaseToken, requireAuthenticatedUser, loadUserFromDatabase } from '../middlewares/auth.middleware';
 
 const router = Router();
 const ventasController = new VentasController();
+
+// Rutas específicas ANTES de las rutas con parámetros dinámicos
+// Ruta para obtener pedidos del usuario autenticado (requiere autenticación)
+router.get(
+    '/mis-pedidos',
+    verifyFirebaseToken,
+    requireAuthenticatedUser,
+    loadUserFromDatabase,
+    ventasController.getMyPedidos.bind(ventasController)
+);
+
+// Ruta específica para crear pedidos desde checkout (requiere autenticación)
+router.post(
+    '/checkout',
+    verifyFirebaseToken,
+    requireAuthenticatedUser,
+    loadUserFromDatabase,
+    ventasController.createFromCheckout.bind(ventasController)
+);
 
 // Rutas CRUD generales
 router.get('/', ventasController.getAll.bind(ventasController));
