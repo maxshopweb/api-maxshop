@@ -74,6 +74,30 @@ export interface ICliente {
     provincia?: string | null;
     // Relaciones
     usuario?: IUsuarios;
+    ventas?: IVenta[];
+}
+
+export interface IClienteFilters {
+    page?: number;
+    limit?: number;
+    order_by?: 'nombre' | 'email' | 'creado_en' | 'ultimo_login';
+    order?: 'asc' | 'desc';
+    busqueda?: string;
+    estado?: EstadoGeneral;
+    ciudad?: string;
+    provincia?: string;
+    creado_desde?: string;
+    creado_hasta?: string;
+    ultimo_login_desde?: string;
+    ultimo_login_hasta?: string;
+}
+
+export interface IClienteStats {
+    totalVentas: number;
+    totalGastado: number;
+    promedioVenta: number;
+    ultimaVenta?: Date;
+    productosComprados: number;
 }
 
 export interface IIva {
@@ -205,6 +229,9 @@ export interface IEnvios {
     fecha_envio?: Date | null;
     fecha_entrega?: Date | null;
     observaciones?: string | null;
+    // URLs de consulta (agregadas en el servicio)
+    consultaUrl?: string | null;
+    trackingUrl?: string | null;
     // Relaciones
     venta?: IVenta | null;
 }
@@ -238,6 +265,7 @@ export interface ICreateVentaDTO {
     tipo_venta: TipoVenta;
     observaciones?: string;
     detalles: IVentaDetalleDTO[];
+    costo_envio?: number; // Costo del envío calculado desde cotización
 }
 
 export interface IVentaDetalleDTO {
@@ -265,6 +293,10 @@ export interface IPaginatedResponse<T = any> {
     page: number;
     limit: number;
     totalPages: number;
+    priceRange?: {
+        min: number;
+        max: number;
+    };
 }
 
 // =======================================
@@ -288,13 +320,29 @@ export interface IAuthResponse {
 // =======================================
 
 export interface IVentaFilters {
-    id_cliente?: string;
-    fecha_desde?: Date;
-    fecha_hasta?: Date;
-    estado_pago?: EstadoPago;
-    metodo_pago?: MetodoPago;
     page?: number;
     limit?: number;
+    order_by?: 'fecha' | 'total_neto' | 'creado_en' | 'estado_pago';
+    order?: 'asc' | 'desc';
+    busqueda?: string;
+    id_cliente?: string;
+    id_usuario?: string;
+    fecha_desde?: string | Date;
+    fecha_hasta?: string | Date;
+    estado_pago?: EstadoPago;
+    estado_envio?: EstadoEnvio;
+    metodo_pago?: MetodoPago;
+    tipo_venta?: TipoVenta;
+    total_min?: number;
+    total_max?: number;
+}
+
+export interface IUpdateVentaDTO {
+    estado_pago?: EstadoPago;
+    estado_envio?: EstadoEnvio;
+    metodo_pago?: MetodoPago;
+    observaciones?: string;
+    id_envio?: string;
 }
 
 // =======================================

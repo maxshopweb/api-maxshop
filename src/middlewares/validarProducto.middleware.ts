@@ -35,7 +35,8 @@ export const validarProductoActivo = async (
             return;
         }
 
-        // Validar estado activo
+        // Validar que NO esté eliminado (estado: 0)
+        // Permitir operar sobre productos activos (estado: 1) e inactivos (estado: 2)
         if (producto.estado === 0) {
             console.error(`❌ [Validación] Producto ID ${id} está eliminado (soft delete)`);
             res.status(400).json({
@@ -45,14 +46,8 @@ export const validarProductoActivo = async (
             return;
         }
 
-        if (producto.estado !== 1) {
-            console.error(`❌ [Validación] Producto ID ${id} está inactivo (estado: ${producto.estado})`);
-            res.status(400).json({
-                success: false,
-                error: 'El producto no está activo'
-            });
-            return;
-        }
+        // Permitir operar sobre productos con estado 1 (activo) o 2 (inactivo)
+        // Solo bloquear si está eliminado (estado: 0)
 
         console.log(`✅ [Validación] Producto ID ${id} validado correctamente`);
         

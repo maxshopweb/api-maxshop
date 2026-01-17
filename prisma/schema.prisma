@@ -7,145 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model negocio {
-  id_neg           Int     @id @default(autoincrement())
-  nombre           String? @db.VarChar(255)
-  direccion        String? @db.VarChar(255)
-  logo             String? @db.VarChar(255)
-  telefono         String? @db.VarChar(50)
-  cuit             String? @db.VarChar(50)
-  cond_iva         String? @db.VarChar(100)
-  email            String? @db.VarChar(255)
-  color_primario   String? @db.VarChar(20)
-  color_secundario String? @db.VarChar(20)
-  token_pago       String? @db.VarChar(255)
-  token_envio      String? @db.VarChar(255)
-}
-
-model roles {
-  id_rol      Int        @id @default(autoincrement())
-  nombre      String?    @db.VarChar(100)
-  descripcion String?    @db.VarChar(255)
-  usuarios    usuarios[]
-}
-
-model usuarios {
-  id_usuario     String      @id @unique @db.VarChar(150)
-  nombre         String?     @db.VarChar(100)
-  apellido       String?     @db.VarChar(100)
-  email          String?     @db.VarChar(255)
-  telefono       String?     @db.VarChar(50)
-  username       String?     @db.VarChar(100)
-  password       String?     @db.VarChar(255)
-  id_rol         Int?
-  estado         Int?
-  creado_en      DateTime?   @default(now()) @db.Timestamp(6)
-  actualizado_en DateTime?   @default(now()) @db.Timestamp(6)
-  img            String?     @db.VarChar(255)
-  ultimo_login   DateTime?   @db.Timestamp(6)
-  login_ip       String?     @db.VarChar(50)
-  nacimiento     DateTime?   @db.Date
-  token          String?     @db.Uuid
-  token_expira   DateTime?   @db.Timestamp(6)
-  admin          admin?
-  auditoria      auditoria[]
-  cliente        cliente?
-  roles          roles?      @relation(fields: [id_rol], references: [id_rol], onDelete: NoAction, onUpdate: NoAction)
-  venta_usuario  venta[]     @relation("venta_usuario")
-
-  @@index([email], map: "idx_usuarios_email")
-  @@index([username], map: "idx_usuarios_username")
-  @@index([id_usuario], map: "idx_usuarios_id_usuario")
-}
-
 model admin {
   id_admin   String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   id_usuario String   @id @db.VarChar(150)
   usuarios   usuarios @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
-}
-
-model cliente {
-  id_cliente    String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  id_usuario    String   @id @db.VarChar(150)
-  direccion     String?  @db.VarChar(255)
-  cod_postal    Int?
-  ciudad        String?  @db.VarChar(100)
-  provincia     String?  @db.VarChar(100)
-  usuarios      usuarios @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
-  venta_cliente venta[]  @relation("venta_cliente")
-}
-
-model categoria {
-  id_cat       Int            @id @default(autoincrement())
-  nombre       String?        @db.VarChar(100)
-  descripcion  String?        @db.VarChar(255)
-  subcategoria subcategoria[]
-  productos    productos[]
-}
-
-model iva {
-  id_iva      Int         @id @default(autoincrement())
-  nombre      String?     @db.VarChar(100)
-  descripcion String?     @db.VarChar(255)
-  productos   productos[]
-}
-
-model marca {
-  id_marca    Int         @id @default(autoincrement())
-  nombre      String?     @db.VarChar(100)
-  descripcion String?     @db.VarChar(255)
-  productos   productos[]
-}
-
-model productos {
-  id_prod          Int             @id @default(autoincrement())
-  id_cat           Int?
-  id_subcat        Int?
-  id_interno       String?         @db.VarChar(100)
-  cod_sku          String?         @db.VarChar(100)
-  nombre           String?         @db.VarChar(255)
-  descripcion      String?
-  modelo           String?         @db.VarChar(100)
-  id_marca         Int?
-  precio_mayorista Decimal?        @db.Decimal(10, 2)
-  precio_minorista Decimal?        @db.Decimal(10, 2)
-  precio_evento    Decimal?        @db.Decimal(10, 2)
-  precio           Decimal?        @db.Decimal(10, 2)
-  id_iva           Int?
-  stock            Int?
-  stock_min        Int?
-  stock_mayorista  Int?
-  img_principal    String?         @db.VarChar(255)
-  imagenes         Json?
-  destacado        Boolean?        @default(false)
-  financiacion     Boolean?        @default(false)
-  creado_en        DateTime?       @default(now()) @db.Timestamp(6)
-  actualizado_en   DateTime?       @default(now()) @db.Timestamp(6)
-  estado           Int?
-  iva              iva?            @relation(fields: [id_iva], references: [id_iva], onDelete: NoAction, onUpdate: NoAction)
-  marca            marca?          @relation(fields: [id_marca], references: [id_marca], onDelete: NoAction, onUpdate: NoAction)
-  subcategoria     subcategoria?   @relation(fields: [id_subcat], references: [id_subcat], onDelete: NoAction, onUpdate: NoAction)
-  categoria        categoria?      @relation(fields: [id_cat], references: [id_cat], onDelete: NoAction, onUpdate: NoAction)
-  venta_detalle    venta_detalle[]
-
-  @@index([id_subcat], map: "idx_productos_categoria")
-  @@index([nombre], map: "idx_productos_nombre")
-}
-
-model eventos {
-  id_evento      Int             @id @default(autoincrement())
-  nombre         String?         @db.VarChar(255)
-  descripcion    String?
-  fecha_inicio   DateTime?       @db.Timestamp(6)
-  fecha_fin      DateTime?       @db.Timestamp(6)
-  tipo_descuento String?         @db.VarChar(50)
-  banner_img     String?         @db.VarChar(255)
-  color_tema     String?         @db.VarChar(20)
-  activo         Boolean?        @default(true)
-  creado_en      DateTime?       @default(now()) @db.Timestamp(6)
-  url_publica    String?         @db.VarChar(255)
-  reglas_evento  reglas_evento[]
-  venta_detalle  venta_detalle[]
 }
 
 model auditoria {
@@ -167,31 +32,53 @@ model auditoria {
   @@index([id_usuario], map: "idx_auditoria_usuario")
 }
 
-model venta {
-  id_venta        Int             @id @default(autoincrement())
-  id_usuario      String?         @db.VarChar(150)
-  fecha           DateTime?       @default(now()) @db.Timestamp(6)
-  id_cliente      String?         @db.VarChar(150)
-  total_sin_iva   Decimal?        @db.Decimal(10, 2)
-  total_con_iva   Decimal?        @db.Decimal(10, 2)
-  descuento_total Decimal?        @db.Decimal(10, 2)
-  total_neto      Decimal?        @db.Decimal(10, 2)
-  metodo_pago     String?         @db.VarChar(50)
-  estado_pago     String?         @db.VarChar(50)
-  estado_envio    String?         @db.VarChar(50)
-  id_envio        String?         @db.Uuid
-  tipo_venta      String?         @db.VarChar(50)
-  observaciones   String?
-  factura_url     String?         @db.VarChar(255)
-  creado_en       DateTime?       @default(now()) @db.Timestamp(6)
-  actualizado_en  DateTime?       @default(now()) @db.Timestamp(6)
-  envios          envios[]
-  cliente         cliente?        @relation("venta_cliente", fields: [id_cliente], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
-  usuario         usuarios?       @relation("venta_usuario", fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
-  venta_detalle   venta_detalle[]
+model categoria {
+  id_cat         Int         @id @default(autoincrement())
+  codi_categoria String      @unique @db.VarChar(4)
+  nombre         String?     @db.VarChar(100)
+  descripcion    String?     @db.VarChar(255)
+  activo         Boolean?    @default(true)
+  creado_en      DateTime?   @default(now()) @db.Timestamp(6)
+  actualizado_en DateTime?   @default(now()) @db.Timestamp(6)
+  productos      productos[]
 
-  @@index([id_cliente], map: "idx_venta_cliente")
-  @@index([fecha], map: "idx_venta_fecha")
+  @@index([codi_categoria], map: "idx_categoria_codigo")
+}
+
+model cliente {
+  id_cliente String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_usuario String   @id @db.VarChar(150)
+  direccion  String?  @db.VarChar(255)
+  altura     String?  @db.VarChar(20)
+  piso       String?  @db.VarChar(20)
+  dpto       String?  @db.VarChar(20)
+  cod_postal Int?
+  ciudad     String?  @db.VarChar(100)
+  provincia  String?  @db.VarChar(100)
+  usuarios   usuarios @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
+  venta      venta[]
+}
+
+model direcciones {
+  id_direccion    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_usuario      String    @db.VarChar(150)
+  nombre          String?   @db.VarChar(100)
+  direccion       String?   @db.VarChar(255)
+  altura          String?   @db.VarChar(20)
+  piso            String?   @db.VarChar(20)
+  dpto            String?   @db.VarChar(20)
+  cod_postal      Int?
+  ciudad          String?   @db.VarChar(100)
+  provincia       String?   @db.VarChar(100)
+  es_principal    Boolean?  @default(false)
+  activo          Boolean?  @default(true)
+  creado_en       DateTime? @default(now()) @db.Timestamp(6)
+  actualizado_en  DateTime? @default(now()) @db.Timestamp(6)
+  usuarios        usuarios  @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([id_usuario], map: "idx_direcciones_usuario")
+  @@index([es_principal], map: "idx_direcciones_principal")
+  @@map("direcciones")
 }
 
 model envios {
@@ -206,6 +93,125 @@ model envios {
   fecha_entrega   DateTime? @db.Timestamp(6)
   observaciones   String?
   venta           venta?    @relation(fields: [id_venta], references: [id_venta], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model eventos {
+  id_evento      Int             @id @default(autoincrement())
+  nombre         String?         @db.VarChar(255)
+  descripcion    String?
+  fecha_inicio   DateTime?       @db.Timestamp(6)
+  fecha_fin      DateTime?       @db.Timestamp(6)
+  tipo_descuento String?         @db.VarChar(50)
+  banner_img     String?         @db.VarChar(255)
+  color_tema     String?         @db.VarChar(20)
+  activo         Boolean?        @default(true)
+  creado_en      DateTime?       @default(now()) @db.Timestamp(6)
+  url_publica    String?         @db.VarChar(255)
+  reglas_evento  reglas_evento[]
+  venta_detalle  venta_detalle[]
+}
+
+model grupo {
+  id_grupo       Int         @id @default(autoincrement())
+  codi_grupo     String      @unique @db.VarChar(4)
+  nombre         String?     @db.VarChar(100)
+  descripcion    String?     @db.VarChar(255)
+  activo         Boolean?    @default(true)
+  creado_en      DateTime?   @default(now()) @db.Timestamp(6)
+  actualizado_en DateTime?   @default(now()) @db.Timestamp(6)
+  productos      productos[]
+
+  @@index([codi_grupo], map: "idx_grupo_codigo")
+}
+
+model iva {
+  id_iva         Int         @id @default(autoincrement())
+  codi_impuesto  String      @unique @db.VarChar(2)
+  nombre         String?     @db.VarChar(100)
+  porcentaje     Decimal?    @db.Decimal(8, 4)
+  descripcion    String?     @db.VarChar(255)
+  activo         Boolean?    @default(true)
+  creado_en      DateTime?   @default(now()) @db.Timestamp(6)
+  actualizado_en DateTime?   @default(now()) @db.Timestamp(6)
+  productos      productos[]
+
+  @@index([codi_impuesto], map: "idx_iva_codigo")
+}
+
+model marca {
+  id_marca       Int         @id @default(autoincrement())
+  codi_marca     String      @unique @db.VarChar(3)
+  nombre         String?     @db.VarChar(100)
+  descripcion    String?     @db.VarChar(255)
+  activo         Boolean?    @default(true)
+  creado_en      DateTime?   @default(now()) @db.Timestamp(6)
+  actualizado_en DateTime?   @default(now()) @db.Timestamp(6)
+  productos      productos[]
+
+  @@index([codi_marca], map: "idx_marca_codigo")
+}
+
+model negocio {
+  id_neg           Int     @id @default(autoincrement())
+  nombre           String? @db.VarChar(255)
+  direccion        String? @db.VarChar(255)
+  logo             String? @db.VarChar(255)
+  telefono         String? @db.VarChar(50)
+  cuit             String? @db.VarChar(50)
+  cond_iva         String? @db.VarChar(100)
+  email            String? @db.VarChar(255)
+  color_primario   String? @db.VarChar(20)
+  color_secundario String? @db.VarChar(20)
+  token_pago       String? @db.VarChar(255)
+  token_envio      String? @db.Text
+}
+
+model productos {
+  id_prod               Int             @id @default(autoincrement())
+  codi_arti             String          @unique @db.VarChar(10)
+  nombre                String?         @db.VarChar(255)
+  descripcion           String?
+  codi_categoria        String?         @db.VarChar(4)
+  codi_marca            String?         @db.VarChar(3)
+  codi_grupo            String?         @db.VarChar(4)
+  codi_impuesto         String?         @db.VarChar(2)
+  precio                Decimal?        @db.Decimal(19, 6)
+  precio_sin_iva        Decimal?        @db.Decimal(19, 6)
+  iva_monto             Decimal?        @db.Decimal(19, 6)
+  unidad_medida         String?         @db.VarChar(3)
+  unidades_por_producto Decimal?        @db.Decimal(5, 0)
+  codi_barras           String?         @db.VarChar(22)
+  stock                 Decimal?        @db.Decimal(12, 2)
+  img_principal         String?         @db.VarChar(120)
+  activo                String?         @db.VarChar(1)
+  estado                Int?            @default(1)
+  id_interno            String?         @db.VarChar(100)
+  cod_sku               String?         @db.VarChar(100)
+  modelo                String?         @db.VarChar(100)
+  precio_mayorista      Decimal?        @db.Decimal(10, 2)
+  precio_minorista      Decimal?        @db.Decimal(10, 2)
+  precio_evento         Decimal?        @db.Decimal(10, 2)
+  stock_min             Int?
+  stock_mayorista       Int?
+  imagenes              Json?
+  destacado             Boolean?        @default(false)
+  financiacion          Boolean?        @default(false)
+  creado_en             DateTime?       @default(now()) @db.Timestamp(6)
+  actualizado_en        DateTime?       @default(now()) @db.Timestamp(6)
+  categoria             categoria?      @relation(fields: [codi_categoria], references: [codi_categoria])
+  grupo                 grupo?          @relation(fields: [codi_grupo], references: [codi_grupo])
+  iva                   iva?            @relation(fields: [codi_impuesto], references: [codi_impuesto])
+  marca                 marca?          @relation(fields: [codi_marca], references: [codi_marca])
+  venta_detalle         venta_detalle[]
+
+  @@index([activo], map: "idx_productos_activo")
+  @@index([codi_categoria], map: "idx_productos_categoria")
+  @@index([codi_arti], map: "idx_productos_codi_arti")
+  @@index([codi_barras], map: "idx_productos_codi_barras")
+  @@index([codi_grupo], map: "idx_productos_grupo")
+  @@index([codi_impuesto], map: "idx_productos_iva")
+  @@index([codi_marca], map: "idx_productos_marca")
+  @@index([nombre], map: "idx_productos_nombre")
 }
 
 model reglas_contenido {
@@ -233,6 +239,71 @@ model reglas_evento {
   @@map("reglas-evento")
 }
 
+model roles {
+  id_rol      Int        @id @default(autoincrement())
+  nombre      String?    @db.VarChar(100)
+  descripcion String?    @db.VarChar(255)
+  usuarios    usuarios[]
+}
+
+model usuarios {
+  id_usuario          String      @id @db.VarChar(150)
+  nombre              String?     @db.VarChar(255)
+  apellido            String?     @db.VarChar(255)
+  email               String?     @db.VarChar(255)
+  telefono            String?     @db.VarChar(50)
+  username            String?     @db.VarChar(100)
+  password            String?     @db.VarChar(255)
+  id_rol              Int?
+  estado              Int?
+  creado_en           DateTime?   @default(now()) @db.Timestamp(6)
+  actualizado_en      DateTime?   @default(now()) @db.Timestamp(6)
+  img                 String?     @db.VarChar(255)
+  ultimo_login        DateTime?   @db.Timestamp(6)
+  login_ip            String?     @db.VarChar(100)
+  nacimiento          DateTime?   @db.Date
+  es_anonimo          Boolean?    @default(false)
+  activo              Boolean?    @default(true)
+  email_no_verificado Boolean?    @default(false)
+  admin               admin?
+  auditoria           auditoria[]
+  cliente             cliente?
+  direcciones         direcciones[]
+  roles               roles?      @relation(fields: [id_rol], references: [id_rol])
+  venta               venta[]
+
+  @@index([email], map: "idx_usuarios_email")
+  @@index([id_usuario], map: "idx_usuarios_id_usuario")
+  @@index([username], map: "idx_usuarios_username")
+}
+
+model venta {
+  id_venta        Int             @id @default(autoincrement())
+  id_usuario      String?         @db.VarChar(150)
+  fecha           DateTime?       @default(now()) @db.Timestamp(6)
+  id_cliente      String?         @db.VarChar(150)
+  total_sin_iva   Decimal?        @db.Decimal(10, 2)
+  total_con_iva   Decimal?        @db.Decimal(10, 2)
+  descuento_total Decimal?        @db.Decimal(10, 2)
+  total_neto      Decimal?        @db.Decimal(10, 2)
+  metodo_pago     String?         @db.VarChar(50)
+  estado_pago     String?         @db.VarChar(50)
+  estado_envio    String?         @db.VarChar(50)
+  id_envio        String?         @db.Uuid
+  tipo_venta      String?         @db.VarChar(50)
+  observaciones   String?
+  factura_url     String?         @db.VarChar(255)
+  creado_en       DateTime?       @default(now()) @db.Timestamp(6)
+  actualizado_en  DateTime?       @default(now()) @db.Timestamp(6)
+  envios          envios[]
+  cliente         cliente?        @relation(fields: [id_cliente], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
+  usuarios        usuarios?       @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
+  venta_detalle   venta_detalle[]
+
+  @@index([id_cliente], map: "idx_venta_cliente")
+  @@index([fecha], map: "idx_venta_fecha")
+}
+
 model venta_detalle {
   id_detalle         Int        @id(map: "Venta-detalle_pkey") @default(autoincrement())
   id_venta           Int?
@@ -248,13 +319,4 @@ model venta_detalle {
   venta              venta?     @relation(fields: [id_venta], references: [id_venta], onDelete: NoAction, onUpdate: NoAction, map: "Venta-detalle_id_venta_fkey")
 
   @@map("venta-detalle")
-}
-
-model subcategoria {
-  id_subcat   Int         @id(map: "Sub-categoria_pkey") @default(autoincrement())
-  id_cat      Int?
-  nombre      String?     @db.VarChar(100)
-  descripcion String?     @db.VarChar(255)
-  productos   productos[]
-  categoria   categoria?  @relation(fields: [id_cat], references: [id_cat], onDelete: NoAction, onUpdate: NoAction, map: "Sub-categoria_id_cat_fkey")
 }

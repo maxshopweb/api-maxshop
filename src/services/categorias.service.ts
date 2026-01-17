@@ -17,28 +17,39 @@ export class CategoriasService {
                 nombre: 'asc'
             }
         });
-        return categorias as ICategoria[];
+        return categorias.map(cat => ({
+            ...cat,
+            nombre: cat.nombre ? cat.nombre.toUpperCase() : cat.nombre
+        })) as ICategoria[];
     }
 
     async getCategoriaById(id: number): Promise<ICategoria | null> {
         const categoria = await prisma.categoria.findFirst({
             where: { id_cat: id }
         });
-        return categoria as ICategoria | null;
+        if (!categoria) return null;
+        return {
+            ...categoria,
+            nombre: categoria.nombre ? categoria.nombre.toUpperCase() : categoria.nombre
+        } as ICategoria;
     }
 
     async getCategoriaByCodigo(codi_categoria: string): Promise<ICategoria | null> {
         const categoria = await prisma.categoria.findUnique({
             where: { codi_categoria }
         });
-        return categoria as ICategoria | null;
+        if (!categoria) return null;
+        return {
+            ...categoria,
+            nombre: categoria.nombre ? categoria.nombre.toUpperCase() : categoria.nombre
+        } as ICategoria;
     }
 
     async createCategoria(data: ICreateCategoriaDTO): Promise<ICategoria> {
         const nuevaCategoria = await prisma.categoria.create({
             data: {
                 codi_categoria: data.codi_categoria,
-                nombre: data.nombre,
+                nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
                 descripcion: data.descripcion
             }
         });
@@ -49,7 +60,7 @@ export class CategoriasService {
         const categoriaActualizada = await prisma.categoria.update({
             where: { id_cat: id },
             data: {
-                nombre: data.nombre,
+                nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
                 descripcion: data.descripcion
             }
         });

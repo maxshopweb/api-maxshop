@@ -11,7 +11,6 @@ export interface ICategoria {
     // Relaciones
     productos?: IProductos[];
 }
-
 export interface ISubcategoria {
     id_subcat: number;
     id_cat?: number | null;

@@ -1,6 +1,7 @@
 /**
- * Script para importar datos desde CSV a PostgreSQL usando Prisma
- * Importa: Categorías, Marcas, Grupos, Impuestos y Productos con Stock
+ * Script simplificado para importar datos desde CSV a PostgreSQL usando Prisma
+ * Solo usa: MAESARTI.csv, MAESCAT.csv, MAESGRAR.csv
+ * Usa datos existentes de: marcas, impuestos, precios y stock en la BD
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -9,8 +10,16 @@ import * as path from 'path';
 
 const prisma = new PrismaClient();
 
-// Directorio base donde están los CSV
-const CSV_DIR = path.join(__dirname, '../../../data/csv');
+// Ajustar ruta según tu estructura de proyecto
+const CSV_DIR = path.join(__dirname, '../data/csv');
+
+// Verificar que el directorio existe
+if (!fs.existsSync(CSV_DIR)) {
+  console.error(`❌ Error: No se encuentra el directorio ${CSV_DIR}`);
+  console.log('Ruta actual del script:', __dirname);
+  console.log('Ruta esperada de CSV:', CSV_DIR);
+  process.exit(1);
+}
 
 /**
  * Parsea un CSV simple (maneja comillas y comas)
@@ -54,7 +63,7 @@ function parsearCSV(contenido: string): string[][] {
 
 function limpiarCampo(campo: string | undefined): string {
   if (!campo) return '';
-  return campo.trim().replace(/"/g, '');
+  return campo.trim().replace(/^"|"$/g, '');
 }
 
 function parsearNumero(numero: string | undefined): number | null {
@@ -68,42 +77,24 @@ function parsearNumero(numero: string | undefined): number | null {
   }
 }
 
-function parsearFecha(fecha: string | undefined): Date | null {
-  if (!fecha || fecha.trim() === '') return null;
-  try {
-    // Formato DD/MM/YYYY
-    const partes = fecha.trim().split('/');
-    if (partes.length === 3) {
-      const dia = parseInt(partes[0]);
-      const mes = parseInt(partes[1]) - 1;
-      const año = parseInt(partes[2]);
-      return new Date(año, mes, dia);
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Importa Categorías desde maescate.csv
- * Retorna Set con los códigos de categorías válidos
+ * Importa Categorías desde MAESCAT.csv
  */
 async function importarCategorias(): Promise<Set<string>> {
   console.log('📦 Importando categorías...');
   const categoriasSet = new Set<string>();
 
   try {
-    const contenido = fs.readFileSync(path.join(CSV_DIR, 'maescate.csv'), 'utf-8');
+    const contenido = fs.readFileSync(path.join(CSV_DIR, 'MAESCAT.csv'), 'utf-8');
     const registros = parsearCSV(contenido);
 
-    // Saltar header
+    // Saltar header (primera línea)
     for (let i = 1; i < registros.length; i++) {
       const row = registros[i];
       if (!row || row.length < 3) continue;
 
-      const codiCategoria = limpiarCampo(row[1]); // CODICATE
-      const nombre = limpiarCampo(row[2]); // DESCCATE
+      const codiCategoria = limpiarCampo(row[1]); // CODICATE (columna 1)
+      const nombre = limpiarCampo(row[2]); // DESCCATE (columna 2)
 
       if (!codiCategoria) continue;
 
@@ -130,64 +121,13 @@ async function importarCategorias(): Promise<Set<string>> {
     console.log(`✓ Categorías importadas: ${categoriasSet.size}`);
     return categoriasSet;
   } catch (error) {
-    console.error('Error leyendo maescate.csv:', error);
+    console.error('Error leyendo MAESCAT.csv:', error);
     return categoriasSet;
   }
 }
 
 /**
- * Importa Marcas desde TABLMARC.csv
- * Retorna Set con los códigos de marcas válidos
- */
-async function importarMarcas(): Promise<Set<string>> {
-  console.log('📦 Importando marcas...');
-  const marcasSet = new Set<string>();
-
-  try {
-    const contenido = fs.readFileSync(path.join(CSV_DIR, 'TABLMARC.csv'), 'utf-8');
-    const registros = parsearCSV(contenido);
-
-    // Saltar header
-    for (let i = 1; i < registros.length; i++) {
-      const row = registros[i];
-      if (!row || row.length < 3) continue;
-
-      const codiMarca = limpiarCampo(row[1]); // CODIMARC
-      const nombre = limpiarCampo(row[2]); // DESCMARC
-
-      if (!codiMarca) continue;
-
-      try {
-        await prisma.marca.upsert({
-          where: { codi_marca: codiMarca },
-          update: {
-            nombre: nombre || null,
-            actualizado_en: new Date(),
-          },
-          create: {
-            codi_marca: codiMarca,
-            nombre: nombre || null,
-            activo: true,
-          },
-        });
-
-        marcasSet.add(codiMarca);
-      } catch (error) {
-        console.error(`Error importando marca ${codiMarca}:`, error);
-      }
-    }
-
-    console.log(`✓ Marcas importadas: ${marcasSet.size}`);
-    return marcasSet;
-  } catch (error) {
-    console.error('Error leyendo TABLMARC.csv:', error);
-    return marcasSet;
-  }
-}
-
-/**
  * Importa Grupos desde MAESGRAR.csv
- * Retorna Set con los códigos de grupos válidos
  */
 async function importarGrupos(): Promise<Set<string>> {
   console.log('📦 Importando grupos...');
@@ -197,7 +137,6 @@ async function importarGrupos(): Promise<Set<string>> {
     const contenido = fs.readFileSync(path.join(CSV_DIR, 'MAESGRAR.csv'), 'utf-8');
     const registros = parsearCSV(contenido);
 
-    // Saltar header
     for (let i = 1; i < registros.length; i++) {
       const row = registros[i];
       if (!row || row.length < 3) continue;
@@ -236,175 +175,93 @@ async function importarGrupos(): Promise<Set<string>> {
 }
 
 /**
- * Importa Impuestos desde tablimpu.csv
- * Retorna mapa de códigos a porcentajes
+ * Carga marcas existentes de la BD
  */
-async function importarImpuestos(): Promise<Map<string, number>> {
-  console.log('📦 Importando impuestos...');
+async function cargarMarcasExistentes(): Promise<Set<string>> {
+  console.log('📦 Cargando marcas existentes de la BD...');
+  const marcasSet = new Set<string>();
+
+  try {
+    const marcas = await prisma.marca.findMany({
+      select: { codi_marca: true },
+    });
+
+    marcas.forEach((marca) => {
+      if (marca.codi_marca) {
+        marcasSet.add(marca.codi_marca);
+      }
+    });
+
+    console.log(`✓ Marcas cargadas: ${marcasSet.size}`);
+    return marcasSet;
+  } catch (error) {
+    console.error('Error cargando marcas:', error);
+    return marcasSet;
+  }
+}
+
+/**
+ * Carga impuestos existentes de la BD y sus porcentajes
+ */
+async function cargarImpuestosExistentes(): Promise<Map<string, number>> {
+  console.log('📦 Cargando impuestos existentes de la BD...');
   const porcentajesMap = new Map<string, number>();
 
   try {
-    const contenido = fs.readFileSync(path.join(CSV_DIR, 'tablimpu.csv'), 'utf-8');
-    const registros = parsearCSV(contenido);
+    const impuestos = await prisma.iva.findMany({
+      select: { 
+        codi_impuesto: true,
+        porcentaje: true 
+      },
+    });
 
-    // Saltar header
-    for (let i = 1; i < registros.length; i++) {
-      const row = registros[i];
-      if (!row || row.length < 4) continue;
-
-      const codiImpuesto = limpiarCampo(row[1]); // CODIIMPU
-      const nombre = limpiarCampo(row[2]); // DESCIMPU
-      const porcentaje = parsearNumero(row[3]); // PORCIMPU
-
-      if (!codiImpuesto) continue;
-
-      try {
-        await prisma.iva.upsert({
-          where: { codi_impuesto: codiImpuesto },
-          update: {
-            nombre: nombre || null,
-            porcentaje: porcentaje !== null ? porcentaje : null,
-            actualizado_en: new Date(),
-          },
-          create: {
-            codi_impuesto: codiImpuesto,
-            nombre: nombre || null,
-            porcentaje: porcentaje !== null ? porcentaje : null,
-            activo: true,
-          },
-        });
-
-        if (porcentaje !== null) {
-          porcentajesMap.set(codiImpuesto, porcentaje);
-        }
-      } catch (error) {
-        console.error(`Error importando impuesto ${codiImpuesto}:`, error);
+    impuestos.forEach((imp) => {
+      if (imp.codi_impuesto && imp.porcentaje) {
+        porcentajesMap.set(imp.codi_impuesto, Number(imp.porcentaje));
       }
-    }
+    });
 
-    console.log(`✓ Impuestos importados: ${porcentajesMap.size}`);
+    console.log(`✓ Impuestos cargados: ${porcentajesMap.size}`);
     return porcentajesMap;
   } catch (error) {
-    console.error('Error leyendo tablimpu.csv:', error);
+    console.error('Error cargando impuestos:', error);
     return porcentajesMap;
   }
 }
 
 /**
- * Carga precios desde maesprec.csv
+ * Crea marca automáticamente si no existe
  */
-function cargarPrecios(): Map<string, { precioVenta: number | null; precioCosto: number | null }> {
-  console.log('📦 Cargando precios...');
-  const preciosMap = new Map<string, { precioVenta: number | null; precioCosto: number | null }>();
+async function crearMarcaSiNoExiste(codiMarca: string, marcasSet: Set<string>): Promise<void> {
+  if (!codiMarca || marcasSet.has(codiMarca)) return;
 
   try {
-    const contenido = fs.readFileSync(path.join(CSV_DIR, 'maesprec.csv'), 'utf-8');
-    const registros = parsearCSV(contenido);
+    await prisma.marca.upsert({
+      where: { codi_marca: codiMarca },
+      update: {},
+      create: {
+        codi_marca: codiMarca,
+        nombre: `Marca ${codiMarca}`,
+        activo: true,
+      },
+    });
 
-    // Saltar header
-    for (let i = 1; i < registros.length; i++) {
-      const row = registros[i];
-      if (!row || row.length < 6) continue;
-
-      const codiarti = limpiarCampo(row[1]); // GRARARTI
-      const codilist = limpiarCampo(row[2]); // CODILIST
-      const precio = parsearNumero(row[5]); // ACTUPREC
-
-      if (!codiarti || precio === null) continue;
-
-      const actual = preciosMap.get(codiarti) || { precioVenta: null, precioCosto: null };
-
-      if (codilist === 'V') {
-        // Precio de venta
-        if (!actual.precioVenta || precio > actual.precioVenta) {
-          actual.precioVenta = precio;
-        }
-      } else if (codilist === 'C') {
-        // Precio de costo
-        if (!actual.precioCosto || precio > actual.precioCosto) {
-          actual.precioCosto = precio;
-        }
-      }
-
-      preciosMap.set(codiarti, actual);
-    }
-
-    console.log(`✓ Precios cargados: ${preciosMap.size}`);
-    return preciosMap;
+    marcasSet.add(codiMarca);
+    console.log(`  ℹ️  Marca creada automáticamente: ${codiMarca}`);
   } catch (error) {
-    console.error('Error leyendo maesprec.csv:', error);
-    return preciosMap;
+    console.error(`Error creando marca ${codiMarca}:`, error);
   }
-}
-
-/**
- * Carga stock desde MAESSTOK.csv
- */
-function cargarStock(): Map<string, number | null> {
-  console.log('📦 Cargando stock...');
-  const stockMap = new Map<string, number | null>();
-
-  try {
-    const contenido = fs.readFileSync(path.join(CSV_DIR, 'MAESSTOK.csv'), 'utf-8');
-    const registros = parsearCSV(contenido);
-
-    // Saltar header
-    for (let i = 1; i < registros.length; i++) {
-      const row = registros[i];
-      if (!row || row.length < 4) continue;
-
-      const codiarti = limpiarCampo(row[1]); // GRARARTI
-      const stock = parsearNumero(row[4]); // ACTUSTOK
-
-      if (!codiarti) continue;
-
-      // Sumar stock de todos los depósitos
-      const stockActual = stockMap.get(codiarti) || 0;
-      stockMap.set(codiarti, stockActual + (stock || 0));
-    }
-
-    console.log(`✓ Stock cargado: ${stockMap.size}`);
-    return stockMap;
-  } catch (error) {
-    console.error('Error leyendo MAESSTOK.csv:', error);
-    return stockMap;
-  }
-}
-
-/**
- * Obtiene índices de columnas del header de MAESARTI
- */
-function obtenerIndicesColumnas(headerRow: string[]): Record<string, number> {
-  const indices: Record<string, number> = {};
-  for (let i = 0; i < headerRow.length; i++) {
-    const col = limpiarCampo(headerRow[i]).toUpperCase();
-    if (col.includes('CODIARTI')) indices['CODIARTI'] = i;
-    else if (col.includes('DESCARTI')) indices['DESCARTI'] = i;
-    else if (col.includes('CODIGRAR')) indices['CODIGRAR'] = i;
-    else if (col.includes('CODICATE')) indices['CODICATE'] = i;
-    else if (col.includes('CODIMARC')) indices['CODIMARC'] = i;
-    else if (col.includes('CODIIMP1')) indices['CODIIMP1'] = i;
-    else if (col.includes('CODIIMP2')) indices['CODIIMP2'] = i;
-    else if (col.includes('CODIIMP3')) indices['CODIIMP3'] = i;
-    else if (col.includes('ACTIARTI')) indices['ACTIARTI'] = i;
-    else if (col.includes('IMAGARTI')) indices['IMAGARTI'] = i;
-    else if (col.includes('UNMEARTI')) indices['UNMEARTI'] = i;
-    else if (col.includes('UNENARTI')) indices['UNENARTI'] = i;
-    else if (col.includes('PARTARTI')) indices['PARTARTI'] = i;
-  }
-  return indices;
 }
 
 /**
  * Importa Productos desde MAESARTI.csv
+ * Usa datos existentes de marcas e impuestos de la BD
  */
 async function importarProductos(
   categoriasSet: Set<string>,
   marcasSet: Set<string>,
   gruposSet: Set<string>,
-  impuestosPorcentajesMap: Map<string, number>,
-  preciosMap: Map<string, { precioVenta: number | null; precioCosto: number | null }>,
-  stockMap: Map<string, number | null>
+  impuestosPorcentajesMap: Map<string, number>
 ): Promise<void> {
   console.log('📦 Importando productos...');
 
@@ -412,46 +269,134 @@ async function importarProductos(
     const contenido = fs.readFileSync(path.join(CSV_DIR, 'MAESARTI.csv'), 'utf-8');
     const registros = parsearCSV(contenido);
 
-    const header = registros[0];
-    if (!header) throw new Error('No se encontró header en MAESARTI.csv');
+    if (registros.length < 2) {
+      console.error('El archivo MAESARTI.csv está vacío o no tiene datos');
+      return;
+    }
 
-    const indices = obtenerIndicesColumnas(header);
+    // MAPEO CORRECTO DE COLUMNAS SEGÚN LA ESTRUCTURA DBF
+    const COLUMNAS = {
+      ORDEARTI: 0,   // N,6,0
+      CODIARTI: 1,   // C,10
+      CODIGRAR: 2,   // C,4
+      DESCARTI: 3,   // C,70
+      UNMEARTI: 4,   // C,3
+      ENVAARTI: 5,   // C,5
+      UNENARTI: 6,   // N,5,0
+      CODIIMP1: 7,   // C,2
+      CODIIMP2: 8,   // C,2
+      CODIDECA: 9,   // C,2
+      CODIDEOP: 10,  // C,2
+      ISTKARTI: 11,  // C,1
+      IMOVARTI: 12,  // C,1
+      CODIESPE: 13,  // C,2
+      DECAARTI: 14,  // N,5,2
+      REFIARTI: 15,  // N,6,2
+      FLETARTI: 16,  // N,6,2
+      MARGARTI: 17,  // N,6,2
+      COEFARTI: 18,  // N,8,4
+      POR1DEOP: 19,  // N,5,2
+      POR2DEOP: 20,  // N,5,2
+      POR3DEOP: 21,  // N,5,2
+      POR4DEOP: 22,  // N,5,2
+      POR5DEOP: 23,  // N,5,2
+      POR6DEOP: 24,  // N,5,2
+      POR7DEOP: 25,  // N,5,2
+      CODIPROV: 26,  // C,3
+      NUMEMODE: 27,  // C,10
+      NPROARTI: 28,  // C,15
+      CODIIMP3: 29,  // C,2
+      FRANARTI: 30,  // C,1
+      PREFARTI: 31,  // C,4
+      BASIARTI: 32,  // C,8
+      SUF1ARTI: 33,  // C,2
+      SUF2ARTI: 34,  // C,3
+      PARTARTI: 35,  // C,22
+      BAINARTI: 36,  // C,8
+      TIPOARTI: 37,  // C,1
+      RECAARTI: 38,  // N,8,2
+      COMIARTI: 39,  // N,5,2
+      NUMECUEN: 40,  // C,6
+      ACTIARTI: 41,  // C,1
+      PROVARTI: 42,  // C,5
+      FEACARTI: 43,  // D
+      OBSOARTI: 44,  // C,1
+      COB1ARTI: 45,  // C,30
+      COB2ARTI: 46,  // C,30
+      COBAARTI: 47,  // C,30
+      EMERARTI: 48,  // C,40
+      HORAARTI: 49,  // C,6
+      ULMOARTI: 50,  // D
+      CODIMARC: 51,  // C,3
+      FEBAARTI: 52,  // D
+      SIREARTI: 53,  // C,1
+      REEMARTI: 54,  // C,21
+      NUMELIST: 55,  // C,2
+      CLASARTI: 56,  // C,3
+      GRUPARTI: 57,  // C,1
+      INDIARTI: 58,  // L
+      CODIDESE: 59,  // C,4
+      PRECARTI: 60,  // N,15,2
+      COPRARTI: 61,  // C,20
+      FEALARTI: 62,  // D
+      CODIDESC: 63,  // C,2
+      MODEARTI: 64,  // C,12
+      MARCARTI: 65,  // C,10
+      ORIGARTI: 66,  // C,10
+      DESPARTI: 67,  // C,20
+      FEDEARTI: 68,  // D
+      COPRATI: 69,   // C,10
+      CODICATE: 70,  // C,4
+      IMAGARTI: 71,  // C,120
+      LOTEARTI: 72   // C,1
+    };
+
+    const productosUnicos = new Map<string, any>();
+    let totalProcesados = 0;
     let errores = 0;
+    let marcasCreadas = 0;
 
-    // Primero acumular todos los productos
-    const todosLosProductos: any[] = [];
-
+    // Procesar cada línea (saltar header)
     for (let rowNum = 1; rowNum < registros.length; rowNum++) {
       const row = registros[rowNum];
-      if (!row) continue;
+      if (!row || row.length < 10) continue;
 
       try {
-        const codiarti = limpiarCampo(row[indices['CODIARTI'] ?? 1]);
+        // Extraer campos usando el mapeo correcto
+        const codiarti = limpiarCampo(row[COLUMNAS.CODIARTI]);
         if (!codiarti) continue;
 
-        const nombre = limpiarCampo(row[indices['DESCARTI'] ?? 3]);
-        const codigrar = limpiarCampo(row[indices['CODIGRAR'] ?? 2]);
-        const codicate = limpiarCampo(row[indices['CODICATE'] ?? -1] || '');
-        const codimarc = limpiarCampo(row[indices['CODIMARC'] ?? -1] || '');
-        const codiimp1 = limpiarCampo(row[indices['CODIIMP1'] ?? 7]);
-        const codiimp2 = limpiarCampo(row[indices['CODIIMP2'] ?? 8]);
-        const codiimp3 = limpiarCampo(row[indices['CODIIMP3'] ?? -1] || '');
-        const actiarti = limpiarCampo(row[indices['ACTIARTI'] ?? -1] || '');
-        const imagarti = limpiarCampo(row[indices['IMAGARTI'] ?? -1] || '');
-        const unmearti = limpiarCampo(row[indices['UNMEARTI'] ?? 4] || '');
-        const unenarti = parsearNumero(row[indices['UNENARTI'] ?? 6]);
-        const partarti = limpiarCampo(row[indices['PARTARTI'] ?? 35] || '');
+        const nombre = limpiarCampo(row[COLUMNAS.DESCARTI]);
+        const codigrar = limpiarCampo(row[COLUMNAS.CODIGRAR]);
+        const codicate = limpiarCampo(row[COLUMNAS.CODICATE]);
+        const codimarc = limpiarCampo(row[COLUMNAS.CODIMARC]);
+        const codiimp1 = limpiarCampo(row[COLUMNAS.CODIIMP1]);
+        const codiimp2 = limpiarCampo(row[COLUMNAS.CODIIMP2]);
+        const codiimp3 = limpiarCampo(row[COLUMNAS.CODIIMP3]);
+        const actiarti = limpiarCampo(row[COLUMNAS.ACTIARTI]);
+        const imagarti = limpiarCampo(row[COLUMNAS.IMAGARTI]);
+        const unmearti = limpiarCampo(row[COLUMNAS.UNMEARTI]);
+        const unenarti = parsearNumero(row[COLUMNAS.UNENARTI]);
+        const partarti = limpiarCampo(row[COLUMNAS.PARTARTI]);
+        const precarti = parsearNumero(row[COLUMNAS.PRECARTI]); // Precio desde CSV
 
-        // Obtener códigos de relaciones (validar que existan)
+        // Crear marca si no existe
+        if (codimarc && !marcasSet.has(codimarc)) {
+          await crearMarcaSiNoExiste(codimarc, marcasSet);
+          marcasCreadas++;
+        }
+
+        // Validar y asignar relaciones
         const codi_grupo = codigrar && gruposSet.has(codigrar) ? codigrar : null;
         const codi_categoria = codicate && categoriasSet.has(codicate) ? codicate : null;
         const codi_marca = codimarc && marcasSet.has(codimarc) ? codimarc : null;
+        
+        // Priorizar impuestos en orden: CODIIMP1, CODIIMP2, CODIIMP3
         const codiimpu = codiimp1 || codiimp2 || codiimp3;
         const codi_impuesto = codiimpu ? codiimpu : null;
 
-        // Obtener precios
-        const precios = preciosMap.get(codiarti);
-        const precioVenta = precios?.precioVenta || null;
+        // Usar precio del CSV si existe
+        const precioVenta = precarti || null;
 
         // Calcular IVA
         let precioSinIva = null;
@@ -463,9 +408,6 @@ async function importarProductos(
             ivaMonto = precioVenta - precioSinIva;
           }
         }
-
-        // Obtener stock
-        const stock = stockMap.get(codiarti) || null;
 
         const producto = {
           codi_arti: codiarti,
@@ -480,48 +422,55 @@ async function importarProductos(
           unidad_medida: unmearti || null,
           unidades_por_producto: unenarti,
           codi_barras: partarti || null,
-          stock: stock,
+          stock: null, // Se actualizará después si tienes datos de stock
           img_principal: imagarti || null,
-          activo: actiarti || null,
+          activo: actiarti || 'A',
           estado: actiarti === 'A' ? 1 : 0,
         };
 
-        todosLosProductos.push(producto);
+        // Manejar duplicados - guardar solo el más completo
+        const existente = productosUnicos.get(codiarti);
+        if (existente) {
+          const scoreExistente = calcularScore(existente);
+          const scoreNuevo = calcularScore(producto);
+          
+          if (scoreNuevo > scoreExistente) {
+            productosUnicos.set(codiarti, producto);
+          }
+        } else {
+          productosUnicos.set(codiarti, producto);
+        }
+
+        totalProcesados++;
       } catch (error) {
         errores++;
         if (errores <= 10) {
-          console.error(`Error procesando fila ${rowNum + 1}:`, error);
+          console.error(`Error en fila ${rowNum + 1}:`, error);
         }
-        continue;
       }
     }
 
-    // Filtrar duplicados antes de insertar
-    console.log('\nFiltrando productos duplicados...');
-    const productosUnicos = filtrarDuplicados(todosLosProductos);
-    const duplicadosEliminados = todosLosProductos.length - productosUnicos.length;
-
-    if (duplicadosEliminados > 0) {
-      console.log(
-        `✓ Duplicados eliminados: ${duplicadosEliminados} (mantenidos: ${productosUnicos.length})`
-      );
+    // Insertar en base de datos
+    console.log(`\n📝 Productos únicos a insertar: ${productosUnicos.size}`);
+    console.log(`⚠️  Duplicados eliminados: ${totalProcesados - productosUnicos.size}`);
+    if (marcasCreadas > 0) {
+      console.log(`ℹ️  Marcas creadas automáticamente: ${marcasCreadas}`);
     }
-
-    // Insertar productos únicos en lotes
-    console.log('\nInsertando productos en la base de datos...');
+    
+    const productos = Array.from(productosUnicos.values());
     const BATCH_SIZE = 100;
     let procesados = 0;
 
-    for (let i = 0; i < productosUnicos.length; i += BATCH_SIZE) {
-      const batch = productosUnicos.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < productos.length; i += BATCH_SIZE) {
+      const batch = productos.slice(i, i + BATCH_SIZE);
       await procesarBatch(batch);
       procesados += batch.length;
-      console.log(`  Procesados: ${procesados}/${productosUnicos.length} productos...`);
+      console.log(`  Insertados: ${procesados}/${productos.length} productos...`);
     }
 
     console.log(`✓ Productos importados: ${procesados}`);
     if (errores > 0) {
-      console.log(`⚠ Errores: ${errores}`);
+      console.log(`⚠️  Errores encontrados: ${errores}`);
     }
   } catch (error) {
     console.error('Error importando productos:', error);
@@ -530,78 +479,23 @@ async function importarProductos(
 }
 
 /**
- * Calcula un score de completitud para un producto
- * Prioriza campos importantes como nombre, precio, relaciones, etc.
+ * Calcula score de completitud
  */
-function calcularScoreCompletitud(producto: any): number {
+function calcularScore(producto: any): number {
   let score = 0;
-
-  // Campos críticos (peso alto)
-  if (producto.nombre && producto.nombre.trim()) score += 100;
+  if (producto.nombre?.trim()) score += 100;
   if (producto.precio && producto.precio > 0) score += 50;
-
-  // Campos importantes (peso medio)
-  if (producto.codi_grupo && producto.codi_grupo.trim()) score += 20;
-  if (producto.codi_categoria && producto.codi_categoria.trim()) score += 20;
-  if (producto.codi_marca && producto.codi_marca.trim()) score += 20;
-  if (producto.codi_impuesto && producto.codi_impuesto.trim()) score += 15;
-
-  // Campos útiles (peso bajo)
-  if (producto.codi_barras && producto.codi_barras.trim()) score += 10;
-  if (producto.img_principal && producto.img_principal.trim()) score += 10;
-  if (producto.unidad_medida && producto.unidad_medida.trim()) score += 5;
-  if (producto.unidades_por_producto && producto.unidades_por_producto > 0)
-    score += 5;
-  if (producto.stock !== null && producto.stock !== undefined) score += 5;
-
+  if (producto.codi_grupo?.trim()) score += 20;
+  if (producto.codi_categoria?.trim()) score += 20;
+  if (producto.codi_marca?.trim()) score += 20;
+  if (producto.codi_impuesto?.trim()) score += 15;
+  if (producto.codi_barras?.trim()) score += 10;
+  if (producto.img_principal?.trim()) score += 10;
   return score;
 }
 
 /**
- * Filtra productos duplicados, manteniendo solo el que tiene más datos completos
- */
-function filtrarDuplicados(productos: any[]): any[] {
-  const productosMap = new Map<string, any>();
-  const duplicadosEncontrados: string[] = [];
-
-  for (const producto of productos) {
-    const codiarti = producto.codi_arti;
-    const existente = productosMap.get(codiarti);
-
-    if (existente) {
-      duplicadosEncontrados.push(codiarti);
-
-      const scoreExistente = calcularScoreCompletitud(existente);
-      const scoreNuevo = calcularScoreCompletitud(producto);
-
-      // Mantener el que tiene mayor score
-      if (scoreNuevo > scoreExistente) {
-        productosMap.set(codiarti, producto);
-        console.log(
-          `  ⚠ Duplicado ${codiarti}: Reemplazado (score: ${scoreExistente} → ${scoreNuevo})`
-        );
-      }
-    } else {
-      productosMap.set(codiarti, producto);
-    }
-  }
-
-  if (duplicadosEncontrados.length > 0) {
-    console.log(
-      `\n⚠ Productos duplicados encontrados: ${duplicadosEncontrados.length}`
-    );
-    console.log(
-      `  Códigos: ${duplicadosEncontrados.slice(0, 10).join(', ')}${
-        duplicadosEncontrados.length > 10 ? '...' : ''
-      }`
-    );
-  }
-
-  return Array.from(productosMap.values());
-}
-
-/**
- * Procesa un lote de productos usando upsert
+ * Procesa un lote de productos
  */
 async function procesarBatch(productosBatch: any[]): Promise<void> {
   for (const producto of productosBatch) {
@@ -620,7 +514,6 @@ async function procesarBatch(productosBatch: any[]): Promise<void> {
           unidad_medida: producto.unidad_medida,
           unidades_por_producto: producto.unidades_por_producto,
           codi_barras: producto.codi_barras,
-          stock: producto.stock,
           img_principal: producto.img_principal,
           activo: producto.activo,
           estado: producto.estado,
@@ -635,33 +528,37 @@ async function procesarBatch(productosBatch: any[]): Promise<void> {
 }
 
 /**
- * Función principal de importación
+ * Función principal
  */
 async function importarTodo() {
   console.log('🚀 Iniciando importación de datos desde CSV...\n');
+  console.log('📁 Archivos CSV requeridos:');
+  console.log('  ✓ MAESARTI.csv');
+  console.log('  ✓ MAESCAT.csv');
+  console.log('  ✓ MAESGRAR.csv\n');
 
   try {
-    // 1. Importar tablas de referencia
+    // 1. Importar tablas de referencia desde CSV
     const categoriasSet = await importarCategorias();
-    const marcasSet = await importarMarcas();
     const gruposSet = await importarGrupos();
-    const impuestosPorcentajesMap = await importarImpuestos();
-
-    // 2. Cargar datos auxiliares
-    const preciosMap = cargarPrecios();
-    const stockMap = cargarStock();
+    
+    // 2. Cargar datos existentes de la BD
+    const marcasSet = await cargarMarcasExistentes();
+    const impuestosPorcentajesMap = await cargarImpuestosExistentes();
 
     // 3. Importar productos
     await importarProductos(
       categoriasSet,
       marcasSet,
       gruposSet,
-      impuestosPorcentajesMap,
-      preciosMap,
-      stockMap
+      impuestosPorcentajesMap
     );
 
     console.log('\n✅ Importación completada exitosamente!');
+    console.log('\nℹ️  Notas:');
+    console.log('  - Las marcas faltantes se crearon automáticamente');
+    console.log('  - Los impuestos se cargaron desde la BD existente');
+    console.log('  - El stock se puede actualizar después si tienes MAESSTOK.csv');
   } catch (error) {
     console.error('\n❌ Error en la importación:', error);
     throw error;
@@ -670,11 +567,11 @@ async function importarTodo() {
   }
 }
 
-// Ejecutar si se llama directamente
+// Ejecutar
 if (require.main === module) {
   importarTodo()
     .then(() => {
-      console.log('Proceso finalizado');
+      console.log('\nProceso finalizado');
       process.exit(0);
     })
     .catch((error) => {
@@ -684,4 +581,3 @@ if (require.main === module) {
 }
 
 export { importarTodo };
-

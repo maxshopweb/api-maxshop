@@ -21,7 +21,8 @@ export class ProductosController {
                 limit: parseInt(req.query.limit as string) || 100, // ⭐ Límite por defecto 100
                 order_by: (req.query.order_by as any) || 'creado_en',
                 order: (req.query.order as any) || 'desc',
-                estado: req.query.estado !== undefined ? parseInt(req.query.estado as string) as 0 | 1 : undefined,
+                estado: req.query.estado !== undefined ? parseInt(req.query.estado as string) as 0 | 1 | 2 : undefined,
+                activo: req.query.activo as string | undefined, // "A" = publicado, "I" = despublicado
                 busqueda: req.query.busqueda as string,
                 id_cat: id_cat ? (isNaN(Number(id_cat)) ? id_cat : Number(id_cat)) : undefined,
                 id_marca: id_marca ? (isNaN(Number(id_marca)) ? id_marca : Number(id_marca)) : undefined,
@@ -163,12 +164,12 @@ export class ProductosController {
                 return;
             }
 
-            // Verificar si el producto existe y está activo
-            const existe = await productosService.exists(id);
+            // Verificar si el producto existe (cualquier estado excepto eliminado)
+            const existe = await productosService.existsAny(id);
             if (!existe) {
                 res.status(404).json({
                     success: false,
-                    error: 'Producto no encontrado o inactivo'
+                    error: 'Producto no encontrado'
                 });
                 return;
             }
@@ -319,12 +320,6 @@ export class ProductosController {
         }
     }
 
-    // Método removido - ya no hay subcategorías en el nuevo schema
-
-    /**
-     * ⭐ NUEVO: Toggle destacado (agregar/quitar producto destacado)
-     * PATCH /api/products/:id/destacado
-     */
     async toggleDestacado(req: Request, res: Response): Promise<void> {
         try {
             const id = parseInt(req.params.id);

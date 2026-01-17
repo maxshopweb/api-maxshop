@@ -1,0 +1,1169 @@
+import { prisma } from '../index';
+import { IVenta, IVentaFilters, IPaginatedResponse, ICreateVentaDTO, IUpdateVentaDTO } from '../types';
+import cacheService from './cache.service';
+import mailService from '../mail';
+import { paymentProcessingService } from './payment-processing.service';
+import { eventBus } from '../infrastructure/event-bus/event-bus';
+import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
+import { direccionesService } from './direcciones.service';
+
+export class VentasService {
+    private TTL_VENTA = 3600; // 1 hora
+    private TTL_LISTA = 1800; // 30 minutos
+
+    async getAll(filters: IVentaFilters): Promise<IPaginatedResponse<IVenta>> {
+        const cacheKey = `ventas:all:${JSON.stringify(filters)}`;
+        
+        const cached = await cacheService.get<IPaginatedResponse<IVenta>>(cacheKey);
+        if (cached) {
+            console.log(`✅ Lista de ventas encontrada en cache`);
+            return cached;
+        }
+
+        const {
+            page = 1,
+            limit = 25,
+            order_by = 'fecha',
+            order = 'desc',
+            busqueda,
+            id_cliente,
+            id_usuario,
+            fecha_desde,
+            fecha_hasta,
+            estado_pago,
+            estado_envio,
+            metodo_pago,
+            tipo_venta,
+            total_min,
+            total_max,
+        } = filters;
+
+        const whereClause: any = {};
+
+        // Búsqueda por ID de venta o cliente
+        if (busqueda) {
+            whereClause.OR = [
+                { id_venta: { equals: parseInt(busqueda) || -1 } },
+                {
+                    cliente: {
+                        usuarios: {
+                            OR: [
+                                { nombre: { contains: busqueda, mode: 'insensitive' } },
+                                { apellido: { contains: busqueda, mode: 'insensitive' } },
+                                { email: { contains: busqueda, mode: 'insensitive' } },
+                            ],
+                        },
+                    },
+                },
+            ];
+        }
+
+        if (id_cliente) whereClause.id_cliente = id_cliente;
+        if (id_usuario) whereClause.id_usuario = id_usuario;
+
+        // Filtros por fecha
+        if (fecha_desde || fecha_hasta) {
+            whereClause.fecha = {};
+            if (fecha_desde) {
+                whereClause.fecha.gte = new Date(fecha_desde);
+            }
+            if (fecha_hasta) {
+                whereClause.fecha.lte = new Date(fecha_hasta);
+            }
+        }
+
+        if (estado_pago) whereClause.estado_pago = estado_pago;
+        if (estado_envio) whereClause.estado_envio = estado_envio;
+        if (metodo_pago) whereClause.metodo_pago = metodo_pago;
+        if (tipo_venta) whereClause.tipo_venta = tipo_venta;
+
+        // Filtros por rango de total
+        if (total_min !== undefined || total_max !== undefined) {
+            whereClause.total_neto = {};
+            if (total_min !== undefined) {
+                whereClause.total_neto.gte = total_min;
+            }
+            if (total_max !== undefined) {
+                whereClause.total_neto.lte = total_max;
+            }
+        }
+
+        // Ordenamiento
+        const orderBy: any = {};
+        if (order_by === 'fecha') orderBy.fecha = order;
+        else if (order_by === 'total_neto') orderBy.total_neto = order;
+        else if (order_by === 'creado_en') orderBy.creado_en = order;
+        else if (order_by === 'estado_pago') orderBy.estado_pago = order;
+        else orderBy.fecha = 'desc';
+
+        // Contar total
+        const total = await prisma.venta.count({ where: whereClause });
+
+        // Obtener datos con relaciones
+        const ventas = await prisma.venta.findMany({
+            where: whereClause,
+            orderBy,
+            skip: (page - 1) * limit,
+            take: limit,
+            include: {
+                cliente: {
+                    include: {
+                        usuarios: true,
+                    },
+                },
+                usuarios: true,
+                venta_detalle: {
+                    include: {
+                        productos: {
+                            include: {
+                                categoria: true,
+                                marca: true,
+                                grupo: true,
+                                iva: true,
+                            },
+                        },
+                    },
+                },
+                envios: true,
+            },
+        });
+
+        // Formatear respuesta
+        const formattedVentas: IVenta[] = ventas.map((venta: any) => ({
+            ...venta,
+            total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
+            total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
+            descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
+            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            metodo_pago: venta.metodo_pago as any,
+            estado_pago: venta.estado_pago as any,
+            estado_envio: venta.estado_envio as any,
+            tipo_venta: venta.tipo_venta as any,
+            usuario: venta.usuarios ? {
+                ...venta.usuarios,
+                estado: venta.usuarios.estado as any,
+            } : null,
+            cliente: venta.cliente ? {
+                ...venta.cliente,
+                usuario: venta.cliente.usuarios ? {
+                    ...venta.cliente.usuarios,
+                    estado: venta.cliente.usuarios.estado as any,
+                } : undefined,
+            } : null,
+            detalles: venta.venta_detalle.map((detalle: any) => ({
+                ...detalle,
+                precio_unitario: detalle.precio_unitario ? Number(detalle.precio_unitario) : null,
+                descuento_aplicado: detalle.descuento_aplicado ? Number(detalle.descuento_aplicado) : null,
+                sub_total: detalle.sub_total ? Number(detalle.sub_total) : null,
+                tipo_descuento: detalle.tipo_descuento as any,
+                producto: detalle.productos ? {
+                    ...detalle.productos,
+                } : null,
+            })),
+            envio: venta.envios && venta.envios.length > 0 ? {
+                ...venta.envios[0],
+                costo_envio: venta.envios[0].costo_envio ? Number(venta.envios[0].costo_envio) : null,
+                estado_envio: venta.envios[0].estado_envio as any,
+                // Número de seguimiento (número de pre-envío)
+                codigoTracking: venta.envios[0].cod_seguimiento,
+                numeroSeguimiento: venta.envios[0].cod_seguimiento, // Alias para claridad
+                // URLs para consultar
+                // Pre-envío (siempre funciona)
+                preEnvioUrl: venta.envios[0].cod_seguimiento 
+                    ? `/api/andreani/pre-envios/${venta.envios[0].cod_seguimiento}`
+                    : null,
+                // Envío real (solo funciona cuando fue aceptado)
+                envioUrl: venta.envios[0].cod_seguimiento
+                    ? `/api/andreani/envios/${venta.envios[0].cod_seguimiento}/estado`
+                    : null,
+                // Trazas del envío (solo funciona cuando fue aceptado)
+                trazasUrl: venta.envios[0].cod_seguimiento
+                    ? `/api/andreani/envios/${venta.envios[0].cod_seguimiento}/trazas`
+                    : null,
+            } : null,
+        }));
+
+        const result: IPaginatedResponse<IVenta> = {
+            data: formattedVentas,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+        };
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_LISTA);
+
+        return result;
+    }
+
+    async getById(id: number): Promise<IVenta> {
+        const cacheKey = `venta:${id}`;
+        
+        const cached = await cacheService.get<IVenta>(cacheKey);
+        if (cached) {
+            console.log(`✅ Venta ${id} encontrada en cache`);
+            return cached;
+        }
+
+        const venta = await prisma.venta.findUnique({
+            where: { id_venta: id },
+            include: {
+                cliente: {
+                    include: {
+                        usuarios: true,
+                    },
+                },
+                usuarios: true,
+                venta_detalle: {
+                    include: {
+                        productos: {
+                            include: {
+                                categoria: true,
+                                marca: true,
+                                grupo: true,
+                                iva: true,
+                            },
+                        },
+                    },
+                },
+                envios: true,
+            },
+        });
+
+        if (!venta) {
+            throw new Error('Venta no encontrada');
+        }
+
+        const formattedVenta: IVenta = {
+            ...venta,
+            total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
+            total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
+            descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
+            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            metodo_pago: venta.metodo_pago as any,
+            estado_pago: venta.estado_pago as any,
+            estado_envio: venta.estado_envio as any,
+            tipo_venta: venta.tipo_venta as any,
+            usuario: venta.usuarios ? {
+                ...venta.usuarios,
+                estado: venta.usuarios.estado as any,
+            } : null,
+            cliente: venta.cliente ? {
+                ...venta.cliente,
+                usuario: venta.cliente.usuarios ? {
+                    ...venta.cliente.usuarios,
+                    estado: venta.cliente.usuarios.estado as any,
+                } : undefined,
+            } : null,
+            detalles: (venta as any).venta_detalle.map((detalle: any) => ({
+                ...detalle,
+                precio_unitario: detalle.precio_unitario ? Number(detalle.precio_unitario) : null,
+                descuento_aplicado: detalle.descuento_aplicado ? Number(detalle.descuento_aplicado) : null,
+                sub_total: detalle.sub_total ? Number(detalle.sub_total) : null,
+                tipo_descuento: detalle.tipo_descuento as any,
+                producto: detalle.productos ? {
+                    ...detalle.productos,
+                } : null,
+            })),
+            envio: (venta as any).envios && (venta as any).envios.length > 0 ? {
+                ...(venta as any).envios[0],
+                costo_envio: (venta as any).envios[0].costo_envio ? Number((venta as any).envios[0].costo_envio) : null,
+                estado_envio: (venta as any).envios[0].estado_envio as any,
+                // Número de seguimiento (número de pre-envío)
+                codigoTracking: (venta as any).envios[0].cod_seguimiento,
+                numeroSeguimiento: (venta as any).envios[0].cod_seguimiento, // Alias para claridad
+                // URLs para consultar
+                // Pre-envío (siempre funciona)
+                preEnvioUrl: (venta as any).envios[0].cod_seguimiento 
+                    ? `/api/andreani/pre-envios/${(venta as any).envios[0].cod_seguimiento}`
+                    : null,
+                // Envío real (solo funciona cuando fue aceptado)
+                envioUrl: (venta as any).envios[0].cod_seguimiento
+                    ? `/api/andreani/envios/${(venta as any).envios[0].cod_seguimiento}/estado`
+                    : null,
+                // Trazas del envío (solo funciona cuando fue aceptado)
+                trazasUrl: (venta as any).envios[0].cod_seguimiento
+                    ? `/api/andreani/envios/${(venta as any).envios[0].cod_seguimiento}/trazas`
+                    : null,
+            } : null,
+        };
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, formattedVenta, this.TTL_VENTA);
+
+        return formattedVenta;
+    }
+
+    async create(data: ICreateVentaDTO, idUsuario?: string): Promise<IVenta> {
+        // Calcular totales
+        let totalSinIva = 0;
+        let totalConIva = 0;
+        let descuentoTotal = 0;
+
+        for (const detalle of data.detalles) {
+            const producto = await prisma.productos.findUnique({
+                where: { id_prod: detalle.id_prod },
+            });
+
+            if (!producto) {
+                throw new Error(`Producto ${detalle.id_prod} no encontrado`);
+            }
+
+            const precioUnitario = detalle.precio_unitario;
+            const cantidad = detalle.cantidad;
+            const descuento = detalle.descuento_aplicado || 0;
+            const subtotal = precioUnitario * cantidad - descuento;
+
+            totalSinIva += subtotal;
+            descuentoTotal += descuento;
+        }
+
+        // Calcular IVA (simplificado, debería calcularse por producto)
+        totalConIva = totalSinIva * 1.21; // Asumiendo 21% de IVA
+        // Incluir costo de envío en el total neto (si se proporciona)
+        const costoEnvio = data.costo_envio || 0;
+        const totalNeto = totalConIva + costoEnvio;
+
+        // Si se proporciona id_cliente, verificar que exista o crearlo
+        let idClienteFinal = data.id_cliente;
+        
+        if (idClienteFinal) {
+            // Verificar si el cliente existe
+            const clienteExistente = await prisma.cliente.findUnique({
+                where: { id_usuario: idClienteFinal },
+            });
+
+            if (!clienteExistente) {
+                // Verificar que el usuario exista en la tabla usuarios
+                const usuarioExistente = await prisma.usuarios.findUnique({
+                    where: { id_usuario: idClienteFinal },
+                });
+
+                if (!usuarioExistente) {
+                    throw new Error(`Usuario con id ${idClienteFinal} no encontrado. El usuario debe existir antes de crear un pedido.`);
+                }
+
+                // Crear el cliente automáticamente
+                console.log(`📝 [VentasService] Creando cliente automáticamente para usuario ${idClienteFinal}`);
+                await prisma.cliente.create({
+                    data: {
+                        id_usuario: idClienteFinal,
+                        // Los demás campos pueden ser null y se completarán después
+                    },
+                });
+                console.log(`✅ [VentasService] Cliente creado exitosamente`);
+            }
+        }
+
+        // Crear venta
+        // Si hay idUsuario, usarlo; si no, usar id_cliente como id_usuario (para compatibilidad)
+        const venta = await prisma.venta.create({
+            data: {
+                id_usuario: idUsuario || idClienteFinal || null,
+                id_cliente: idClienteFinal || null,
+                fecha: new Date(),
+                total_sin_iva: totalSinIva,
+                total_con_iva: totalConIva,
+                descuento_total: descuentoTotal,
+                total_neto: totalNeto,
+                metodo_pago: data.metodo_pago,
+                estado_pago: 'pendiente',
+                estado_envio: 'pendiente',
+                tipo_venta: data.tipo_venta,
+                observaciones: data.observaciones || null,
+                venta_detalle: {
+                    create: data.detalles.map((detalle) => ({
+                        id_prod: detalle.id_prod,
+                        cantidad: detalle.cantidad,
+                        precio_unitario: detalle.precio_unitario,
+                        descuento_aplicado: detalle.descuento_aplicado || 0,
+                        sub_total: detalle.precio_unitario * detalle.cantidad - (detalle.descuento_aplicado || 0),
+                        evento_aplicado: detalle.evento_aplicado || null,
+                    })),
+                },
+            },
+            include: {
+                cliente: {
+                    include: {
+                        usuarios: true,
+                    },
+                },
+                usuarios: true,
+                venta_detalle: {
+                    include: {
+                        productos: {
+                            include: {
+                                categoria: true,
+                                marca: true,
+                                grupo: true,
+                                iva: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        // Invalidar cache
+        await cacheService.deletePattern('ventas:*');
+
+        const ventaCompleta = await this.getById(venta.id_venta);
+
+        // Emitir evento SALE_CREATED (venta en estado pendiente)
+        // Solo emitir si el estado es pendiente (según requisitos)
+        if (ventaCompleta.estado_pago === 'pendiente' && ventaCompleta.fecha) {
+            const event = SaleEventFactory.createSaleCreated({
+                id_venta: ventaCompleta.id_venta,
+                estado_pago: ventaCompleta.estado_pago,
+                fecha: ventaCompleta.fecha.toISOString(),
+            });
+            await eventBus.emit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
+                console.error('❌ [VentasService] Error al emitir evento SALE_CREATED:', error);
+            });
+        }
+
+        // NO enviar email aquí - los emails se envían desde:
+        // - createFromCheckout(): envía email de pedido pendiente
+        // - confirmPayment(): envía email de pago confirmado
+
+        return ventaCompleta;
+    }
+
+        /**
+         * Crea un pedido desde el checkout (frontend)
+         * Normaliza el método de pago y crea la venta en estado pendiente
+         * Si el cliente no existe, lo crea automáticamente
+         */
+        async createFromCheckout(data: {
+            id_cliente?: string;
+            metodo_pago: string;
+            detalles: Array<{
+                id_prod: number;
+                cantidad: number;
+                precio_unitario: number;
+                descuento_aplicado?: number;
+            }>;
+            observaciones?: string;
+            costo_envio?: number; // Costo del envío calculado desde cotización
+            id_direccion?: string; // ID de dirección guardada (opcional)
+            // Datos de dirección para actualizar el cliente (si no se usa id_direccion)
+            direccion?: {
+                direccion?: string;
+                altura?: string;
+                piso?: string;
+                dpto?: string;
+                ciudad?: string;
+                provincia?: string;
+                cod_postal?: number | null;
+                telefono?: string;
+            };
+        }, idUsuario?: string): Promise<IVenta> {
+            // Normalizar método de pago
+            const metodoPagoNormalizado = this.normalizePaymentMethod(data.metodo_pago);
+
+            // Si se proporciona id_cliente, verificar que exista o crearlo
+            let idClienteFinal = data.id_cliente;
+            
+            if (idClienteFinal) {
+                // Verificar si el cliente existe
+                const clienteExistente = await prisma.cliente.findUnique({
+                    where: { id_usuario: idClienteFinal },
+                });
+
+                if (!clienteExistente) {
+                    // Verificar que el usuario exista en la tabla usuarios
+                    const usuarioExistente = await prisma.usuarios.findUnique({
+                        where: { id_usuario: idClienteFinal },
+                    });
+
+                    if (!usuarioExistente) {
+                        throw new Error(`Usuario con id ${idClienteFinal} no encontrado. El usuario debe existir antes de crear un pedido.`);
+                    }
+
+                    // Crear el cliente automáticamente
+                    console.log(`📝 [VentasService] Creando cliente automáticamente para usuario ${idClienteFinal}`);
+                    await prisma.cliente.create({
+                        data: {
+                            id_usuario: idClienteFinal,
+                            // Los demás campos pueden ser null y se completarán después
+                        },
+                    });
+                    console.log(`✅ [VentasService] Cliente creado exitosamente`);
+                }
+
+                // Si se proporciona id_direccion, usar esa dirección guardada
+                if (data.id_direccion && idUsuario) {
+                    try {
+                        const direccionGuardada = await direccionesService.getById(data.id_direccion, idUsuario);
+                        
+                        // Actualizar cliente con datos de la dirección guardada
+                        const updateData: any = {
+                            direccion: direccionGuardada.direccion || null,
+                            altura: direccionGuardada.altura || null,
+                            piso: direccionGuardada.piso || null,
+                            dpto: direccionGuardada.dpto || null,
+                            ciudad: direccionGuardada.ciudad || null,
+                            provincia: direccionGuardada.provincia || null,
+                            cod_postal: direccionGuardada.cod_postal || null,
+                        };
+                        
+                        console.log(`📝 [VentasService] Usando dirección guardada ${data.id_direccion} para cliente ${idClienteFinal}`);
+                        await prisma.cliente.update({
+                            where: { id_usuario: idClienteFinal },
+                            data: updateData,
+                        });
+                        console.log(`✅ [VentasService] Dirección del cliente actualizada desde dirección guardada`);
+                    } catch (error: any) {
+                        console.warn(`⚠️ [VentasService] Error al obtener dirección guardada: ${error.message}. Usando datos de dirección proporcionados.`);
+                        // Si falla, continuar con la lógica de dirección normal
+                    }
+                }
+                
+                // Actualizar datos de dirección del cliente si se proporcionan (y no se usó id_direccion)
+                if (data.direccion && !data.id_direccion) {
+                    const updateData: any = {};
+                    
+                    if (data.direccion.direccion) {
+                        updateData.direccion = data.direccion.direccion;
+                    }
+                    if (data.direccion.altura) {
+                        updateData.altura = data.direccion.altura;
+                    }
+                    if (data.direccion.piso) {
+                        updateData.piso = data.direccion.piso;
+                    }
+                    if (data.direccion.dpto) {
+                        updateData.dpto = data.direccion.dpto;
+                    }
+                    if (data.direccion.ciudad) {
+                        updateData.ciudad = data.direccion.ciudad;
+                    }
+                    if (data.direccion.provincia) {
+                        updateData.provincia = data.direccion.provincia;
+                    }
+                    // Mejorar validación del código postal
+                    if (data.direccion.cod_postal !== undefined && 
+                        data.direccion.cod_postal !== null && 
+                        !isNaN(data.direccion.cod_postal) &&
+                        data.direccion.cod_postal > 0) {
+                        updateData.cod_postal = data.direccion.cod_postal;
+                        console.log(`📝 [VentasService] Código postal válido: ${data.direccion.cod_postal}`);
+                    } else if (data.direccion.cod_postal === null || data.direccion.cod_postal === undefined) {
+                        console.warn(`⚠️ [VentasService] Código postal no válido o faltante para cliente ${idClienteFinal}. Valor recibido: ${data.direccion.cod_postal}`);
+                    } else {
+                        console.warn(`⚠️ [VentasService] Código postal inválido (NaN o <= 0) para cliente ${idClienteFinal}. Valor recibido: ${data.direccion.cod_postal}`);
+                    }
+                    
+                    // Actualizar cliente si hay datos para actualizar
+                    if (Object.keys(updateData).length > 0) {
+                        console.log(`📝 [VentasService] Actualizando dirección del cliente ${idClienteFinal}:`, updateData);
+                        await prisma.cliente.update({
+                            where: { id_usuario: idClienteFinal },
+                            data: updateData,
+                        });
+                        console.log(`✅ [VentasService] Dirección del cliente actualizada`);
+                    } else {
+                        console.warn(`⚠️ [VentasService] No hay datos de dirección válidos para actualizar el cliente ${idClienteFinal}`);
+                    }
+                    
+                    // Actualizar teléfono del usuario si se proporciona
+                    if (data.direccion.telefono) {
+                        await prisma.usuarios.update({
+                            where: { id_usuario: idClienteFinal },
+                            data: { telefono: data.direccion.telefono },
+                        });
+                        console.log(`✅ [VentasService] Teléfono del usuario actualizado`);
+                    }
+                }
+            }
+
+            const createData: ICreateVentaDTO = {
+                id_cliente: idClienteFinal,
+                metodo_pago: metodoPagoNormalizado,
+                tipo_venta: 'online', // Siempre online desde checkout
+                observaciones: data.observaciones,
+                detalles: data.detalles.map((detalle) => ({
+                    id_prod: detalle.id_prod,
+                    cantidad: detalle.cantidad,
+                    precio_unitario: detalle.precio_unitario,
+                    descuento_aplicado: detalle.descuento_aplicado || 0,
+                })),
+            };
+
+            // Crear la venta (estado pendiente, sin descontar stock)
+            const venta = await this.create(createData, idUsuario);
+
+            // Si se proporcionó costo de envío, guardarlo en la tabla envios
+            if (data.costo_envio !== undefined && data.costo_envio !== null && data.costo_envio > 0) {
+                console.log(`📝 [VentasService] Guardando costo de envío: $${data.costo_envio}`);
+                
+                // Buscar si ya existe un registro de envío para esta venta
+                const envioExistente = await prisma.envios.findFirst({
+                    where: { id_venta: venta.id_venta },
+                });
+                
+                if (envioExistente) {
+                    // Actualizar el envío existente con el costo
+                    await prisma.envios.update({
+                        where: { id_envio: envioExistente.id_envio },
+                        data: {
+                            costo_envio: data.costo_envio,
+                        },
+                    });
+                    console.log(`✅ [VentasService] Costo de envío actualizado en envio existente`);
+                } else {
+                    // Crear un nuevo registro de envío con el costo
+                    await prisma.envios.create({
+                        data: {
+                            id_venta: venta.id_venta,
+                            empresa_envio: 'andreani',
+                            costo_envio: data.costo_envio,
+                            estado_envio: 'pendiente',
+                            fecha_envio: new Date(),
+                        },
+                    });
+                    console.log(`✅ [VentasService] Costo de envío guardado en nuevo registro de envio`);
+                }
+            }
+
+            // Emitir evento SALE_CREATED (venta creada desde checkout)
+            // Siempre emitir porque createFromCheckout crea ventas en estado pendiente
+            if (venta.estado_pago && venta.fecha) {
+                const event = SaleEventFactory.createSaleCreated({
+                    id_venta: venta.id_venta,
+                    estado_pago: venta.estado_pago as 'pendiente' | 'aprobado' | 'cancelado',
+                    fecha: venta.fecha.toISOString(),
+                });
+                await eventBus.emit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
+                    console.error('❌ [VentasService] Error al emitir evento SALE_CREATED:', error);
+                });
+            }
+
+            // Enviar emails según el método de pago
+            const isExternalPayment = metodoPagoNormalizado === 'efectivo' || metodoPagoNormalizado === 'transferencia';
+            
+            if (isExternalPayment) {
+                // Para pagos externos: enviar mail con datos bancarios + mail pendiente
+                this.sendPaymentInstructionsEmail(venta).catch((error) => {
+                    console.error('❌ Error al enviar email con datos bancarios:', error);
+                });
+                
+                this.sendPendingOrderEmail(venta).catch((error) => {
+                    console.error('❌ Error al enviar email de pedido pendiente:', error);
+                });
+            } else {
+                // Para Mercado Pago: solo enviar mail pendiente (el webhook confirmará después)
+                this.sendPendingOrderEmail(venta).catch((error) => {
+                    console.error('❌ Error al enviar email de pedido pendiente:', error);
+                });
+            }
+
+            return venta;
+        }
+
+    /**
+     * Normaliza el método de pago para mantener consistencia
+     * efectivo y transferencia se mantienen como están (son pagos externos)
+     */
+    private normalizePaymentMethod(metodo: string): 'efectivo' | 'transferencia' | 'mercadopago' | 'tarjeta_credito' | 'tarjeta_debito' | 'otro' {
+        const metodoLower = metodo.toLowerCase().trim();
+        
+        if (metodoLower === 'efectivo') return 'efectivo';
+        if (metodoLower === 'transferencia') return 'transferencia';
+        if (metodoLower === 'mercadopago' || metodoLower === 'mercado_pago' || metodoLower === 'mp') return 'mercadopago';
+        if (metodoLower === 'credito' || metodoLower === 'tarjeta_credito') return 'tarjeta_credito';
+        if (metodoLower === 'debito' || metodoLower === 'tarjeta_debito') return 'tarjeta_debito';
+        
+        return 'otro';
+    }
+
+    /**
+     * Envía email con instrucciones de pago (datos bancarios)
+     */
+    private async sendPaymentInstructionsEmail(venta: IVenta): Promise<void> {
+        try {
+            // Obtener email del usuario/cliente
+            let userEmail: string | null = null;
+            let userName: string = 'Cliente';
+            let userApellido: string = '';
+
+            if (venta.cliente?.usuario?.email) {
+                userEmail = venta.cliente.usuario.email;
+                userName = venta.cliente.usuario.nombre || 'Cliente';
+                userApellido = venta.cliente.usuario.apellido || '';
+            } else if (venta.usuario?.email) {
+                userEmail = venta.usuario.email;
+                userName = venta.usuario.nombre || 'Cliente';
+                userApellido = venta.usuario.apellido || '';
+            }
+
+            if (!userEmail) {
+                console.warn(`⚠️ [VentasService] No se encontró email para enviar instrucciones de pago (Venta #${venta.id_venta})`);
+                return;
+            }
+
+            await mailService.sendPaymentInstructions({
+                orderId: venta.id_venta,
+                total: venta.total_neto || 0,
+                totalFormatted: `$${(venta.total_neto || 0).toFixed(2)}`,
+                metodoPago: venta.metodo_pago || 'transferencia',
+                cliente: {
+                    email: userEmail,
+                    nombre: userName,
+                    apellido: userApellido,
+                },
+            });
+        } catch (error) {
+            console.error(`❌ [VentasService] Error al enviar email con instrucciones de pago:`, error);
+        }
+    }
+
+    /**
+     * Envía email de pedido pendiente
+     */
+    private async sendPendingOrderEmail(venta: IVenta): Promise<void> {
+        try {
+            // Obtener email del usuario/cliente
+            let userEmail: string | null = null;
+            let userName: string = 'Cliente';
+            let userApellido: string = '';
+
+            if (venta.cliente?.usuario?.email) {
+                userEmail = venta.cliente.usuario.email;
+                userName = venta.cliente.usuario.nombre || 'Cliente';
+                userApellido = venta.cliente.usuario.apellido || '';
+            } else if (venta.usuario?.email) {
+                userEmail = venta.usuario.email;
+                userName = venta.usuario.nombre || 'Cliente';
+                userApellido = venta.usuario.apellido || '';
+            }
+
+            if (!userEmail) {
+                console.warn(`⚠️ [VentasService] No se encontró email para enviar email pendiente (Venta #${venta.id_venta})`);
+                return;
+            }
+
+            const productos = venta.detalles?.map((detalle) => ({
+                nombre: detalle.producto?.nombre || 'Producto sin nombre',
+                cantidad: detalle.cantidad || 0,
+                precioUnitario: detalle.precio_unitario || 0,
+                subtotal: detalle.sub_total || 0,
+            })) || [];
+
+            await mailService.sendOrderPending({
+                orderId: venta.id_venta,
+                total: venta.total_neto || 0,
+                totalFormatted: `$${(venta.total_neto || 0).toFixed(2)}`,
+                fecha: venta.fecha || new Date(),
+                cliente: {
+                    email: userEmail,
+                    nombre: userName,
+                    apellido: userApellido,
+                },
+            });
+        } catch (error) {
+            console.error(`❌ [VentasService] Error al enviar email de pedido pendiente:`, error);
+        }
+    }
+
+    /**
+     * Envía email de cancelación de pedido
+     */
+    private async sendCancellationEmail(venta: IVenta): Promise<void> {
+        try {
+            // Obtener email del usuario/cliente
+            let userEmail: string | null = null;
+            let userName: string = 'Cliente';
+            let userApellido: string = '';
+
+            if (venta.cliente?.usuario?.email) {
+                userEmail = venta.cliente.usuario.email;
+                userName = venta.cliente.usuario.nombre || 'Cliente';
+                userApellido = venta.cliente.usuario.apellido || '';
+            } else if (venta.usuario?.email) {
+                userEmail = venta.usuario.email;
+                userName = venta.usuario.nombre || 'Cliente';
+                userApellido = venta.usuario.apellido || '';
+            }
+
+            if (!userEmail) {
+                console.warn(`⚠️ [VentasService] No se encontró email para enviar email de cancelación (Venta #${venta.id_venta})`);
+                return;
+            }
+
+            await mailService.sendOrderCancelled({
+                orderId: venta.id_venta,
+                orderNumber: `#${venta.id_venta}`,
+                cliente: {
+                    email: userEmail,
+                    nombre: userName,
+                    apellido: userApellido,
+                },
+            });
+        } catch (error) {
+            console.error(`❌ [VentasService] Error al enviar email de cancelación:`, error);
+        }
+    }
+
+    /**
+     * @deprecated Este método ya no se usa.
+     * Los emails se envían desde:
+     * - createFromCheckout(): envía email de pedido pendiente
+     * - confirmPayment() (payment-processing.service.ts): envía email de pago confirmado
+     * 
+     * Envía email de confirmación de pedido (no bloqueante)
+     */
+    private async sendOrderConfirmationEmail(venta: IVenta): Promise<void> {
+        try {
+            // Obtener email del usuario/cliente
+            let userEmail: string | null = null;
+            let userName: string = 'Cliente';
+            let userApellido: string = '';
+
+            if (venta.cliente?.usuario?.email) {
+                userEmail = venta.cliente.usuario.email;
+                userName = venta.cliente.usuario.nombre || 'Cliente';
+                userApellido = venta.cliente.usuario.apellido || '';
+            } else if (venta.usuario?.email) {
+                userEmail = venta.usuario.email;
+                userName = venta.usuario.nombre || 'Cliente';
+                userApellido = venta.usuario.apellido || '';
+            }
+
+            if (!userEmail) {
+                console.warn(`⚠️ [VentasService] No se encontró email para la venta #${venta.id_venta}`);
+                return;
+            }
+
+            // Determinar si es pago externo (efectivo/transferencia)
+            const isExternalPayment = venta.metodo_pago === 'efectivo' || venta.metodo_pago === 'transferencia';
+
+            // Formatear productos para el template
+            const productos = venta.detalles?.map((detalle) => ({
+                nombre: detalle.producto?.nombre || 'Producto sin nombre',
+                cantidad: detalle.cantidad || 0,
+                precioUnitario: detalle.precio_unitario || 0,
+                subtotal: detalle.sub_total || 0,
+            })) || [];
+
+            // Obtener etiqueta del método de pago
+            const metodoPagoLabels: Record<string, string> = {
+                efectivo: 'Efectivo (Pago en punto físico)',
+                transferencia: 'Transferencia Bancaria',
+                mercadopago: 'Mercado Pago',
+                tarjeta_credito: 'Tarjeta de Crédito',
+                tarjeta_debito: 'Tarjeta de Débito',
+                otro: 'Otro',
+            };
+
+            await mailService.sendOrderConfirmation({
+                orderId: venta.id_venta,
+                total: venta.total_neto || 0,
+                totalFormatted: `$${(venta.total_neto || 0).toFixed(2)}`,
+                fecha: venta.fecha || new Date(),
+                metodoPago: metodoPagoLabels[venta.metodo_pago || ''] || venta.metodo_pago || 'No especificado',
+                estadoPago: isExternalPayment ? 'reservado' : 'confirmado',
+                productos,
+                cliente: {
+                    email: userEmail,
+                    nombre: userName,
+                    apellido: userApellido,
+                },
+            });
+        } catch (error) {
+            console.error(`❌ [VentasService] Error al enviar email para venta #${venta.id_venta}:`, error);
+            // No lanzar error para no interrumpir el flujo
+        }
+    }
+
+    async update(id: number, data: IUpdateVentaDTO): Promise<IVenta> {
+        // 1. Obtener venta actual para comparar estados
+        const ventaActual = await this.getById(id);
+        const estadoPagoAnterior = ventaActual.estado_pago;
+        const estadoPagoNuevo = data.estado_pago;
+
+        // 2. Si el estado de pago cambió a 'aprobado' (y antes era 'pendiente'), ejecutar confirmación primero
+        if (
+            estadoPagoNuevo === 'aprobado' && 
+            estadoPagoAnterior !== 'aprobado' &&
+            estadoPagoAnterior === 'pendiente'
+        ) {
+            console.log(`🔄 [VentasService] Estado de pago cambió a aprobado para venta #${id}. Ejecutando confirmación de pago...`);
+            
+            try {
+                // Ejecutar confirmación de pago (bloqueante - si falla, lanzará error)
+                // confirmPayment ya actualiza el estado_pago a 'aprobado', descuenta stock, crea Andreani y envía mails
+                const ventaConfirmada = await paymentProcessingService.confirmPayment(id, {
+                    notas: 'Pago aprobado desde edición manual',
+                });
+
+                console.log(`✅ [VentasService] Pago confirmado exitosamente para venta #${id}`);
+
+                // Si hay otros campos para actualizar además del estado_pago (que ya se actualizó)
+                const camposAdicionales: any = {};
+                
+                // ⚠️ IMPORTANTE: NO sobrescribir estado_envio si Andreani ya lo estableció
+                // El estado_envio lo maneja Andreani automáticamente cuando hay un envío creado
+                // Solo actualizar si NO hay un envío creado (id_envio es null)
+                if (data.estado_envio && !ventaConfirmada.id_envio) {
+                    // Solo si no hay envío de Andreani, permitir actualización manual
+                    camposAdicionales.estado_envio = data.estado_envio;
+                }
+                
+                if (data.metodo_pago && data.metodo_pago !== ventaConfirmada.metodo_pago) {
+                    camposAdicionales.metodo_pago = data.metodo_pago;
+                }
+                if (data.observaciones !== undefined && data.observaciones !== ventaConfirmada.observaciones) {
+                    camposAdicionales.observaciones = data.observaciones;
+                }
+                if (data.id_envio !== undefined && data.id_envio !== ventaConfirmada.id_envio) {
+                    camposAdicionales.id_envio = data.id_envio;
+                }
+
+                // Si hay campos adicionales, actualizarlos
+                if (Object.keys(camposAdicionales).length > 0) {
+                    camposAdicionales.actualizado_en = new Date();
+                    await prisma.venta.update({
+                        where: { id_venta: id },
+                        data: camposAdicionales,
+                    });
+
+                    // Invalidar cache
+                    await cacheService.delete(`venta:${id}`);
+                    await cacheService.deletePattern('ventas:*');
+                }
+
+                // Retornar venta actualizada
+                return await this.getById(id);
+            } catch (error: any) {
+                console.error(`❌ [VentasService] Error al confirmar pago para venta #${id}:`, error);
+                // Lanzar error para que no se actualice la venta (rollback)
+                throw new Error(
+                    `Error al confirmar pago: ${error.message}. ` +
+                    `La venta no fue actualizada. Verifica el stock y los datos antes de intentar nuevamente.`
+                );
+            }
+        }
+
+        // 3. Si no es cambio a 'aprobado', actualizar normalmente
+        // ⚠️ IMPORTANTE: Solo actualizar estado_envio si no hay envío de Andreani
+        // El estado_envio lo maneja Andreani automáticamente cuando hay un envío creado
+        const updateData: any = {
+            estado_pago: data.estado_pago,
+            metodo_pago: data.metodo_pago,
+            observaciones: data.observaciones,
+            id_envio: data.id_envio,
+            actualizado_en: new Date(),
+        };
+        
+        // Solo actualizar estado_envio si no hay envío de Andreani
+        if (data.estado_envio && !ventaActual.id_envio) {
+            updateData.estado_envio = data.estado_envio;
+        } else if (!ventaActual.id_envio) {
+            // Si no hay envío y no se envía estado_envio, mantener el actual
+            updateData.estado_envio = ventaActual.estado_envio;
+        }
+        // Si hay id_envio, no tocamos estado_envio (lo maneja Andreani)
+        
+        const venta = await prisma.venta.update({
+            where: { id_venta: id },
+            data: updateData,
+        });
+
+        // Invalidar cache
+        await cacheService.delete(`venta:${id}`);
+        await cacheService.deletePattern('ventas:*');
+
+        return this.getById(id);
+    }
+
+    async delete(id: number): Promise<void> {
+        // Obtener venta antes de cancelar para enviar email
+        const venta = await this.getById(id);
+        
+        // Soft delete: marcar como cancelada en lugar de eliminar
+        await prisma.venta.update({
+            where: { id_venta: id },
+            data: {
+                estado_pago: 'cancelado',
+                estado_envio: 'cancelado',
+                actualizado_en: new Date(),
+            },
+        });
+
+        // Invalidar cache
+        await cacheService.delete(`venta:${id}`);
+        await cacheService.deletePattern('ventas:*');
+
+        // Enviar email de cancelación (no bloqueante)
+        if (venta) {
+            this.sendCancellationEmail(venta).catch((error) => {
+                console.error('❌ Error al enviar email de cancelación:', error);
+            });
+        }
+    }
+
+    async updateEstadoPago(id: number, estado: string): Promise<IVenta> {
+        const ventaAnterior = await this.getById(id);
+        const ventaActualizada = await this.update(id, { estado_pago: estado as any });
+        
+        // Si el estado cambió a 'cancelado', enviar email de cancelación
+        if (estado === 'cancelado' && ventaAnterior?.estado_pago !== 'cancelado') {
+            this.sendCancellationEmail(ventaActualizada).catch((error) => {
+                console.error('❌ Error al enviar email de cancelación:', error);
+            });
+        }
+        
+        return ventaActualizada;
+    }
+
+    async updateEstadoEnvio(id: number, estado: string): Promise<IVenta> {
+        return this.update(id, { estado_envio: estado as any });
+    }
+
+    /**
+     * Obtiene los pedidos del usuario autenticado
+     * Busca tanto en id_usuario como en id_cliente (ya que un cliente es un usuario que hizo una compra)
+     */
+    async getMyPedidos(idUsuario: string, filters: IVentaFilters = {}): Promise<IPaginatedResponse<IVenta>> {
+        const cacheKey = `ventas:my:${idUsuario}:${JSON.stringify(filters)}`;
+        
+        const cached = await cacheService.get<IPaginatedResponse<IVenta>>(cacheKey);
+        if (cached) {
+            console.log(`✅ Pedidos del usuario ${idUsuario} encontrados en cache`);
+            return cached;
+        }
+
+        const {
+            page = 1,
+            limit = 25,
+            order_by = 'fecha',
+            order = 'desc',
+            estado_pago,
+            estado_envio,
+        } = filters;
+
+        // Buscar ventas donde el usuario es el cliente (id_cliente = id_usuario)
+        // o donde el usuario es el vendedor (id_usuario = id_usuario)
+        const whereClause: any = {
+            OR: [
+                { id_cliente: idUsuario },
+                { id_usuario: idUsuario },
+            ],
+        };
+
+        // Aplicar filtros adicionales
+        if (estado_pago) whereClause.estado_pago = estado_pago;
+        if (estado_envio) whereClause.estado_envio = estado_envio;
+
+        // Ordenamiento
+        const orderBy: any = {};
+        if (order_by === 'fecha') orderBy.fecha = order;
+        else if (order_by === 'total_neto') orderBy.total_neto = order;
+        else if (order_by === 'creado_en') orderBy.creado_en = order;
+        else if (order_by === 'estado_pago') orderBy.estado_pago = order;
+        else orderBy.fecha = 'desc';
+
+        // Contar total
+        const total = await prisma.venta.count({ where: whereClause });
+
+        // Obtener datos con relaciones
+        const ventas = await prisma.venta.findMany({
+            where: whereClause,
+            orderBy,
+            skip: (page - 1) * limit,
+            take: limit,
+            include: {
+                cliente: {
+                    include: {
+                        usuarios: true,
+                    },
+                },
+                usuarios: true,
+                venta_detalle: {
+                    include: {
+                        productos: {
+                            include: {
+                                categoria: true,
+                                marca: true,
+                                grupo: true,
+                                iva: true,
+                            },
+                        },
+                    },
+                },
+                envios: true,
+            },
+        });
+
+        // Formatear respuesta
+        const formattedVentas: IVenta[] = ventas.map((venta: any) => ({
+            ...venta,
+            total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
+            total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
+            descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
+            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            metodo_pago: venta.metodo_pago as any,
+            estado_pago: venta.estado_pago as any,
+            estado_envio: venta.estado_envio as any,
+            tipo_venta: venta.tipo_venta as any,
+            usuario: venta.usuarios ? {
+                ...venta.usuarios,
+                estado: venta.usuarios.estado as any,
+            } : null,
+            cliente: venta.cliente ? {
+                ...venta.cliente,
+                usuario: venta.cliente.usuarios ? {
+                    ...venta.cliente.usuarios,
+                    estado: venta.cliente.usuarios.estado as any,
+                } : undefined,
+            } : null,
+            detalles: venta.venta_detalle.map((detalle: any) => ({
+                ...detalle,
+                precio_unitario: detalle.precio_unitario ? Number(detalle.precio_unitario) : null,
+                descuento_aplicado: detalle.descuento_aplicado ? Number(detalle.descuento_aplicado) : null,
+                sub_total: detalle.sub_total ? Number(detalle.sub_total) : null,
+                tipo_descuento: detalle.tipo_descuento as any,
+                producto: detalle.productos ? {
+                    ...detalle.productos,
+                } : null,
+            })),
+            envio: venta.envios && venta.envios.length > 0 ? {
+                ...venta.envios[0],
+                costo_envio: venta.envios[0].costo_envio ? Number(venta.envios[0].costo_envio) : null,
+                estado_envio: venta.envios[0].estado_envio as any,
+                // Número de seguimiento (número de pre-envío)
+                codigoTracking: venta.envios[0].cod_seguimiento,
+                numeroSeguimiento: venta.envios[0].cod_seguimiento, // Alias para claridad
+                // URLs para consultar
+                // Pre-envío (siempre funciona)
+                preEnvioUrl: venta.envios[0].cod_seguimiento 
+                    ? `/api/andreani/pre-envios/${venta.envios[0].cod_seguimiento}`
+                    : null,
+                // Envío real (solo funciona cuando fue aceptado)
+                envioUrl: venta.envios[0].cod_seguimiento
+                    ? `/api/andreani/envios/${venta.envios[0].cod_seguimiento}/estado`
+                    : null,
+                // Trazas del envío (solo funciona cuando fue aceptado)
+                trazasUrl: venta.envios[0].cod_seguimiento
+                    ? `/api/andreani/envios/${venta.envios[0].cod_seguimiento}/trazas`
+                    : null,
+            } : null,
+        }));
+
+        const result: IPaginatedResponse<IVenta> = {
+            data: formattedVentas,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+        };
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_LISTA);
+
+        return result;
+    }
+}
+

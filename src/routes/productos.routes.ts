@@ -54,11 +54,12 @@ router.patch('/:id/stock',
     productosController.updateStock.bind(productosController)
 );
 
-// ⭐ NUEVO: Toggle destacado
 // PATCH /api/products/:id/destacado
 router.patch('/:id/destacado', 
     validarProductoActivo,
     productosController.toggleDestacado.bind(productosController)
 );
+
+//! AGREGAR PRODUCTOS EN OFERTA
 
 export default router;
