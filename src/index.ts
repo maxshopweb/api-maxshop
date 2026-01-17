@@ -8,19 +8,21 @@ import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import apiRoutes from './routes/api.routes';
 import redisClient from './config/redis.config';
+
 import { websocketServer } from './infrastructure/websocket/websocket.server';
 
 // Cargar variables de entorno primero
 dotenv.config();
 
 // Inicializar Brevo Client (se ejecuta el constructor y muestra el estado)
-import './mail';
+// Solo cargar en desarrollo local
+if (process.env.VERCEL !== '1') {
+    import('./mail');
+}
 
 export const prisma = new PrismaClient();
 
 const app: Application = express();
-const httpServer = createServer(app);
-const PORT = process.env.PORT || 3000;
 
 app.use(helmet());
 app.use(cors({
@@ -40,42 +42,51 @@ app.use(cookieParser());
 
 app.use('/api', apiRoutes);
 
-const startServer = async () => {
-    try {
-        await prisma.$connect();
-        console.log('✅ Conectado a la base de datos');
+// Exportar app para Vercel Serverless
+export default app;
 
-        // await redisClient.ping();
-        console.log('✅ Conectado a Redis');
+// Solo iniciar servidor local si no está en Vercel
+if (process.env.VERCEL !== '1') {
+    const httpServer = createServer(app);
+    const PORT = process.env.PORT || 3000;
 
-        // Inicializar WebSocket Server
-        websocketServer.initialize(httpServer);
+    const startServer = async () => {
+        try {
+            await prisma.$connect();
+            console.log('✅ Conectado a la base de datos');
 
-        httpServer.listen(PORT, () => {
-            console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
-            console.log(`📡 WebSocket disponible en ws://localhost:${PORT}/ws`);
-        });
-    } catch (error) {
-        console.error('❌ Error al iniciar el servidor:', error);
-        process.exit(1);
-    }
-};
+            // await redisClient.ping();
+            console.log('✅ Conectado a Redis');
 
-process.on('SIGINT', async () => {
-    console.log('\n🛑 Cerrando servidor...');
-    
-    // Cerrar WebSocket Server
-    websocketServer.close();
-    
-    // Cerrar Event Bus (cierra conexiones Redis)
-    const { eventBus } = require('./infrastructure/event-bus/event-bus');
-    await eventBus.close();
-    
-    await prisma.$disconnect();
-    // await redisClient.quit();
-    
-    console.log('👋 Servidor detenido');
-    process.exit(0);
-});
+            // Inicializar WebSocket Server
+            websocketServer.initialize(httpServer);
 
-startServer();
+            httpServer.listen(PORT, () => {
+                console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+                console.log(`📡 WebSocket disponible en ws://localhost:${PORT}/ws`);
+            });
+        } catch (error) {
+            console.error('❌ Error al iniciar el servidor:', error);
+            process.exit(1);
+        }
+    };
+
+    process.on('SIGINT', async () => {
+        console.log('\n🛑 Cerrando servidor...');
+        
+        // Cerrar WebSocket Server
+        websocketServer.close();
+        
+        // Cerrar Event Bus (cierra conexiones Redis)
+        const { eventBus } = require('./infrastructure/event-bus/event-bus');
+        await eventBus.close();
+        
+        await prisma.$disconnect();
+        // await redisClient.quit();
+        
+        console.log('👋 Servidor detenido');
+        process.exit(0);
+    });
+
+    startServer();
+}
