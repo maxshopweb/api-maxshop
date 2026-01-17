@@ -24,6 +24,16 @@ router.post(
     ventasController.createFromCheckout.bind(ventasController)
 );
 
+// Ruta para confirmar pago manual (requiere autenticación)
+router.post(
+    '/:id/confirmar-pago',
+    verifyFirebaseToken,
+    requireAuthenticatedUser,
+    loadUserFromDatabase,
+    // TODO: Agregar middleware de autorización para admin si lo tienes
+    ventasController.confirmarPago.bind(ventasController)
+);
+
 // Rutas CRUD generales
 router.get('/', ventasController.getAll.bind(ventasController));
 router.get('/:id', ventasController.getById.bind(ventasController));

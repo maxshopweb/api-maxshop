@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { VentasService } from '../services/ventas.service';
+import { paymentProcessingService } from '../services/payment-processing.service';
 import { IApiResponse } from '../types';
 import { IVentaFilters, ICreateVentaDTO, IUpdateVentaDTO } from '../types';
 
@@ -289,7 +290,24 @@ export class VentasController {
 
             // Validar que los productos existan y tengan stock
             for (const detalle of data.detalles) {
-                if (!detalle.id_prod || !detalle.cantidad || !detalle.precio_unitario) {
+                // Validar que id_prod exista y no sea null/undefined
+                if (detalle.id_prod === undefined || detalle.id_prod === null) {
+                    res.status(400).json({
+                        success: false,
+                        error: 'Todos los detalles deben tener id_prod, cantidad y precio_unitario'
+                    });
+                    return;
+                }
+                // Validar que cantidad exista y sea mayor a 0
+                if (detalle.cantidad === undefined || detalle.cantidad === null || detalle.cantidad <= 0) {
+                    res.status(400).json({
+                        success: false,
+                        error: 'Todos los detalles deben tener id_prod, cantidad y precio_unitario'
+                    });
+                    return;
+                }
+                // Validar que precio_unitario exista (puede ser 0 para productos gratuitos)
+                if (detalle.precio_unitario === undefined || detalle.precio_unitario === null) {
                     res.status(400).json({
                         success: false,
                         error: 'Todos los detalles deben tener id_prod, cantidad y precio_unitario'
@@ -312,6 +330,55 @@ export class VentasController {
             res.status(400).json({
                 success: false,
                 error: error.message || 'Error al crear pedido'
+            });
+        }
+    }
+
+    /**
+     * Confirma el pago de una venta (para pagos manuales de efectivo/transferencia)
+     * Requiere autenticación y rol de admin
+     */
+    async confirmarPago(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(req.params.id);
+            const { notas } = req.body; // Notas opcionales del admin
+
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido'
+                });
+                return;
+            }
+
+            // Confirmar pago usando el servicio centralizado
+            const venta = await paymentProcessingService.confirmPayment(id, {
+                notas: notas || 'Pago confirmado manualmente por administrador',
+            });
+
+            const response: IApiResponse = {
+                success: true,
+                data: venta,
+                message: 'Pago confirmado exitosamente. Stock descontado y orden de envío creada.'
+            };
+
+            res.json(response);
+        } catch (error: any) {
+            console.error('❌ Error en confirmarPago:', error);
+            
+            // Determinar código de estado apropiado
+            let statusCode = 400;
+            if (error.message?.includes('no encontrada')) {
+                statusCode = 404;
+            } else if (error.message?.includes('ya está aprobada')) {
+                statusCode = 200; // Idempotente, no es error
+            } else if (error.message?.includes('Stock insuficiente')) {
+                statusCode = 409; // Conflict
+            }
+
+            res.status(statusCode).json({
+                success: false,
+                error: error.message || 'Error al confirmar pago'
             });
         }
     }

@@ -10,28 +10,39 @@ export class MarcasService {
                 nombre: 'asc'
             }
         });
-        return marcas as IMarca[];
+        return marcas.map(marca => ({
+            ...marca,
+            nombre: marca.nombre ? marca.nombre.toUpperCase() : marca.nombre
+        })) as IMarca[];
     }
 
     async getById(id: number): Promise<IMarca | null> {
         const marca = await prisma.marca.findFirst({
             where: { id_marca: id }
         });
-        return marca as IMarca | null;
+        if (!marca) return null;
+        return {
+            ...marca,
+            nombre: marca.nombre ? marca.nombre.toUpperCase() : marca.nombre
+        } as IMarca;
     }
 
     async getByCodigo(codi_marca: string): Promise<IMarca | null> {
         const marca = await prisma.marca.findUnique({
             where: { codi_marca }
         });
-        return marca as IMarca | null;
+        if (!marca) return null;
+        return {
+            ...marca,
+            nombre: marca.nombre ? marca.nombre.toUpperCase() : marca.nombre
+        } as IMarca;
     }
 
     async create(data: ICreateMarcaDTO): Promise<IMarca> {
         const nuevaMarca = await prisma.marca.create({
             data: {
                 codi_marca: data.codi_marca,
-                nombre: data.nombre,
+                nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
                 descripcion: data.descripcion 
             }
         });
@@ -42,7 +53,7 @@ export class MarcasService {
         const marcaActualizada = await prisma.marca.update({
             where: { id_marca: id },
             data: {
-                nombre: data.nombre,
+                nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
                 descripcion: data.descripcion  
             }
         });

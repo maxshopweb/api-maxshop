@@ -425,6 +425,398 @@ export class AuthService {
       estado: userRecord.estado ?? null
     };
   }
+
+  async checkEmailExists(email: string): Promise<{ exists: boolean; isGuest: boolean }> {
+    if (!email || !email.trim()) {
+      return { exists: false, isGuest: false };
+    }
+
+    try {
+      const userRecord = await prisma.usuarios.findFirst({
+        where: {
+          email: email.trim()
+        },
+        select: {
+          email: true,
+          es_anonimo: true
+        }
+      });
+
+      if (!userRecord) {
+        return { exists: false, isGuest: false };
+      }
+
+      return {
+        exists: true,
+        isGuest: userRecord.es_anonimo === true
+      };
+    } catch (error) {
+      // Si hay un error de schema (campo no existe), intentar sin email_no_verificado
+      // Esto es un fallback para bases de datos que aún no tienen la migración
+      try {
+        const userRecord = await prisma.usuarios.findFirst({
+          where: {
+            email: email.trim()
+          },
+          select: {
+            email: true,
+            es_anonimo: true
+          }
+        });
+
+        return {
+          exists: !!userRecord,
+          isGuest: userRecord?.es_anonimo === true || false
+        };
+      } catch (fallbackError) {
+        // Si aún falla, retornar que no existe para no bloquear el flujo
+        console.error('Error al verificar email:', error);
+        return { exists: false, isGuest: false };
+      }
+    }
+  }
+
+  async registerGuest(input: {
+    idToken: string;
+    email: string;
+    nombre: string;
+    apellido?: string;
+    telefono?: string;
+    ip?: string;
+    userAgent?: string;
+    endpoint?: string;
+  }): Promise<AuthOperationResult> {
+    const start = performance.now();
+
+    const decodedToken = await this.verifyFirebaseToken(input.idToken);
+    const firebaseUid = decodedToken.uid;
+
+    // Verificar que el token sea de un usuario anónimo
+    // Los usuarios anónimos no tienen email en el token
+    // Además, verificamos que no exista un usuario permanente con este UID
+    if (decodedToken.email) {
+      // Si el token tiene email, no es anónimo (a menos que sea temporal)
+      // Intentar verificar si es usuario permanente, pero si el campo no existe, continuar
+      try {
+        const existingUser = await prisma.usuarios.findFirst({
+          where: {
+            id_usuario: firebaseUid
+          },
+          select: {
+            id_usuario: true,
+            es_anonimo: true
+          }
+        });
+
+        if (existingUser && existingUser.es_anonimo === false) {
+          throw new Error('Este usuario ya está registrado como usuario permanente.');
+        }
+      } catch (error) {
+        // Si hay error por campo no existente, continuar (la migración se ejecutará después)
+        if (error instanceof Error && error.message.includes('column') && error.message.includes('does not exist')) {
+          // Campo no existe aún, continuar
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const email = sanitizeString(input.email.trim());
+    if (!email) {
+      throw new Error('El email es requerido.');
+    }
+
+    // Verificar que el email NO exista en la BD
+    const emailCheck = await this.checkEmailExists(email);
+    if (emailCheck.exists && !emailCheck.isGuest) {
+      throw new Error('Este email ya está registrado. Por favor, inicia sesión en su lugar.');
+    }
+
+    // Si existe como invitado, actualizar en lugar de crear
+    let userRecord = await prisma.usuarios.findFirst({
+      where: {
+        OR: [
+          { id_usuario: firebaseUid },
+          { email: email }
+        ]
+      },
+      include: {
+        roles: true
+      }
+    });
+
+    const previousUser = userRecord ? this.mapUser(userRecord) : null;
+    const { id: roleId } = await this.resolveRoleId('USER'); // Usar USER como rol base, se puede cambiar después
+
+    // Buscar o crear rol INVITADO
+    let guestRole = await prisma.roles.findFirst({
+      where: {
+        nombre: {
+          equals: 'INVITADO',
+          mode: 'insensitive'
+        }
+      }
+    });
+
+    if (!guestRole) {
+      guestRole = await prisma.roles.create({
+        data: {
+          nombre: 'INVITADO',
+          descripcion: 'Usuario invitado (checkout sin registro)'
+        }
+      });
+    }
+
+    const nombre = sanitizeString(input.nombre);
+    const apellido = sanitizeString(input.apellido ?? null);
+    const telefono = parseTelefono(input.telefono ?? null);
+    const loginIp = sanitizeString(input.ip ?? null);
+
+    let created = false;
+
+    // Preparar datos para crear/actualizar
+    const updateData: any = {
+      email: email, // Email siempre tiene valor
+      nombre,
+      apellido,
+      telefono,
+      es_anonimo: true,
+      estado: 1, // Estado 1 = invitado
+      id_rol: guestRole.id_rol,
+      ultimo_login: new Date(),
+      login_ip: loginIp,
+      actualizado_en: new Date()
+    };
+
+    // Intentar agregar email_no_verificado si existe en la BD
+    // Si no existe, se ignorará y funcionará con el esquema antiguo
+    try {
+      updateData.email_no_verificado = true;
+    } catch (e) {
+      // Campo no existe aún, continuar sin él
+    }
+
+    if (userRecord) {
+      // Actualizar usuario invitado existente
+      try {
+        userRecord = await prisma.usuarios.update({
+          where: { id_usuario: userRecord.id_usuario },
+          data: updateData,
+          include: {
+            roles: true
+          }
+        });
+      } catch (error) {
+        // Si falla por campo no existente, intentar sin email_no_verificado
+        if (error instanceof Error && (error.message.includes('Unknown argument') || error.message.includes('does not exist'))) {
+          const { email_no_verificado, ...dataWithoutField } = updateData;
+          userRecord = await prisma.usuarios.update({
+            where: { id_usuario: userRecord.id_usuario },
+            data: dataWithoutField,
+            include: {
+              roles: true
+            }
+          });
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      // Crear nuevo usuario invitado
+      const createData: any = {
+        id_usuario: firebaseUid,
+        email: email, // Email siempre tiene valor (incluso para invitados)
+        nombre,
+        apellido,
+        telefono,
+        username: email.split('@')[0],
+        es_anonimo: true,
+        estado: 1, // Estado 1 = invitado
+        id_rol: guestRole.id_rol,
+        activo: true,
+        creado_en: new Date(),
+        ultimo_login: new Date(),
+        login_ip: loginIp,
+        actualizado_en: new Date()
+      };
+
+      // Intentar agregar email_no_verificado si existe
+      try {
+        createData.email_no_verificado = true;
+      } catch (e) {
+        // Campo no existe aún
+      }
+
+      try {
+        userRecord = await prisma.usuarios.create({
+          data: createData,
+          include: {
+            roles: true
+          }
+        });
+        created = true;
+      } catch (error) {
+        // Si falla por campo no existente, intentar sin email_no_verificado
+        if (error instanceof Error && (error.message.includes('Unknown argument') || error.message.includes('does not exist'))) {
+          const { email_no_verificado, ...dataWithoutField } = createData;
+          userRecord = await prisma.usuarios.create({
+            data: dataWithoutField,
+            include: {
+              roles: true
+            }
+          });
+          created = true;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const mappedUser = this.mapUser(userRecord);
+    const processingTime = performance.now() - start;
+
+    await auditService.record({
+      action: 'AUTH_REGISTER_GUEST',
+      description: `Registro de usuario invitado ${mappedUser.email || email}`,
+      previousData: previousUser,
+      currentData: mappedUser,
+      userAgent: input.userAgent ?? null,
+      endpoint: input.endpoint ?? null,
+      status: 'SUCCESS',
+      userId: userRecord.id_usuario,
+      processingTimeMs: processingTime
+    });
+
+    return {
+      user: mappedUser,
+      created,
+      roleId: userRecord.id_rol ?? null,
+      estado: userRecord.estado ?? null
+    };
+  }
+
+  async convertGuestToUser(input: {
+    idToken: string;
+    password: string;
+    email: string;
+    ip?: string;
+    userAgent?: string;
+    endpoint?: string;
+  }): Promise<AuthOperationResult> {
+    const start = performance.now();
+
+    const decodedToken = await this.verifyFirebaseToken(input.idToken);
+    const firebaseUid = decodedToken.uid;
+
+    // Buscar usuario invitado
+    const userRecord = await prisma.usuarios.findFirst({
+      where: {
+        id_usuario: firebaseUid,
+        es_anonimo: true
+      },
+      include: {
+        roles: true
+      }
+    });
+
+    if (!userRecord) {
+      throw new Error('Usuario invitado no encontrado o ya fue convertido.');
+    }
+
+    if (userRecord.estado !== 1) {
+      throw new Error('El usuario no está en estado de invitado.');
+    }
+
+    const email = sanitizeString(input.email.trim());
+    if (!email) {
+      throw new Error('El email es requerido.');
+    }
+
+    // Verificar que el email no esté en uso por otro usuario
+    const emailCheck = await this.checkEmailExists(email);
+    if (emailCheck.exists && !emailCheck.isGuest) {
+      const existingUser = await prisma.usuarios.findFirst({
+        where: {
+          email: email,
+          id_usuario: { not: firebaseUid }
+        }
+      });
+
+      if (existingUser) {
+        throw new Error('Este email ya está registrado por otro usuario.');
+      }
+    }
+
+    const previousUser = this.mapUser(userRecord);
+
+    // Resolver rol USER
+    const { id: userRoleId } = await this.resolveRoleId('USER');
+
+    // Actualizar usuario: convertir de invitado a permanente
+    const updateData: any = {
+      email: email, // Email verificado (se verifica en frontend con linkWithCredential)
+      es_anonimo: false,
+      estado: 3, // Estado 3 = usuario completo
+      id_rol: userRoleId,
+      ultimo_login: new Date(),
+      login_ip: sanitizeString(input.ip ?? null),
+      actualizado_en: new Date()
+    };
+
+    // Intentar agregar email_no_verificado si existe
+    try {
+      updateData.email_no_verificado = false; // Email ahora está verificado
+    } catch (e) {
+      // Campo no existe aún
+    }
+
+    let updatedUser;
+    try {
+      updatedUser = await prisma.usuarios.update({
+        where: { id_usuario: firebaseUid },
+        data: updateData,
+        include: {
+          roles: true
+        }
+      });
+    } catch (error) {
+      // Si falla por campo no existente, intentar sin email_no_verificado
+      if (error instanceof Error && (error.message.includes('Unknown argument') || error.message.includes('does not exist'))) {
+        const { email_no_verificado, ...dataWithoutField } = updateData;
+        updatedUser = await prisma.usuarios.update({
+          where: { id_usuario: firebaseUid },
+          data: dataWithoutField,
+          include: {
+            roles: true
+          }
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    const mappedUser = this.mapUser(updatedUser);
+    const processingTime = performance.now() - start;
+
+    await auditService.record({
+      action: 'AUTH_CONVERT_GUEST',
+      description: `Conversión de invitado a usuario permanente ${mappedUser.email}`,
+      previousData: previousUser,
+      currentData: mappedUser,
+      userAgent: input.userAgent ?? null,
+      endpoint: input.endpoint ?? null,
+      status: 'SUCCESS',
+      userId: updatedUser.id_usuario,
+      processingTimeMs: processingTime
+    });
+
+    return {
+      user: mappedUser,
+      created: false,
+      roleId: updatedUser.id_rol ?? null,
+      estado: updatedUser.estado ?? null
+    };
+  }
 }
 
 export const authService = new AuthService();

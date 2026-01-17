@@ -174,7 +174,7 @@ export class ClientesService {
             where: { id_usuario: id },
             include: {
                 usuarios: true,
-                venta_cliente: {
+                venta: {
                     include: {
                         venta_detalle: {
                             include: {
@@ -217,7 +217,7 @@ export class ClientesService {
                 img: cliente.usuarios.img,
                 nacimiento: cliente.usuarios.nacimiento,
             } : undefined,
-            ventas: cliente.venta_cliente.map((venta) => ({
+            ventas: cliente.venta.map((venta: any) => ({
                 id_venta: venta.id_venta,
                 fecha: venta.fecha,
                 total_neto: Number(venta.total_neto),

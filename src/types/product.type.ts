@@ -59,7 +59,8 @@ export interface IProductoFilters {
     financiacion?: boolean;
     stock_bajo?: boolean;
     busqueda?: string;
-    estado?: EstadoGeneral;
+    estado?: EstadoGeneral; // Solo para admin: 1 = activo, 2 = inactivo (NUNCA 0 = eliminado)
+    activo?: string; // Filtro por publicar/despublicar: "A" = publicado, "I" = despublicado
     page?: number;
     limit?: number;
     order_by?: 'precio' | 'nombre' | 'creado_en' | 'stock';

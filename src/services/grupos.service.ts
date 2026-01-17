@@ -30,28 +30,39 @@ export class GruposService {
                 nombre: 'asc'
             }
         });
-        return grupos as IGrupo[];
+        return grupos.map(grupo => ({
+            ...grupo,
+            nombre: grupo.nombre ? grupo.nombre.toUpperCase() : grupo.nombre
+        })) as IGrupo[];
     }
 
     async getById(id: number): Promise<IGrupo | null> {
         const grupo = await prisma.grupo.findFirst({
             where: { id_grupo: id }
         });
-        return grupo as IGrupo | null;
+        if (!grupo) return null;
+        return {
+            ...grupo,
+            nombre: grupo.nombre ? grupo.nombre.toUpperCase() : grupo.nombre
+        } as IGrupo;
     }
 
     async getByCodigo(codi_grupo: string): Promise<IGrupo | null> {
         const grupo = await prisma.grupo.findUnique({
             where: { codi_grupo }
         });
-        return grupo as IGrupo | null;
+        if (!grupo) return null;
+        return {
+            ...grupo,
+            nombre: grupo.nombre ? grupo.nombre.toUpperCase() : grupo.nombre
+        } as IGrupo;
     }
 
     async create(data: ICreateGrupoDTO): Promise<IGrupo> {
         const nuevoGrupo = await prisma.grupo.create({
             data: {
                 codi_grupo: data.codi_grupo,
-                nombre: data.nombre,
+                nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
                 descripcion: data.descripcion,
                 activo: true
             }
@@ -63,7 +74,7 @@ export class GruposService {
         const grupoActualizado = await prisma.grupo.update({
             where: { id_grupo: id },
             data: {
-                nombre: data.nombre,
+                nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
                 descripcion: data.descripcion,
                 activo: data.activo,
                 actualizado_en: new Date()
@@ -76,7 +87,7 @@ export class GruposService {
         const grupoActualizado = await prisma.grupo.update({
             where: { codi_grupo },
             data: {
-                nombre: data.nombre,
+                nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
                 descripcion: data.descripcion,
                 activo: data.activo,
                 actualizado_en: new Date()

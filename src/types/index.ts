@@ -229,6 +229,9 @@ export interface IEnvios {
     fecha_envio?: Date | null;
     fecha_entrega?: Date | null;
     observaciones?: string | null;
+    // URLs de consulta (agregadas en el servicio)
+    consultaUrl?: string | null;
+    trackingUrl?: string | null;
     // Relaciones
     venta?: IVenta | null;
 }
@@ -262,6 +265,7 @@ export interface ICreateVentaDTO {
     tipo_venta: TipoVenta;
     observaciones?: string;
     detalles: IVentaDetalleDTO[];
+    costo_envio?: number; // Costo del envío calculado desde cotización
 }
 
 export interface IVentaDetalleDTO {
@@ -289,6 +293,10 @@ export interface IPaginatedResponse<T = any> {
     page: number;
     limit: number;
     totalPages: number;
+    priceRange?: {
+        min: number;
+        max: number;
+    };
 }
 
 // =======================================

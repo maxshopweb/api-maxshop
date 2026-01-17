@@ -5,14 +5,21 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+import { createServer } from 'http';
 import apiRoutes from './routes/api.routes';
 import redisClient from './config/redis.config';
+import { websocketServer } from './infrastructure/websocket/websocket.server';
 
+// Cargar variables de entorno primero
 dotenv.config();
+
+// Inicializar Brevo Client (se ejecuta el constructor y muestra el estado)
+import './mail';
 
 export const prisma = new PrismaClient();
 
 const app: Application = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3000;
 
 app.use(helmet());
@@ -22,7 +29,7 @@ app.use(cors({
         'http://localhost:3000',
         'http://192.168.0.13:3000'
     ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
@@ -41,8 +48,12 @@ const startServer = async () => {
         // await redisClient.ping();
         console.log('✅ Conectado a Redis');
 
-        app.listen(PORT, () => {
+        // Inicializar WebSocket Server
+        websocketServer.initialize(httpServer);
+
+        httpServer.listen(PORT, () => {
             console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+            console.log(`📡 WebSocket disponible en ws://localhost:${PORT}/ws`);
         });
     } catch (error) {
         console.error('❌ Error al iniciar el servidor:', error);
@@ -51,9 +62,19 @@ const startServer = async () => {
 };
 
 process.on('SIGINT', async () => {
+    console.log('\n🛑 Cerrando servidor...');
+    
+    // Cerrar WebSocket Server
+    websocketServer.close();
+    
+    // Cerrar Event Bus (cierra conexiones Redis)
+    const { eventBus } = require('./infrastructure/event-bus/event-bus');
+    await eventBus.close();
+    
     await prisma.$disconnect();
     // await redisClient.quit();
-    console.log('\n👋 Servidor detenido');
+    
+    console.log('👋 Servidor detenido');
     process.exit(0);
 });
 

@@ -13,6 +13,41 @@ export class ProductosService {
     private TTL_DESTACADOS = 900;     // 15 minutos
     private TTL_CONTENIDO_CREAR = 7200; // 2 horas (marcas, categorías, etc)
 
+    // Función auxiliar para convertir nombre a mayúsculas
+    private normalizeProducto(producto: any): IProductos {
+        const normalized: any = {
+            ...producto,
+            nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre
+        };
+        
+        // Normalizar nombres de relaciones si existen
+        if (normalized.categoria && normalized.categoria.nombre) {
+            normalized.categoria = {
+                ...normalized.categoria,
+                nombre: normalized.categoria.nombre.toUpperCase()
+            };
+        }
+        if (normalized.marca && normalized.marca.nombre) {
+            normalized.marca = {
+                ...normalized.marca,
+                nombre: normalized.marca.nombre.toUpperCase()
+            };
+        }
+        if (normalized.grupo && normalized.grupo.nombre) {
+            normalized.grupo = {
+                ...normalized.grupo,
+                nombre: normalized.grupo.nombre.toUpperCase()
+            };
+        }
+        
+        return normalized as IProductos;
+    }
+
+    // Función auxiliar para normalizar array de productos
+    private normalizeProductos(productos: any[]): IProductos[] {
+        return productos.map(p => this.normalizeProducto(p));
+    }
+
     async getAll(filters: IProductoFilters): Promise<IPaginatedResponse<IProductos>> {
         // Generar clave de cache basada en los filtros
         const cacheKey = `productos:all:${JSON.stringify(filters)}`;
@@ -31,6 +66,7 @@ export class ProductosService {
             order_by = 'creado_en',
             order = 'desc',
             estado,
+            activo,
             busqueda,
             id_subcat,
             id_cat,
@@ -45,23 +81,62 @@ export class ProductosService {
         // Construir el where dinámicamente
         const whereClause: any = {};
 
-        // ⭐ IMPORTANTE: Solo productos activos (excluir eliminados)
-        // Si se proporciona estado explícitamente, usarlo; sino, solo activos
-        if (estado !== undefined) {
-            whereClause.estado = estado;
-        } else {
-            whereClause.estado = 1; // Por defecto, solo activos
-        }
-
-        // ⚠️ VALIDACIÓN TEMPORAL: Solo productos con imagen principal (no null y no vacío)
-        // Esta validación se aplica SIEMPRE, con o sin otros filtros
+        // ⭐ IMPORTANTE: Manejo de estado y activo
+        // - estado: 0 = eliminado (soft delete) - NUNCA traer
+        // - estado: 1 = activo normal
+        // - estado: 2 = inactivo normal
+        // - activo: "A" = publicado, "I" = despublicado
+        // - Siempre excluir productos eliminados (estado: 0)
+        
+        // SIEMPRE excluir eliminados (estado: 0)
+        // Inicializar AND si no existe
         if (!whereClause.AND) {
             whereClause.AND = [];
         }
-        // whereClause.AND.push(
-        //     { img_principal: { not: null } },
-        //     { img_principal: { not: { equals: '' } } }
-        // );
+        whereClause.AND.push({ estado: { not: 0 } });
+
+        // Filtro por activo (activo/inactivo: "A" o "I")
+        // Este es el filtro principal para admin
+        if (activo !== undefined && activo !== null && activo !== '') {
+            whereClause.activo = activo.toUpperCase(); // Asegurar mayúsculas para consistencia
+            console.log(`🔍 [Filtro] Aplicando filtro activo: ${activo.toUpperCase()}`);
+        }
+
+        // Filtro por estado (solo para admin ver activos/inactivos, nunca eliminados)
+        // Si se pasa estado explícitamente, usarlo
+        if (estado !== undefined && estado !== null) {
+            // Admin puede filtrar por estado 1 o 2 (nunca 0)
+            if (estado === 1 || estado === 2) {
+                whereClause.estado = estado;
+            }
+        }
+        // Si NO se pasa estado NI activo, traer todos los estados excepto eliminados (0)
+        // Esto permite que admin vea todos los productos (activos e inactivos)
+        // El filtro AND ya excluye estado=0, así que no necesitamos forzar estado=1
+
+        // ⚠️ FILTRO TEMPORAL: Solo categoría 51 y productos con imagen principal
+
+        //! TEMPORAL SOLO TRAEMOS PRODUCOTS INGCO
+        // Buscar la categoría con id_cat = 51 para obtener su codi_categoria
+        const categoria51 = await prisma.categoria.findFirst({ 
+            where: { id_cat: 51 },
+            select: { codi_categoria: true }
+        });
+        
+        // Si existe la categoría, usar su código; si no, usar '51' directamente
+        const codiCategoria51 = categoria51?.codi_categoria || '51';
+        
+        // Filtrar por categoría 51
+        whereClause.AND.push(
+            { codi_categoria: codiCategoria51 }
+        );
+        
+        //! TEMPORAL SOLO TRAEMOS PRODUCOTS INGCO CON IMAGEN
+        // Solo productos con imagen principal (no null y no vacío)
+        whereClause.AND.push(
+            { img_principal: { not: null } },
+            { img_principal: { not: { equals: '' } } }
+        );
 
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
@@ -156,8 +231,8 @@ export class ProductosService {
             }
         }
 
-        // Ejecutar queries en paralelo
-        const [productos, total] = await Promise.all([
+        // Ejecutar queries en paralelo (incluyendo agregación de precios)
+        const [productos, total, priceStats] = await Promise.all([
             prisma.productos.findMany({
                 where: whereClause,
                 include: {
@@ -172,7 +247,13 @@ export class ProductosService {
                 skip: (page - 1) * limit,
                 take: limit,
             }),
-            prisma.productos.count({ where: whereClause })
+            prisma.productos.count({ where: whereClause }),
+            // Agregación para obtener precio min/max
+            prisma.productos.aggregate({
+                where: whereClause,
+                _min: { precio: true },
+                _max: { precio: true }
+            })
         ]);
 
         // Aplicar filtro de stock bajo en memoria si es necesario
@@ -184,14 +265,24 @@ export class ProductosService {
             }) as unknown as IProductos[];
         }
 
+        // Normalizar nombres a mayúsculas
+        const productosNormalizados = this.normalizeProductos(productosFiltrados);
+
         const result = {
-            data: productosFiltrados,
+            data: productosNormalizados,
             total: aplicarFiltroStockBajo ? productosFiltrados.length : total,
             page,
             limit,
             totalPages: aplicarFiltroStockBajo
                 ? Math.ceil(productosFiltrados.length / limit)
                 : Math.ceil(total / limit),
+            // Agregar rango de precios
+            priceRange: priceStats._max.precio !== null && priceStats._min.precio !== null
+                ? {
+                    min: Number(priceStats._min.precio),
+                    max: Number(priceStats._max.precio)
+                }
+                : undefined
         };
 
         // Guardar en cache
@@ -225,7 +316,7 @@ export class ProductosService {
             },
         });
 
-        const result = producto as unknown as IProductos | null;
+        const result = producto ? this.normalizeProducto(producto) : null;
 
         // Guardar en cache si existe
         if (result) {
@@ -262,7 +353,7 @@ export class ProductosService {
             return null;
         }
 
-        const result = producto as unknown as IProductos | null;
+        const result = this.normalizeProducto(producto);
 
         // Guardar en cache
         if (result) {
@@ -278,6 +369,7 @@ export class ProductosService {
         const nuevoProducto = await prisma.productos.create({
             data: {
                 ...cleanData,
+                nombre: cleanData.nombre ? cleanData.nombre.toUpperCase() : cleanData.nombre,
                 codi_categoria: codi_categoria || null,
                 codi_marca: codi_marca || null,
                 codi_grupo: codi_grupo || null,
@@ -294,7 +386,7 @@ export class ProductosService {
             }
         });
 
-        const result = nuevoProducto as unknown as IProductos;
+        const result = this.normalizeProducto(nuevoProducto);
 
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
@@ -320,11 +412,12 @@ export class ProductosService {
             where: { id_prod: id },
             data: {
                 ...cleanData,
+                nombre: cleanData.nombre ? cleanData.nombre.toUpperCase() : cleanData.nombre,
                 codi_categoria: codi_categoria !== undefined ? codi_categoria : undefined,
                 codi_marca: codi_marca !== undefined ? codi_marca : undefined,
                 codi_grupo: codi_grupo !== undefined ? codi_grupo : undefined,
                 codi_impuesto: codi_impuesto !== undefined ? codi_impuesto : undefined,
-                estado: estado ? Number(estado) : undefined,
+                estado: estado !== undefined && estado !== null ? Number(estado) : undefined,
                 actualizado_en: new Date()
             },
             include: {
@@ -335,7 +428,7 @@ export class ProductosService {
             }
         });
 
-        const result = productoActualizado as unknown as IProductos;
+        const result = this.normalizeProducto(productoActualizado);
 
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
@@ -385,6 +478,17 @@ export class ProductosService {
             where: {
                 id_prod: id,
                 estado: 1 // ⭐ Solo contar productos activos
+            }
+        });
+        return count > 0;
+    }
+
+    async existsAny(id: number): Promise<boolean> {
+        // Verificar si existe el producto en cualquier estado (excepto eliminado/soft delete)
+        const count = await prisma.productos.count({
+            where: {
+                id_prod: id,
+                estado: { not: 0 } // Cualquier estado excepto 0 (eliminado)
             }
         });
         return count > 0;
@@ -450,7 +554,7 @@ export class ProductosService {
             }
         });
 
-        const result = productos as unknown as IProductos[];
+        const result = this.normalizeProductos(productos);
 
         // Guardar en cache
         await cacheService.set(cacheKey, result, this.TTL_DESTACADOS);
@@ -493,7 +597,7 @@ export class ProductosService {
             return Number(producto.stock) <= Number(producto.stock_min);
         });
 
-        const result = productosStockBajo as unknown as IProductos[];
+        const result = this.normalizeProductos(productosStockBajo);
 
         // Guardar en cache
         await cacheService.set(cacheKey, result, this.TTL_CATALOGO);
@@ -528,9 +632,18 @@ export class ProductosService {
         ]);
 
         const result = {
-            marcas: marcas as IMarca[],
-            categorias: categorias as ICategoria[],
-            grupos: grupos as any[], // Agregar tipo IGrupo si es necesario
+            marcas: marcas.map(m => ({
+                ...m,
+                nombre: m.nombre ? m.nombre.toUpperCase() : m.nombre
+            })) as IMarca[],
+            categorias: categorias.map(c => ({
+                ...c,
+                nombre: c.nombre ? c.nombre.toUpperCase() : c.nombre
+            })) as ICategoria[],
+            grupos: grupos.map(g => ({
+                ...g,
+                nombre: g.nombre ? g.nombre.toUpperCase() : g.nombre
+            })) as any[], // Agregar tipo IGrupo si es necesario
             ivas: ivas as IIva[]
         };
 
@@ -570,7 +683,7 @@ export class ProductosService {
             }
         });
 
-        const result = productoActualizado as unknown as IProductos;
+        const result = this.normalizeProducto(productoActualizado);
 
         // Invalidar cache relacionado
         await cacheService.delete(`producto:${id}`);
@@ -662,12 +775,17 @@ export class ProductosService {
         const endIndex = startIndex + limit;
         const productosPaginados = productosConImagen.slice(startIndex, endIndex);
 
+        // Normalizar nombres a mayúsculas
+        const productosNormalizados = this.normalizeProductos(productosPaginados);
+
         const result = {
-            data: productosPaginados,
+            data: productosNormalizados,
             total: productosConImagen.length,
             page,
             limit,
-            totalPages: Math.ceil(productosConImagen.length / limit)
+            totalPages: Math.ceil(productosConImagen.length / limit),
+            // Incluir priceRange del resultado de getAll
+            priceRange: allProducts.priceRange
         };
 
         // Guardar en cache

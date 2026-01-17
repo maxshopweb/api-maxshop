@@ -105,6 +105,27 @@ export const loadUserFromDatabase = async (req: Request, res: Response, next: Ne
   }
 };
 
+// Middleware para permitir usuarios invitados (estado 1) o usuarios completos
+export const allowGuests = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.authenticatedUser) {
+    return res.status(401).json({
+      success: false,
+      error: 'Usuario no autenticado.'
+    });
+  }
+
+  // Permitir usuarios invitados (estado 1) y usuarios completos (estado 3)
+  const allowedStates = [1, 3];
+  if (req.authenticatedUser.estado !== null && !allowedStates.includes(req.authenticatedUser.estado)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Tu cuenta no tiene permisos para realizar esta acción.'
+    });
+  }
+
+  return next();
+};
+
 export const requireRole =
   (...allowedRoles: UserRole[]) =>
   (req: Request, res: Response, next: NextFunction) => {
