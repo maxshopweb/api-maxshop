@@ -38,12 +38,10 @@ export class AndreaniAuthService {
 
             // Si existe token, intentar usarlo
             if (negocioData.token_envio) {
-                console.log('✅ [Andreani] Token encontrado en BD, usando token existente');
                 return negocioData.token_envio;
             }
 
             // Si no existe, renovar
-            console.log('⚠️ [Andreani] No hay token en BD, renovando...');
             return await this.renewToken();
         } catch (error: any) {
             console.error('❌ [Andreani] Error al obtener token:', error.message);
@@ -59,10 +57,6 @@ export class AndreaniAuthService {
         try {
             validateAndreaniConfig();
 
-            console.log('🔄 [Andreani] Renovando token...');
-            console.log(`🔍 [Andreani] URL: ${andreaniConfig.baseUrl}${andreaniConfig.endpoints.login}`);
-            console.log(`🔍 [Andreani] Username configurado: ${andreaniConfig.credentials.username ? 'Sí' : 'No'}`);
-            console.log(`🔍 [Andreani] Password configurado: ${andreaniConfig.credentials.password ? 'Sí' : 'No'}`);
 
             // Validar que las credenciales no estén vacías
             if (!andreaniConfig.credentials.username || !andreaniConfig.credentials.password) {
@@ -77,7 +71,6 @@ export class AndreaniAuthService {
                 `${andreaniConfig.credentials.username}:${andreaniConfig.credentials.password}`
             ).toString('base64');
 
-            console.log(`🔍 [Andreani] Realizando GET a ${andreaniConfig.baseUrl}${andreaniConfig.endpoints.login} con Basic Auth`);
 
             // Hacer request de autenticación (GET según documentación de Andreani)
             const response = await fetch(`${andreaniConfig.baseUrl}${andreaniConfig.endpoints.login}`, {
@@ -87,7 +80,6 @@ export class AndreaniAuthService {
                 },
             });
 
-            console.log(`🔍 [Andreani] Respuesta del login: ${response.status} ${response.statusText}`);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -98,10 +90,8 @@ export class AndreaniAuthService {
             }
 
             const data = (await response.json()) as IAuthResponse;
-            console.log(`✅ [Andreani] Token recibido: ${data.token ? 'Sí' : 'No'}`);
             
             if (data.token) {
-                console.log(`🔍 [Andreani] Longitud del token: ${data.token.length} caracteres`);
             }
 
             if (!data.token) {
@@ -127,14 +117,11 @@ export class AndreaniAuthService {
                 throw new Error('❌ [Andreani] No se encontró configuración de negocio');
             }
 
-            console.log(`🔄 [Andreani] Guardando token en BD (${data.token.length} caracteres)...`);
             // Usar $executeRaw para evitar problemas con planes en caché
             await prisma.$executeRaw`
                 UPDATE negocio SET token_envio = ${data.token} WHERE id_neg = ${negocioData.id_neg}
             `;
-            console.log(`✅ [Andreani] Token guardado exitosamente en BD`);
 
-            console.log('✅ [Andreani] Token renovado y guardado en BD');
 
             return data.token;
         } catch (error: any) {

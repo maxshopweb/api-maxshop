@@ -124,7 +124,6 @@ function findImages(dir: string, baseDir: string): Array<{ filePath: string; ima
   }
   
   if (ignoradas > 0) {
-    console.log(`  ⏭️  ${ignoradas} imágenes ignoradas (no empiezan con codi_arti)`);
   }
   
   return results;
@@ -157,29 +156,20 @@ function groupImagesByCodiArti(
  * Función principal
  */
 async function enlazarImagenes() {
-  console.log('🖼️  Iniciando enlace de imágenes a productos...\n');
-  console.log(`📁 Buscando imágenes en: ${IMAGES_BASE_DIR}\n`);
   
   try {
     // 1. Buscar todas las imágenes que empiezan con codi_arti
-    console.log('🔍 Buscando imágenes en carpeta ingco...');
-    console.log(`📂 Directorio: ${IMAGES_BASE_DIR}\n`);
     const baseDirForPaths = path.join(PROJECT_ROOT, 'client/public/imgs/productos');
     const allImages = findImages(IMAGES_BASE_DIR, baseDirForPaths);
-    console.log(`✓ Encontradas ${allImages.length} imágenes que empiezan con codi_arti\n`);
     
     if (allImages.length === 0) {
-      console.log('⚠️  No se encontraron imágenes. Verifica la ruta del directorio.');
       return;
     }
     
     // 2. Agrupar imágenes por codi_arti
-    console.log('📦 Agrupando imágenes por código de artículo...');
     const imagesByCodiArti = groupImagesByCodiArti(allImages);
-    console.log(`✓ Encontrados ${imagesByCodiArti.size} códigos de artículo únicos\n`);
     
     // 3. Obtener todos los productos de la BD
-    console.log('📥 Cargando productos de la base de datos...');
     const productos = await prisma.productos.findMany({
       select: {
         id_prod: true,
@@ -197,10 +187,8 @@ async function enlazarImagenes() {
       }
     });
     
-    console.log(`✓ Cargados ${productos.length} productos de la BD\n`);
     
     // 4. Actualizar productos con sus imágenes
-    console.log('🔄 Actualizando productos con imágenes...\n');
     
     let actualizados = 0;
     let noEncontrados = 0;
@@ -245,7 +233,6 @@ async function enlazarImagenes() {
         actualizados++;
         
         if (actualizados % 50 === 0) {
-          console.log(`  Procesados: ${actualizados} productos...`);
         }
       } catch (error) {
         errores++;
@@ -253,21 +240,12 @@ async function enlazarImagenes() {
       }
     }
     
-    console.log('\n📊 Resumen:');
-    console.log(`  ✓ Productos actualizados: ${actualizados}`);
-    console.log(`  ⚠️  Productos no encontrados en BD: ${noEncontrados}`);
-    console.log(`  ❌ Errores: ${errores}`);
     
     if (productosNoEncontrados.length > 0 && productosNoEncontrados.length <= 20) {
-      console.log('\n⚠️  Códigos de artículo con imágenes pero sin producto en BD:');
       productosNoEncontrados.forEach(codi => {
-        console.log(`    - ${codi}`);
       });
     } else if (productosNoEncontrados.length > 20) {
-      console.log(`\n⚠️  ${productosNoEncontrados.length} códigos de artículo tienen imágenes pero no productos en BD`);
-      console.log('    (Mostrando primeros 20)');
       productosNoEncontrados.slice(0, 20).forEach(codi => {
-        console.log(`    - ${codi}`);
       });
     }
     
@@ -280,11 +258,7 @@ async function enlazarImagenes() {
       },
     });
     
-    console.log(`\n📈 Estadísticas finales:`);
-    console.log(`  - Productos con imagen principal: ${productosConImagenes}`);
-    console.log(`  - Total de productos en BD: ${productos.length}`);
     
-    console.log('\n✅ Proceso completado exitosamente!');
     
   } catch (error) {
     console.error('\n❌ Error en el proceso:', error);
@@ -298,7 +272,6 @@ async function enlazarImagenes() {
 if (require.main === module) {
   enlazarImagenes()
     .then(() => {
-      console.log('\nProceso finalizado');
       process.exit(0);
     })
     .catch((error) => {

@@ -34,7 +34,6 @@ if (isRedisEnabled()) {
 
     // Eventos de conexión
     redisClient.on('connect', () => {
-        console.log('✅ Redis conectado');
     });
 
     redisClient.on('error', (err) => {
@@ -43,7 +42,6 @@ if (isRedisEnabled()) {
     });
 
     redisClient.on('ready', () => {
-        console.log('🚀 Redis listo para usar');
     });
 
     // Intentar conectar (pero no fallar si no puede)
@@ -51,7 +49,6 @@ if (isRedisEnabled()) {
         // Silenciosamente ignorar error de conexión inicial
     });
 } else {
-    console.log('ℹ️ Redis deshabilitado (ENABLE_REDIS=false)');
 }
 
 export default redisClient;

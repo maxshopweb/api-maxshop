@@ -75,7 +75,7 @@ export type AuthOperationResult = {
 
 // Schema para completar perfil (Step 2)
 export const completeProfileSchema = z.object({
-  idToken: z.string().min(1, 'El token de Firebase es requerido.'),
+  // El token viene del header Authorization, no del body
   data: z
     .object({
       nombre: z.string().min(1, 'El nombre es requerido.'),

@@ -37,14 +37,13 @@ export class AndreaniController {
                 return;
             }
 
-            const preEnvio = await andreaniPreEnvioService.crearPreEnvio(
+            await andreaniPreEnvioService.crearPreEnvio(
                 id_venta,
                 datosEnvio
             );
 
             const response: IApiResponse = {
                 success: true,
-                data: preEnvio,
                 message: 'Pre-envío creado exitosamente',
             };
 

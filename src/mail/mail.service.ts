@@ -35,16 +35,6 @@ export class MailService {
             // Generar template según el evento
             const template = getMailTemplate(payload.event, payload.data);
 
-            // Log en desarrollo
-            if (this.isDevelopment) {
-                console.log('📧 [MailService] Enviando email:', {
-                    event: payload.event,
-                    to: recipients.map((r) => r.email),
-                    subject: template.subject,
-                });
-                console.log('📧 [MailService] Payload completo:', JSON.stringify(payload, null, 2));
-            }
-
             // Enviar email usando Brevo
             const response = await brevoClient.sendTransactionalEmail(
                 template,
@@ -59,7 +49,6 @@ export class MailService {
                 }
             );
 
-            console.log(`✅ [MailService] Email enviado exitosamente. MessageId: ${response.messageId}`);
 
             return response;
         } catch (error) {

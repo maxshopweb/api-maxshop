@@ -51,8 +51,21 @@ export class AuthController {
 
   async completeProfile(req: Request, res: Response): Promise<void> {
     try {
+      // El token ya fue decodificado por el middleware verifyFirebaseToken
+      // Usar req.decodedToken.uid en lugar del token del body
+      if (!req.decodedToken) {
+        res.status(401).json({
+          success: false,
+          error: 'Token no verificado.'
+        });
+        return;
+      }
+
       const result = await authService.completeProfile({
-        ...req.body,
+        // NO pasar idToken del body, usar el decodedToken del middleware
+        data: req.body.data,
+        decodedTokenUid: req.decodedToken.uid, // Pasar el UID del token decodificado
+        decodedTokenEmail: req.decodedToken.email ?? null, // Pasar el email por si necesitamos buscar por email
         ip: req.ip ?? null,
         userAgent: req.headers['user-agent']?.toString() ?? null,
         endpoint: req.originalUrl ?? null
@@ -146,7 +159,6 @@ export class AuthController {
 
       res.status(200).json({
         success: true,
-        data: result,
         message: 'Usuario convertido exitosamente'
       });
     } catch (error) {

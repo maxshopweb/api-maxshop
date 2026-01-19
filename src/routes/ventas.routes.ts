@@ -36,6 +36,7 @@ router.post(
 
 // Rutas CRUD generales
 router.get('/', ventasController.getAll.bind(ventasController));
+router.get('/stats', ventasController.getStats.bind(ventasController));
 router.get('/:id', ventasController.getById.bind(ventasController));
 router.post('/', ventasController.create.bind(ventasController));
 router.put('/:id', ventasController.update.bind(ventasController));

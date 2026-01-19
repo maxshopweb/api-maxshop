@@ -114,11 +114,10 @@ export class MarcasController {
                 return;
             }
 
-            const nuevaMarca = await marcasService.create(data);
+            await marcasService.create(data);
 
             const response: IApiResponse = {
                 success: true,
-                data: nuevaMarca,
                 message: 'Marca creada exitosamente'
             };
 

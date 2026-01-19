@@ -45,11 +45,10 @@ export class DireccionesController {
                 return;
             }
 
-            const direccion = await direccionesService.create(data, idUsuario);
+            await direccionesService.create(data, idUsuario);
 
             const response: IApiResponse = {
                 success: true,
-                data: direccion,
                 message: 'Dirección creada exitosamente'
             };
 

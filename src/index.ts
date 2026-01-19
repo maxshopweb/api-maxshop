@@ -53,18 +53,13 @@ if (process.env.VERCEL !== '1') {
     const startServer = async () => {
         try {
             await prisma.$connect();
-            console.log('✅ Conectado a la base de datos');
 
             // await redisClient.ping();
-            console.log('✅ Conectado a Redis');
 
             // Inicializar WebSocket Server
             websocketServer.initialize(httpServer);
 
-            httpServer.listen(PORT, () => {
-                console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
-                console.log(`📡 WebSocket disponible en ws://localhost:${PORT}/ws`);
-            });
+            httpServer.listen(PORT);
         } catch (error) {
             console.error('❌ Error al iniciar el servidor:', error);
             process.exit(1);
@@ -72,8 +67,6 @@ if (process.env.VERCEL !== '1') {
     };
 
     process.on('SIGINT', async () => {
-        console.log('\n🛑 Cerrando servidor...');
-        
         // Cerrar WebSocket Server
         websocketServer.close();
         
@@ -84,7 +77,6 @@ if (process.env.VERCEL !== '1') {
         await prisma.$disconnect();
         // await redisClient.quit();
         
-        console.log('👋 Servidor detenido');
         process.exit(0);
     });
 

@@ -49,7 +49,6 @@ export class PaymentProcessingService {
         }
     ): Promise<IVenta> {
         try {
-            console.log(`🔄 [PaymentProcessing] Iniciando confirmación de pago para venta #${idVenta}`);
 
             // 1. Obtener venta completa
             const ventasService = this.getVentasService();
@@ -61,7 +60,6 @@ export class PaymentProcessingService {
 
             // 2. Validar que esté pendiente
             if (venta.estado_pago === 'aprobado') {
-                console.log(`⚠️ [PaymentProcessing] Venta #${idVenta} ya está aprobada. Operación idempotente.`);
                 return venta;
             }
 
@@ -93,9 +91,8 @@ export class PaymentProcessingService {
             await cacheService.deletePattern('ventas:*');
 
             // Obtener venta actualizada
-            const ventaActualizada = await ventasService.getById(idVenta);
+            let ventaActualizada = await ventasService.getById(idVenta);
 
-            console.log(`✅ [PaymentProcessing] Stock descontado y venta #${idVenta} actualizada a aprobado`);
 
             // Emitir evento SALE_CREATED cuando se confirma el pago
             // Según requisitos: "se crea/actualiza una venta en estado confirmada (ej: Mercado Pago)"
@@ -112,36 +109,29 @@ export class PaymentProcessingService {
             }
 
             // 6. Crear pre-envío en Andreani (solo si es envío, no retiro)
-            let preEnvio = null;
             // Verificar si es retiro en tienda (si observaciones contiene "Retiro en tienda")
             const esRetiro = ventaActualizada.observaciones?.toLowerCase().includes('retiro en tienda') || 
                             ventaActualizada.observaciones?.toLowerCase().includes('tipo: retiro');
             
             if (!esRetiro) {
                 try {
-                    console.log(`🔄 [PaymentProcessing] Intentando crear pre-envío Andreani para venta #${idVenta}...`);
-                    preEnvio = await andreaniPreEnvioService.crearPreEnvio(idVenta);
-                    console.log(`✅ [PaymentProcessing] Pre-envío Andreani creado exitosamente para venta #${idVenta}`);
-                    const numeroEnvio = preEnvio?.bultos?.[0]?.numeroDeEnvio || null;
-                    if (numeroEnvio) {
-                        console.log(`📦 [PaymentProcessing] Código de seguimiento: ${numeroEnvio}`);
-                    }
+                    await andreaniPreEnvioService.crearPreEnvio(idVenta);
+                    // Obtener venta actualizada nuevamente para incluir el envío con número de seguimiento
+                    ventaActualizada = await ventasService.getById(idVenta);
                 } catch (error: any) {
                     console.error(`❌ [PaymentProcessing] Error al crear pre-envío para venta #${idVenta}:`, error);
                     console.error(`❌ [PaymentProcessing] Stack trace:`, error.stack);
                     // No lanzar error, el pre-envío se puede crear después manualmente
                     // Pero logueamos el error completo para debugging
                 }
-            } else {
-                console.log(`ℹ️ [PaymentProcessing] Venta #${idVenta} es retiro en tienda, no se crea envío Andreani`);
             }
 
             // 7. Enviar email de confirmación con tracking (no bloqueante)
-            this.sendConfirmationEmail(ventaActualizada, preEnvio).catch((error) => {
+            // El número de seguimiento se obtiene de ventaActualizada.envio?.cod_seguimiento
+            this.sendConfirmationEmail(ventaActualizada).catch((error) => {
                 console.error(`❌ [PaymentProcessing] Error al enviar email de confirmación:`, error);
             });
 
-            console.log(`✅ [PaymentProcessing] Pago confirmado exitosamente para venta #${idVenta}`);
 
             return ventaActualizada;
         } catch (error: any) {
@@ -162,7 +152,6 @@ export class PaymentProcessingService {
             if (!detalle.producto) {
                 throw new Error(`Producto no encontrado en detalle ${detalle.id_detalle}`);
             }
-            console.log('detalle.producto.stock', detalle.producto);
             const stockActual = detalle.producto.stock ? Number(detalle.producto.stock) : 0;
             const cantidadRequerida = detalle.cantidad || 0;
 
@@ -196,7 +185,6 @@ export class PaymentProcessingService {
             try {
                 // updateStock recibe cantidad positiva para sumar, negativa para restar
                 await this.productosService.updateStock(detalle.id_prod, -cantidad);
-                console.log(`✅ [PaymentProcessing] Stock descontado: ${cantidad} unidades del producto #${detalle.id_prod}`);
             } catch (error: any) {
                 console.error(`❌ [PaymentProcessing] Error al descontar stock del producto #${detalle.id_prod}:`, error);
                 throw new Error(`Error al descontar stock: ${error.message}`);
@@ -209,7 +197,7 @@ export class PaymentProcessingService {
      * Este email se envía cuando el admin confirma el pago manualmente
      * o cuando Mercado Pago confirma el pago automáticamente
      */
-    private async sendConfirmationEmail(venta: IVenta, preEnvio: any): Promise<void> {
+    private async sendConfirmationEmail(venta: IVenta): Promise<void> {
         try {
             // Obtener email del usuario/cliente
             let userEmail: string | null = null;
@@ -249,6 +237,13 @@ export class PaymentProcessingService {
                 otro: 'Otro',
             };
 
+            // Obtener número de seguimiento de Andreani desde la venta actualizada
+            // El número de seguimiento se guarda en venta.envio?.cod_seguimiento después de crear el pre-envío
+            const trackingCode = venta.envio?.cod_seguimiento || 
+                                venta.envio?.numeroSeguimiento || 
+                                venta.envio?.codigoTracking || 
+                                null;
+
             // Preparar datos para el email
             const emailData = {
                 orderId: venta.id_venta,
@@ -263,9 +258,10 @@ export class PaymentProcessingService {
                     nombre: userName,
                     apellido: userApellido,
                 },
-                // Agregar información de envío si existe
-                trackingCode: preEnvio?.bultos?.[0]?.numeroDeEnvio || null,
-                carrier: 'Andreani',
+                // Agregar información de envío si existe (número de seguimiento de Andreani)
+                // Convertir null a undefined para cumplir con el tipo esperado
+                trackingCode: trackingCode || undefined,
+                carrier: trackingCode ? 'Andreani' : undefined,
             };
 
             // Enviar email de PAGO CONFIRMADO (no pedido confirmado)
@@ -277,7 +273,6 @@ export class PaymentProcessingService {
             // El email de envío despachado se enviará cuando el pre-envío sea aceptado por Andreani (estado "Creada")
             // Esto se manejará mediante un webhook o consulta periódica del estado del pre-envío
 
-            console.log(`✅ [PaymentProcessing] Emails de PAGO CONFIRMADO enviados para venta #${venta.id_venta}`);
         } catch (error) {
             console.error(`❌ [PaymentProcessing] Error al enviar emails:`, error);
             // No lanzar error para no interrumpir el flujo

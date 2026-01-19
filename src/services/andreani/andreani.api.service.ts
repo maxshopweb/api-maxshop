@@ -61,7 +61,6 @@ export class AndreaniApiService {
 
             // Si es 401 o 403, renovar token y reintentar (si está habilitado)
             if ((response.status === 401 || response.status === 403) && retryOnAuthError) {
-                console.log(`⚠️ [Andreani] Token expirado (${response.status}), renovando...`);
                 
                 // Renovar token
                 token = await andreaniAuthService.renewToken();

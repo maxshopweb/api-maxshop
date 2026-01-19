@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { DireccionesController } from '../controllers/direcciones.controller';
-import { loadUserFromDatabase } from '../middlewares/auth.middleware';
+import { verifyFirebaseToken, loadUserFromDatabase } from '../middlewares/auth.middleware';
 
 const router = Router();
 const controller = new DireccionesController();
 
 // Todas las rutas requieren autenticación
-router.use(loadUserFromDatabase);
+// Primero verificar el token de Firebase, luego cargar el usuario de la base de datos
+router.use(verifyFirebaseToken, loadUserFromDatabase);
 
 router.get('/', controller.getByUsuario.bind(controller));
 router.post('/', controller.create.bind(controller));

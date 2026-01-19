@@ -54,11 +54,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
         if (cached) {
-            console.log(`✅ Lista de productos encontrada en cache`);
             return cached;
         }
 
-        console.log(`❌ Lista de productos no encontrada en cache`);
 
         const {
             page = 1,
@@ -99,7 +97,6 @@ export class ProductosService {
         // Este es el filtro principal para admin
         if (activo !== undefined && activo !== null && activo !== '') {
             whereClause.activo = activo.toUpperCase(); // Asegurar mayúsculas para consistencia
-            console.log(`🔍 [Filtro] Aplicando filtro activo: ${activo.toUpperCase()}`);
         }
 
         // Filtro por estado (solo para admin ver activos/inactivos, nunca eliminados)
@@ -114,29 +111,15 @@ export class ProductosService {
         // Esto permite que admin vea todos los productos (activos e inactivos)
         // El filtro AND ya excluye estado=0, así que no necesitamos forzar estado=1
 
-        // ⚠️ FILTRO TEMPORAL: Solo categoría 51 y productos con imagen principal
-
-        //! TEMPORAL SOLO TRAEMOS PRODUCOTS INGCO
-        // Buscar la categoría con id_cat = 51 para obtener su codi_categoria
-        const categoria51 = await prisma.categoria.findFirst({ 
-            where: { id_cat: 51 },
-            select: { codi_categoria: true }
-        });
-        
-        // Si existe la categoría, usar su código; si no, usar '51' directamente
-        const codiCategoria51 = categoria51?.codi_categoria || '51';
-        
-        // Filtrar por categoría 51
-        whereClause.AND.push(
-            { codi_categoria: codiCategoria51 }
-        );
-        
-        //! TEMPORAL SOLO TRAEMOS PRODUCOTS INGCO CON IMAGEN
+        // ⚠️ FILTRO TEMPORAL: Solo productos con imagen principal (comentado temporalmente)
+        // Descomentar si se requiere solo productos con imagen en el admin
+        /*
         // Solo productos con imagen principal (no null y no vacío)
         whereClause.AND.push(
             { img_principal: { not: null } },
             { img_principal: { not: { equals: '' } } }
         );
+        */
 
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
@@ -203,16 +186,24 @@ export class ProductosService {
             ];
         }
 
-        // Búsqueda por nombre, descripción, código de artículo, código de barras o SKU
+        // Búsqueda por nombre, descripción, código de artículo, código de barras, SKU o ID
         if (busqueda) {
-            // Si ya existe un OR (por ejemplo, por el filtro de categoría), combinarlo
-            const searchConditions = [
-                { nombre: { contains: busqueda, mode: 'insensitive' } },
-                { descripcion: { contains: busqueda, mode: 'insensitive' } },
-                { codi_arti: { contains: busqueda, mode: 'insensitive' } },
-                { codi_barras: { contains: busqueda, mode: 'insensitive' } },
-                { cod_sku: { contains: busqueda, mode: 'insensitive' } },
+            const busquedaTrimmed = busqueda.trim();
+            const searchConditions: any[] = [
+                { nombre: { contains: busquedaTrimmed, mode: 'insensitive' } },
+                { descripcion: { contains: busquedaTrimmed, mode: 'insensitive' } },
+                { codi_arti: { contains: busquedaTrimmed, mode: 'insensitive' } },
+                { codi_barras: { contains: busquedaTrimmed, mode: 'insensitive' } },
+                { cod_sku: { contains: busquedaTrimmed, mode: 'insensitive' } },
             ];
+
+            // Si la búsqueda es un número, buscar también por ID exacto
+            const busquedaAsNumber = parseInt(busquedaTrimmed);
+            if (!isNaN(busquedaAsNumber) && busquedaAsNumber > 0) {
+                searchConditions.push({ id_prod: busquedaAsNumber });
+                // También buscar código de artículo exacto si es numérico
+                searchConditions.push({ codi_arti: busquedaTrimmed });
+            }
 
             if (whereClause.OR) {
                 // Combinar búsqueda con OR existente usando AND
@@ -297,11 +288,9 @@ export class ProductosService {
         const cached = await cacheService.get<IProductos>(cachekey);
 
         if (cached) {
-            console.log(`✅ Producto ${id} encontrado en cache`);
             return cached;
         }
 
-        console.log(`❌ Producto ${id} no encontrado en cache`);
 
         const producto = await prisma.productos.findFirst({
             where: {
@@ -331,11 +320,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<IProductos>(cacheKey);
         if (cached) {
-            console.log(`✅ Producto ${codi_arti} encontrado en cache`);
             return cached;
         }
 
-        console.log(`❌ Producto ${codi_arti} no encontrado en cache`);
 
         const producto = await prisma.productos.findUnique({
             where: {
@@ -413,10 +400,10 @@ export class ProductosService {
             data: {
                 ...cleanData,
                 nombre: cleanData.nombre ? cleanData.nombre.toUpperCase() : cleanData.nombre,
-                codi_categoria: codi_categoria !== undefined ? codi_categoria : undefined,
-                codi_marca: codi_marca !== undefined ? codi_marca : undefined,
-                codi_grupo: codi_grupo !== undefined ? codi_grupo : undefined,
-                codi_impuesto: codi_impuesto !== undefined ? codi_impuesto : undefined,
+                codi_categoria: codi_categoria !== undefined ? (codi_categoria || null) : undefined,
+                codi_marca: codi_marca !== undefined ? (codi_marca || null) : undefined,
+                codi_grupo: codi_grupo !== undefined ? (codi_grupo || null) : undefined,
+                codi_impuesto: codi_impuesto !== undefined ? (codi_impuesto || null) : undefined,
                 estado: estado !== undefined && estado !== null ? Number(estado) : undefined,
                 actualizado_en: new Date()
             },
@@ -442,6 +429,9 @@ export class ProductosService {
         await cacheService.deletePattern('productos:destacados:*');
         await cacheService.delete('productos:stock-bajo');
         await cacheService.delete('productos:con-imagenes:*');
+        // Invalidar cache de ventas porque incluyen productos actualizados
+        await cacheService.deletePattern('ventas:*');
+        await cacheService.deletePattern('venta:*');
 
         return result;
     }
@@ -471,6 +461,9 @@ export class ProductosService {
         await cacheService.deletePattern('productos:destacados:*');
         await cacheService.delete('productos:stock-bajo');
         await cacheService.delete('productos:con-imagenes:*');
+        // Invalidar cache de ventas porque incluyen productos actualizados
+        await cacheService.deletePattern('ventas:*');
+        await cacheService.deletePattern('venta:*');
     }
 
     async exists(id: number): Promise<boolean> {
@@ -526,11 +519,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<IProductos[]>(cacheKey);
         if (cached) {
-            console.log(`✅ Productos destacados encontrados en cache`);
             return cached;
         }
 
-        console.log(`❌ Productos destacados no encontrados en cache`);
 
         const productos = await prisma.productos.findMany({
             where: {
@@ -567,11 +558,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<IProductos[]>(cacheKey);
         if (cached) {
-            console.log(`✅ Productos con stock bajo encontrados en cache`);
             return cached;
         }
 
-        console.log(`❌ Productos con stock bajo no encontrados en cache`);
 
         // Obtener todos los productos activos con stock y stock_min
         const productos = await prisma.productos.findMany({
@@ -610,11 +599,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<ICrearProductoContenido>(cacheKey);
         if (cached) {
-            console.log(`✅ Contenido para crear producto encontrado en cache`);
             return cached;
         }
 
-        console.log(`❌ Contenido para crear producto no encontrado en cache`);
 
         const [marcas, categorias, grupos, ivas] = await Promise.all([
             prisma.marca.findMany({
@@ -703,11 +690,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
         if (cached) {
-            console.log(`✅ Productos con imágenes encontrados en cache`);
             return cached;
         }
 
-        console.log(`❌ Productos con imágenes no encontrados en cache`);
 
         // Obtener la ruta del directorio de imágenes (relativa a src/)
         const imagenesDir = path.join(process.cwd(), 'src/resources/IMAGENES/img-art');
@@ -786,6 +771,120 @@ export class ProductosService {
             totalPages: Math.ceil(productosConImagen.length / limit),
             // Incluir priceRange del resultado de getAll
             priceRange: allProducts.priceRange
+        };
+
+        // Guardar en cache
+        await cacheService.set(cacheKey, result, this.TTL_CATALOGO);
+
+        return result;
+    }
+
+    // Método específico para tienda (client/user): solo marca 051 con imágenes
+    async getProductosTienda(filters?: IProductoFilters): Promise<IPaginatedResponse<IProductos>> {
+        // Generar clave de cache
+        const cacheKey = `productos:tienda:${JSON.stringify(filters || {})}`;
+        
+        const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
+        const {
+            page = 1,
+            limit = 21,
+            order_by = 'creado_en',
+            order = 'desc',
+            busqueda,
+            id_cat,
+            precio_min,
+            precio_max,
+            destacado,
+            financiacion
+        } = filters || {};
+
+        // Construir el where con filtros fijos para tienda
+        const whereClause: any = {
+            // SIEMPRE excluir eliminados
+            estado: { not: 0 },
+            // SIEMPRE solo productos publicados
+            activo: "A",
+            // SIEMPRE marca 051 (INGCO)
+            codi_marca: "051",
+            // SIEMPRE productos con imagen (no null y no vacío)
+            AND: [
+                { img_principal: { not: null } },
+                { img_principal: { not: { equals: '' } } }
+            ]
+        };
+
+        // Filtros opcionales
+        if (busqueda) {
+            whereClause.OR = [
+                { nombre: { contains: busqueda, mode: 'insensitive' } },
+                { codi_arti: { contains: busqueda, mode: 'insensitive' } },
+                { descripcion: { contains: busqueda, mode: 'insensitive' } }
+            ];
+        }
+
+        if (id_cat) {
+            if (typeof id_cat === 'number') {
+                const categoria = await prisma.categoria.findFirst({ where: { id_cat } });
+                if (categoria) {
+                    whereClause.codi_categoria = categoria.codi_categoria;
+                }
+            } else if (typeof id_cat === 'string') {
+                whereClause.codi_categoria = id_cat;
+            }
+        }
+
+        if (precio_min !== undefined) {
+            whereClause.precio = { ...whereClause.precio, gte: precio_min };
+        }
+        if (precio_max !== undefined) {
+            whereClause.precio = { ...whereClause.precio, lte: precio_max };
+        }
+        if (destacado !== undefined) whereClause.destacado = destacado;
+        if (financiacion !== undefined) whereClause.financiacion = financiacion;
+
+        // Contar total
+        const total = await prisma.productos.count({ where: whereClause });
+
+        // Obtener productos con relaciones
+        const productos = await prisma.productos.findMany({
+            where: whereClause,
+            include: {
+                categoria: true,
+                marca: true,
+                grupo: true,
+                iva: true
+            },
+            orderBy: {
+                [order_by]: order
+            },
+            skip: (page - 1) * limit,
+            take: limit
+        });
+
+        // Normalizar productos
+        const productosNormalizados = this.normalizeProductos(productos);
+
+        // Calcular rango de precios
+        const precioStats = await prisma.productos.aggregate({
+            where: whereClause,
+            _min: { precio: true },
+            _max: { precio: true }
+        });
+
+        const result: IPaginatedResponse<IProductos> = {
+            data: productosNormalizados,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            priceRange: precioStats._min.precio !== null && precioStats._max.precio !== null ? {
+                min: Number(precioStats._min.precio),
+                max: Number(precioStats._max.precio)
+            } : undefined
         };
 
         // Guardar en cache

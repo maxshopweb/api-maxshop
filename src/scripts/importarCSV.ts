@@ -16,8 +16,6 @@ const CSV_DIR = path.join(__dirname, '../data/csv');
 // Verificar que el directorio existe
 if (!fs.existsSync(CSV_DIR)) {
   console.error(`❌ Error: No se encuentra el directorio ${CSV_DIR}`);
-  console.log('Ruta actual del script:', __dirname);
-  console.log('Ruta esperada de CSV:', CSV_DIR);
   process.exit(1);
 }
 
@@ -81,7 +79,6 @@ function parsearNumero(numero: string | undefined): number | null {
  * Importa Categorías desde MAESCAT.csv
  */
 async function importarCategorias(): Promise<Set<string>> {
-  console.log('📦 Importando categorías...');
   const categoriasSet = new Set<string>();
 
   try {
@@ -118,7 +115,6 @@ async function importarCategorias(): Promise<Set<string>> {
       }
     }
 
-    console.log(`✓ Categorías importadas: ${categoriasSet.size}`);
     return categoriasSet;
   } catch (error) {
     console.error('Error leyendo MAESCAT.csv:', error);
@@ -130,7 +126,6 @@ async function importarCategorias(): Promise<Set<string>> {
  * Importa Grupos desde MAESGRAR.csv
  */
 async function importarGrupos(): Promise<Set<string>> {
-  console.log('📦 Importando grupos...');
   const gruposSet = new Set<string>();
 
   try {
@@ -166,7 +161,6 @@ async function importarGrupos(): Promise<Set<string>> {
       }
     }
 
-    console.log(`✓ Grupos importados: ${gruposSet.size}`);
     return gruposSet;
   } catch (error) {
     console.error('Error leyendo MAESGRAR.csv:', error);
@@ -178,7 +172,6 @@ async function importarGrupos(): Promise<Set<string>> {
  * Carga marcas existentes de la BD
  */
 async function cargarMarcasExistentes(): Promise<Set<string>> {
-  console.log('📦 Cargando marcas existentes de la BD...');
   const marcasSet = new Set<string>();
 
   try {
@@ -192,7 +185,6 @@ async function cargarMarcasExistentes(): Promise<Set<string>> {
       }
     });
 
-    console.log(`✓ Marcas cargadas: ${marcasSet.size}`);
     return marcasSet;
   } catch (error) {
     console.error('Error cargando marcas:', error);
@@ -204,7 +196,6 @@ async function cargarMarcasExistentes(): Promise<Set<string>> {
  * Carga impuestos existentes de la BD y sus porcentajes
  */
 async function cargarImpuestosExistentes(): Promise<Map<string, number>> {
-  console.log('📦 Cargando impuestos existentes de la BD...');
   const porcentajesMap = new Map<string, number>();
 
   try {
@@ -221,7 +212,6 @@ async function cargarImpuestosExistentes(): Promise<Map<string, number>> {
       }
     });
 
-    console.log(`✓ Impuestos cargados: ${porcentajesMap.size}`);
     return porcentajesMap;
   } catch (error) {
     console.error('Error cargando impuestos:', error);
@@ -247,7 +237,6 @@ async function crearMarcaSiNoExiste(codiMarca: string, marcasSet: Set<string>): 
     });
 
     marcasSet.add(codiMarca);
-    console.log(`  ℹ️  Marca creada automáticamente: ${codiMarca}`);
   } catch (error) {
     console.error(`Error creando marca ${codiMarca}:`, error);
   }
@@ -263,7 +252,6 @@ async function importarProductos(
   gruposSet: Set<string>,
   impuestosPorcentajesMap: Map<string, number>
 ): Promise<void> {
-  console.log('📦 Importando productos...');
 
   try {
     const contenido = fs.readFileSync(path.join(CSV_DIR, 'MAESARTI.csv'), 'utf-8');
@@ -451,10 +439,7 @@ async function importarProductos(
     }
 
     // Insertar en base de datos
-    console.log(`\n📝 Productos únicos a insertar: ${productosUnicos.size}`);
-    console.log(`⚠️  Duplicados eliminados: ${totalProcesados - productosUnicos.size}`);
     if (marcasCreadas > 0) {
-      console.log(`ℹ️  Marcas creadas automáticamente: ${marcasCreadas}`);
     }
     
     const productos = Array.from(productosUnicos.values());
@@ -465,12 +450,9 @@ async function importarProductos(
       const batch = productos.slice(i, i + BATCH_SIZE);
       await procesarBatch(batch);
       procesados += batch.length;
-      console.log(`  Insertados: ${procesados}/${productos.length} productos...`);
     }
 
-    console.log(`✓ Productos importados: ${procesados}`);
     if (errores > 0) {
-      console.log(`⚠️  Errores encontrados: ${errores}`);
     }
   } catch (error) {
     console.error('Error importando productos:', error);
@@ -531,11 +513,6 @@ async function procesarBatch(productosBatch: any[]): Promise<void> {
  * Función principal
  */
 async function importarTodo() {
-  console.log('🚀 Iniciando importación de datos desde CSV...\n');
-  console.log('📁 Archivos CSV requeridos:');
-  console.log('  ✓ MAESARTI.csv');
-  console.log('  ✓ MAESCAT.csv');
-  console.log('  ✓ MAESGRAR.csv\n');
 
   try {
     // 1. Importar tablas de referencia desde CSV
@@ -554,11 +531,6 @@ async function importarTodo() {
       impuestosPorcentajesMap
     );
 
-    console.log('\n✅ Importación completada exitosamente!');
-    console.log('\nℹ️  Notas:');
-    console.log('  - Las marcas faltantes se crearon automáticamente');
-    console.log('  - Los impuestos se cargaron desde la BD existente');
-    console.log('  - El stock se puede actualizar después si tienes MAESSTOK.csv');
   } catch (error) {
     console.error('\n❌ Error en la importación:', error);
     throw error;
@@ -571,7 +543,6 @@ async function importarTodo() {
 if (require.main === module) {
   importarTodo()
     .then(() => {
-      console.log('\nProceso finalizado');
       process.exit(0);
     })
     .catch((error) => {

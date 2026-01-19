@@ -49,7 +49,6 @@ export const validarProductoActivo = async (
         // Permitir operar sobre productos con estado 1 (activo) o 2 (inactivo)
         // Solo bloquear si está eliminado (estado: 0)
 
-        console.log(`✅ [Validación] Producto ID ${id} validado correctamente`);
         
         // Adjuntar producto al request para uso posterior
         (req as any).producto = producto;
@@ -94,7 +93,6 @@ export const validarStockDisponible = async (
             return;
         }
 
-        console.log(`✅ [Validación] Producto "${producto.nombre}" tiene stock: ${stockActual}`);
         next();
     } catch (error) {
         console.error('❌ [Validación] Error en validarStockDisponible:', error);
@@ -181,7 +179,6 @@ export const validarRelacionesProducto = async (
             }
         }
 
-        console.log('✅ [Validación] Relaciones del producto validadas correctamente');
         next();
     } catch (error) {
         console.error('❌ [Validación] Error en validarRelacionesProducto:', error);

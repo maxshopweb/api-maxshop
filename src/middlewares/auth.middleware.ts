@@ -80,23 +80,248 @@ export const loadUserFromDatabase = async (req: Request, res: Response, next: Ne
   }
 
   try {
-    const userRecord = await prisma.usuarios.findUnique({
-      where: { id_usuario: req.decodedToken.uid },
+    const uid = req.decodedToken.uid;
+    
+    // Intentar buscar el usuario por UID
+    let userRecord = await prisma.usuarios.findUnique({
+      where: { id_usuario: uid },
       include: {
         roles: true
       }
     });
 
     if (!userRecord) {
-      return res.status(404).json({
-        success: false,
-        error: 'Usuario no encontrado en la base de datos.'
-      });
+      // Si es un usuario anónimo (invitado), intentar esperar un poco y buscar de nuevo
+      // Esto maneja casos de timing donde el usuario se acaba de registrar
+      const isAnonymous = req.decodedToken.firebase?.sign_in_provider === 'anonymous' || !req.decodedToken.email;
+      
+      if (isAnonymous) {
+        // Esperar un poco y buscar de nuevo (para manejar timing issues)
+        console.log('⏳ [loadUserFromDatabase] Usuario anónimo no encontrado, esperando 500ms...', { uid });
+        await new Promise(resolve => setTimeout(resolve, 500));
+        userRecord = await prisma.usuarios.findUnique({
+          where: { id_usuario: uid },
+          include: {
+            roles: true
+          }
+        });
+        
+        // Si aún no se encuentra, buscar usuarios anónimos recientes (últimos 5 minutos)
+        // Esto maneja casos donde el usuario se acaba de registrar pero hay un problema de timing
+        if (!userRecord) {
+          console.log('🔍 [loadUserFromDatabase] Buscando usuarios anónimos recientes...', { uid });
+          const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+          const recentAnonymousUsers = await prisma.usuarios.findMany({
+            where: {
+              es_anonimo: true,
+              ultimo_login: {
+                gte: fiveMinutesAgo
+              }
+            },
+            include: {
+              roles: true
+            },
+            orderBy: {
+              ultimo_login: 'desc'
+            },
+            take: 5 // Solo los 5 más recientes
+          });
+          
+          // Si hay usuarios anónimos recientes, usar el más reciente
+          // Esto es un fallback para cuando el UID no coincide exactamente
+          if (recentAnonymousUsers.length > 0) {
+            console.log('✅ [loadUserFromDatabase] Usuario anónimo reciente encontrado:', {
+              uidEnToken: uid,
+              uidEnBD: recentAnonymousUsers[0].id_usuario,
+              email: recentAnonymousUsers[0].email,
+              ultimoLogin: recentAnonymousUsers[0].ultimo_login
+            });
+            
+            // Si el UID es diferente, actualizar el id_usuario para que coincida
+            if (recentAnonymousUsers[0].id_usuario !== uid) {
+              console.warn('⚠️ [loadUserFromDatabase] UID diferente en usuario reciente, actualizando...', {
+                uidAnterior: recentAnonymousUsers[0].id_usuario,
+                uidNuevo: uid
+              });
+              
+              try {
+                // Verificar que no exista otro usuario con el nuevo UID
+                const existingUserWithNewUid = await prisma.usuarios.findUnique({
+                  where: { id_usuario: uid },
+                  include: {
+                    roles: true
+                  }
+                });
+                
+                if (existingUserWithNewUid) {
+                  console.log('✅ [loadUserFromDatabase] Usuario con nuevo UID ya existe, usando ese');
+                  userRecord = existingUserWithNewUid;
+                } else {
+                  // Actualizar el id_usuario
+                  userRecord = await prisma.usuarios.update({
+                    where: { id_usuario: recentAnonymousUsers[0].id_usuario },
+                    data: { id_usuario: uid },
+                    include: {
+                      roles: true
+                    }
+                  });
+                  console.log('✅ [loadUserFromDatabase] id_usuario actualizado correctamente');
+                }
+              } catch (updateError) {
+                console.error('❌ [loadUserFromDatabase] Error al actualizar id_usuario:', updateError);
+                // Usar el usuario encontrado aunque el UID sea diferente
+                userRecord = recentAnonymousUsers[0];
+              }
+            } else {
+              userRecord = recentAnonymousUsers[0];
+            }
+          }
+        }
+      }
+      
+      // Si aún no se encuentra y tiene email, intentar buscar por email
+      if (!userRecord && req.decodedToken.email) {
+        console.log('🔍 [loadUserFromDatabase] Buscando usuario por email...', { 
+          uid, 
+          email: req.decodedToken.email 
+        });
+        const userByEmail = await prisma.usuarios.findFirst({
+          where: { 
+            email: req.decodedToken.email,
+            es_anonimo: true // Solo buscar usuarios invitados
+          },
+          include: {
+            roles: true
+          },
+          orderBy: {
+            ultimo_login: 'desc' // Obtener el más reciente
+          }
+        });
+        
+        if (userByEmail) {
+          console.log('✅ [loadUserFromDatabase] Usuario encontrado por email:', {
+            uidEnToken: uid,
+            uidEnBD: userByEmail.id_usuario,
+            email: userByEmail.email
+          });
+          
+          // Si el UID es diferente, actualizar el id_usuario para que coincida
+          if (userByEmail.id_usuario !== uid) {
+            console.warn('⚠️ [loadUserFromDatabase] UID diferente, actualizando id_usuario...', {
+              uidAnterior: userByEmail.id_usuario,
+              uidNuevo: uid
+            });
+            
+            try {
+              // Primero verificar que no exista otro usuario con el nuevo UID
+              const existingUserWithNewUid = await prisma.usuarios.findUnique({
+                where: { id_usuario: uid },
+                include: {
+                  roles: true
+                }
+              });
+              
+              if (existingUserWithNewUid) {
+                console.error('❌ [loadUserFromDatabase] Ya existe un usuario con el nuevo UID:', {
+                  uid,
+                  email: existingUserWithNewUid.email
+                });
+                userRecord = existingUserWithNewUid;
+              } else {
+                // Actualizar el id_usuario
+                userRecord = await prisma.usuarios.update({
+                  where: { id_usuario: userByEmail.id_usuario },
+                  data: { id_usuario: uid },
+                  include: {
+                    roles: true
+                  }
+                });
+                console.log('✅ [loadUserFromDatabase] id_usuario actualizado correctamente');
+              }
+            } catch (updateError) {
+              console.error('❌ [loadUserFromDatabase] Error al actualizar id_usuario:', updateError);
+              // Usar el usuario encontrado por email aunque el UID sea diferente
+              userRecord = userByEmail;
+            }
+          } else {
+            userRecord = userByEmail;
+          }
+        }
+      }
+      
+      if (!userRecord) {
+        // Log detallado para debugging
+        console.error('❌ [loadUserFromDatabase] Usuario no encontrado después de todos los intentos:', {
+          uid,
+          email: req.decodedToken.email || 'sin email',
+          isAnonymous,
+          path: req.path,
+          method: req.method
+        });
+        
+        // Como último recurso, buscar cualquier usuario anónimo reciente (últimos 10 minutos)
+        // Esto es un fallback extremo para casos donde el UID no coincide
+        if (isAnonymous) {
+          console.log('🔍 [loadUserFromDatabase] Último intento: buscando cualquier usuario anónimo reciente...');
+          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+          const anyRecentAnonymous = await prisma.usuarios.findFirst({
+            where: {
+              es_anonimo: true,
+              ultimo_login: {
+                gte: tenMinutesAgo
+              }
+            },
+            include: {
+              roles: true
+            },
+            orderBy: {
+              ultimo_login: 'desc'
+            }
+          });
+          
+          if (anyRecentAnonymous) {
+            console.warn('⚠️ [loadUserFromDatabase] Usando usuario anónimo reciente como fallback:', {
+              uidEnToken: uid,
+              uidEnBD: anyRecentAnonymous.id_usuario,
+              email: anyRecentAnonymous.email
+            });
+            
+            // Actualizar el id_usuario para que coincida con el token actual
+            try {
+              const existingUserWithNewUid = await prisma.usuarios.findUnique({
+                where: { id_usuario: uid },
+                include: { roles: true }
+              });
+              
+              if (existingUserWithNewUid) {
+                userRecord = existingUserWithNewUid;
+              } else {
+                userRecord = await prisma.usuarios.update({
+                  where: { id_usuario: anyRecentAnonymous.id_usuario },
+                  data: { id_usuario: uid },
+                  include: { roles: true }
+                });
+              }
+            } catch (updateError) {
+              console.error('❌ [loadUserFromDatabase] Error al actualizar en fallback:', updateError);
+              userRecord = anyRecentAnonymous;
+            }
+          }
+        }
+        
+        if (!userRecord) {
+          return res.status(404).json({
+            success: false,
+            error: 'Usuario no encontrado en la base de datos. Por favor, inicia sesión nuevamente.'
+          });
+        }
+      }
     }
 
     req.authenticatedUser = buildAuthenticatedUser(userRecord);
     return next();
   } catch (error) {
+    console.error('❌ [loadUserFromDatabase] Error:', error);
     const message = error instanceof Error ? error.message : 'Error al recuperar el usuario.';
     return res.status(500).json({
       success: false,

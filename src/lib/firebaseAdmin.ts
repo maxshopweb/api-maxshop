@@ -33,7 +33,6 @@ if (!admin.apps.length && projectId && clientEmail && privateKey) {
         privateKey
       })
     });
-    console.log('✅ [FirebaseAdmin] Firebase Admin inicializado correctamente');
   } catch (error) {
     console.error('❌ [FirebaseAdmin] Error al inicializar Firebase Admin:', error);
   }

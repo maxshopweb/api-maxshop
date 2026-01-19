@@ -42,7 +42,6 @@ class EmailService {
                 auth: emailConfig.auth,
             });
 
-            console.log('✅ [EmailService] Transporter inicializado correctamente');
         } catch (error) {
             console.error('❌ [EmailService] Error al inicializar transporter:', error);
         }
@@ -71,7 +70,6 @@ class EmailService {
                 text: options.text || options.html.replace(/<[^>]*>/g, ''),
             });
 
-            console.log(`✅ [EmailService] Email enviado a ${options.to}`);
             return true;
         } catch (error) {
             console.error('❌ [EmailService] Error al enviar email:', error);

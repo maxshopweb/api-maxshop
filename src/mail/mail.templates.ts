@@ -160,6 +160,8 @@ function getOrderConfirmedTemplate(data: OrderEventData): MailTemplate {
     const metodoPago = data.metodoPago || 'No especificado';
     const isExternalPayment = metodoPago === 'efectivo' || metodoPago === 'transferencia';
     const paymentStatus = isExternalPayment ? 'reservado' : 'confirmado';
+    const trackingCode = data.trackingCode || null;
+    const carrier = data.carrier || 'Andreani';
 
     const productosHTML = data.productos
         ?.map(
@@ -201,8 +203,18 @@ function getOrderConfirmedTemplate(data: OrderEventData): MailTemplate {
                 <strong>Fecha:</strong> ${fecha}<br>
                 <strong>Método de Pago:</strong> ${metodoPago}<br>
                 <strong>Estado:</strong> ${paymentStatus === 'reservado' ? 'Reservado' : 'Confirmado'}
+                ${trackingCode ? `<br><strong>Código de Seguimiento (${carrier}):</strong> ${trackingCode}` : ''}
             </p>
         </div>
+        
+        ${trackingCode ? `
+        <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #0c5460; font-size: 14px;">
+                <strong>📦 Información de Envío:</strong><br>
+                Tu pedido tiene un número de seguimiento de ${carrier}. Puedes rastrear tu envío usando el código: <strong>${trackingCode}</strong>
+            </p>
+        </div>
+        ` : ''}
         
         ${productosHTML ? `
         <h3 style="color: #171c35; margin: 30px 0 15px 0; font-size: 18px;">Detalles del Pedido</h3>

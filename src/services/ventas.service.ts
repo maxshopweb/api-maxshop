@@ -16,7 +16,6 @@ export class VentasService {
         
         const cached = await cacheService.get<IPaginatedResponse<IVenta>>(cacheKey);
         if (cached) {
-            console.log(`✅ Lista de ventas encontrada en cache`);
             return cached;
         }
 
@@ -202,7 +201,6 @@ export class VentasService {
         
         const cached = await cacheService.get<IVenta>(cacheKey);
         if (cached) {
-            console.log(`✅ Venta ${id} encontrada en cache`);
             return cached;
         }
 
@@ -345,14 +343,12 @@ export class VentasService {
                 }
 
                 // Crear el cliente automáticamente
-                console.log(`📝 [VentasService] Creando cliente automáticamente para usuario ${idClienteFinal}`);
                 await prisma.cliente.create({
                     data: {
                         id_usuario: idClienteFinal,
                         // Los demás campos pueden ser null y se completarán después
                     },
                 });
-                console.log(`✅ [VentasService] Cliente creado exitosamente`);
             }
         }
 
@@ -482,14 +478,12 @@ export class VentasService {
                     }
 
                     // Crear el cliente automáticamente
-                    console.log(`📝 [VentasService] Creando cliente automáticamente para usuario ${idClienteFinal}`);
                     await prisma.cliente.create({
                         data: {
                             id_usuario: idClienteFinal,
                             // Los demás campos pueden ser null y se completarán después
                         },
                     });
-                    console.log(`✅ [VentasService] Cliente creado exitosamente`);
                 }
 
                 // Si se proporciona id_direccion, usar esa dirección guardada
@@ -508,12 +502,10 @@ export class VentasService {
                             cod_postal: direccionGuardada.cod_postal || null,
                         };
                         
-                        console.log(`📝 [VentasService] Usando dirección guardada ${data.id_direccion} para cliente ${idClienteFinal}`);
                         await prisma.cliente.update({
                             where: { id_usuario: idClienteFinal },
                             data: updateData,
                         });
-                        console.log(`✅ [VentasService] Dirección del cliente actualizada desde dirección guardada`);
                     } catch (error: any) {
                         console.warn(`⚠️ [VentasService] Error al obtener dirección guardada: ${error.message}. Usando datos de dirección proporcionados.`);
                         // Si falla, continuar con la lógica de dirección normal
@@ -548,7 +540,6 @@ export class VentasService {
                         !isNaN(data.direccion.cod_postal) &&
                         data.direccion.cod_postal > 0) {
                         updateData.cod_postal = data.direccion.cod_postal;
-                        console.log(`📝 [VentasService] Código postal válido: ${data.direccion.cod_postal}`);
                     } else if (data.direccion.cod_postal === null || data.direccion.cod_postal === undefined) {
                         console.warn(`⚠️ [VentasService] Código postal no válido o faltante para cliente ${idClienteFinal}. Valor recibido: ${data.direccion.cod_postal}`);
                     } else {
@@ -557,12 +548,10 @@ export class VentasService {
                     
                     // Actualizar cliente si hay datos para actualizar
                     if (Object.keys(updateData).length > 0) {
-                        console.log(`📝 [VentasService] Actualizando dirección del cliente ${idClienteFinal}:`, updateData);
                         await prisma.cliente.update({
                             where: { id_usuario: idClienteFinal },
                             data: updateData,
                         });
-                        console.log(`✅ [VentasService] Dirección del cliente actualizada`);
                     } else {
                         console.warn(`⚠️ [VentasService] No hay datos de dirección válidos para actualizar el cliente ${idClienteFinal}`);
                     }
@@ -573,7 +562,6 @@ export class VentasService {
                             where: { id_usuario: idClienteFinal },
                             data: { telefono: data.direccion.telefono },
                         });
-                        console.log(`✅ [VentasService] Teléfono del usuario actualizado`);
                     }
                 }
             }
@@ -596,7 +584,6 @@ export class VentasService {
 
             // Si se proporcionó costo de envío, guardarlo en la tabla envios
             if (data.costo_envio !== undefined && data.costo_envio !== null && data.costo_envio > 0) {
-                console.log(`📝 [VentasService] Guardando costo de envío: $${data.costo_envio}`);
                 
                 // Buscar si ya existe un registro de envío para esta venta
                 const envioExistente = await prisma.envios.findFirst({
@@ -611,7 +598,6 @@ export class VentasService {
                             costo_envio: data.costo_envio,
                         },
                     });
-                    console.log(`✅ [VentasService] Costo de envío actualizado en envio existente`);
                 } else {
                     // Crear un nuevo registro de envío con el costo
                     await prisma.envios.create({
@@ -623,7 +609,6 @@ export class VentasService {
                             fecha_envio: new Date(),
                         },
                     });
-                    console.log(`✅ [VentasService] Costo de envío guardado en nuevo registro de envio`);
                 }
             }
 
@@ -889,7 +874,6 @@ export class VentasService {
             estadoPagoAnterior !== 'aprobado' &&
             estadoPagoAnterior === 'pendiente'
         ) {
-            console.log(`🔄 [VentasService] Estado de pago cambió a aprobado para venta #${id}. Ejecutando confirmación de pago...`);
             
             try {
                 // Ejecutar confirmación de pago (bloqueante - si falla, lanzará error)
@@ -898,7 +882,6 @@ export class VentasService {
                     notas: 'Pago aprobado desde edición manual',
                 });
 
-                console.log(`✅ [VentasService] Pago confirmado exitosamente para venta #${id}`);
 
                 // Si hay otros campos para actualizar además del estado_pago (que ya se actualizó)
                 const camposAdicionales: any = {};
@@ -1025,13 +1008,13 @@ export class VentasService {
     /**
      * Obtiene los pedidos del usuario autenticado
      * Busca tanto en id_usuario como en id_cliente (ya que un cliente es un usuario que hizo una compra)
+     * OPTIMIZADO: Solo trae los campos necesarios para el frontend
      */
     async getMyPedidos(idUsuario: string, filters: IVentaFilters = {}): Promise<IPaginatedResponse<IVenta>> {
         const cacheKey = `ventas:my:${idUsuario}:${JSON.stringify(filters)}`;
         
         const cached = await cacheService.get<IPaginatedResponse<IVenta>>(cacheKey);
         if (cached) {
-            console.log(`✅ Pedidos del usuario ${idUsuario} encontrados en cache`);
             return cached;
         }
 
@@ -1068,38 +1051,51 @@ export class VentasService {
         // Contar total
         const total = await prisma.venta.count({ where: whereClause });
 
-        // Obtener datos con relaciones
+        // Obtener solo los campos necesarios para optimizar la consulta
         const ventas = await prisma.venta.findMany({
             where: whereClause,
             orderBy,
             skip: (page - 1) * limit,
             take: limit,
-            include: {
-                cliente: {
-                    include: {
-                        usuarios: true,
-                    },
-                },
-                usuarios: true,
+            select: {
+                id_venta: true,
+                fecha: true,
+                total_sin_iva: true,
+                total_con_iva: true,
+                descuento_total: true,
+                total_neto: true,
+                metodo_pago: true,
+                estado_pago: true,
+                estado_envio: true,
                 venta_detalle: {
-                    include: {
+                    select: {
+                        id_detalle: true,
+                        cantidad: true,
+                        sub_total: true,
                         productos: {
-                            include: {
-                                categoria: true,
-                                marca: true,
-                                grupo: true,
-                                iva: true,
+                            select: {
+                                nombre: true,
                             },
                         },
                     },
                 },
-                envios: true,
+                envios: {
+                    select: {
+                        id_envio: true,
+                        empresa_envio: true,
+                        estado_envio: true,
+                        cod_seguimiento: true,
+                        costo_envio: true,
+                    },
+                    take: 1, // Solo el primer envío
+                },
             },
         });
 
-        // Formatear respuesta
+        // Formatear respuesta con solo los campos necesarios
         const formattedVentas: IVenta[] = ventas.map((venta: any) => ({
-            ...venta,
+            id_venta: venta.id_venta,
+            fecha: venta.fecha,
             total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
@@ -1107,32 +1103,21 @@ export class VentasService {
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
-            tipo_venta: venta.tipo_venta as any,
-            usuario: venta.usuarios ? {
-                ...venta.usuarios,
-                estado: venta.usuarios.estado as any,
-            } : null,
-            cliente: venta.cliente ? {
-                ...venta.cliente,
-                usuario: venta.cliente.usuarios ? {
-                    ...venta.cliente.usuarios,
-                    estado: venta.cliente.usuarios.estado as any,
-                } : undefined,
-            } : null,
             detalles: venta.venta_detalle.map((detalle: any) => ({
-                ...detalle,
-                precio_unitario: detalle.precio_unitario ? Number(detalle.precio_unitario) : null,
-                descuento_aplicado: detalle.descuento_aplicado ? Number(detalle.descuento_aplicado) : null,
-                sub_total: detalle.sub_total ? Number(detalle.sub_total) : null,
-                tipo_descuento: detalle.tipo_descuento as any,
+                id_detalle: detalle.id_detalle,
+                cantidad: detalle.cantidad,
+                sub_total: detalle.sub_total ? Number(detalle.sub_total) : 0,
                 producto: detalle.productos ? {
-                    ...detalle.productos,
-                } : null,
+                    nombre: detalle.productos.nombre,
+                } as any : null,
             })),
             envio: venta.envios && venta.envios.length > 0 ? {
-                ...venta.envios[0],
-                costo_envio: venta.envios[0].costo_envio ? Number(venta.envios[0].costo_envio) : null,
+                id_envio: venta.envios[0].id_envio,
+                id_venta: venta.id_venta,
+                empresa_envio: venta.envios[0].empresa_envio,
                 estado_envio: venta.envios[0].estado_envio as any,
+                cod_seguimiento: venta.envios[0].cod_seguimiento,
+                costo_envio: venta.envios[0].costo_envio ? Number(venta.envios[0].costo_envio) : null,
                 // Número de seguimiento (número de pre-envío)
                 codigoTracking: venta.envios[0].cod_seguimiento,
                 numeroSeguimiento: venta.envios[0].cod_seguimiento, // Alias para claridad
@@ -1149,7 +1134,14 @@ export class VentasService {
                 trazasUrl: venta.envios[0].cod_seguimiento
                     ? `/api/andreani/envios/${venta.envios[0].cod_seguimiento}/trazas`
                     : null,
-            } : null,
+                // URLs legacy por compatibilidad
+                consultaUrl: venta.envios[0].cod_seguimiento 
+                    ? `/api/andreani/pre-envios/${venta.envios[0].cod_seguimiento}`
+                    : null,
+                trackingUrl: venta.envios[0].cod_seguimiento
+                    ? `/api/andreani/envios/${venta.envios[0].cod_seguimiento}/estado`
+                    : null,
+            } as any : null,
         }));
 
         const result: IPaginatedResponse<IVenta> = {
@@ -1164,6 +1156,131 @@ export class VentasService {
         await cacheService.set(cacheKey, result, this.TTL_LISTA);
 
         return result;
+    }
+
+    /**
+     * Obtiene estadísticas de ventas usando agregaciones SQL (sin traer todos los registros)
+     * Usa los mismos filtros que getAll pero solo calcula agregaciones
+     */
+    async getStats(filters: IVentaFilters = {}): Promise<{
+        totalVentas: number;
+        totalVendido: number;
+        promedioVenta: number;
+        ventasAprobadas: number;
+    }> {
+        const cacheKey = `ventas:stats:${JSON.stringify(filters)}`;
+        
+        const cached = await cacheService.get<{
+            totalVentas: number;
+            totalVendido: number;
+            promedioVenta: number;
+            ventasAprobadas: number;
+        }>(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
+        const {
+            busqueda,
+            id_cliente,
+            id_usuario,
+            fecha_desde,
+            fecha_hasta,
+            estado_pago,
+            estado_envio,
+            metodo_pago,
+            tipo_venta,
+            total_min,
+            total_max,
+        } = filters;
+
+        const whereClause: any = {};
+
+        // Búsqueda por ID de venta o cliente
+        if (busqueda) {
+            whereClause.OR = [
+                { id_venta: { equals: parseInt(busqueda) || -1 } },
+                {
+                    cliente: {
+                        usuarios: {
+                            OR: [
+                                { nombre: { contains: busqueda, mode: 'insensitive' } },
+                                { apellido: { contains: busqueda, mode: 'insensitive' } },
+                                { email: { contains: busqueda, mode: 'insensitive' } },
+                            ],
+                        },
+                    },
+                },
+            ];
+        }
+
+        if (id_cliente) whereClause.id_cliente = id_cliente;
+        if (id_usuario) whereClause.id_usuario = id_usuario;
+
+        // Filtros por fecha
+        if (fecha_desde || fecha_hasta) {
+            whereClause.fecha = {};
+            if (fecha_desde) {
+                whereClause.fecha.gte = new Date(fecha_desde);
+            }
+            if (fecha_hasta) {
+                whereClause.fecha.lte = new Date(fecha_hasta);
+            }
+        }
+
+        if (estado_pago) whereClause.estado_pago = estado_pago;
+        if (estado_envio) whereClause.estado_envio = estado_envio;
+        if (metodo_pago) whereClause.metodo_pago = metodo_pago;
+        if (tipo_venta) whereClause.tipo_venta = tipo_venta;
+
+        // Filtros por rango de total
+        if (total_min !== undefined || total_max !== undefined) {
+            whereClause.total_neto = {};
+            if (total_min !== undefined) {
+                whereClause.total_neto.gte = total_min;
+            }
+            if (total_max !== undefined) {
+                whereClause.total_neto.lte = total_max;
+            }
+        }
+
+        // Calcular estadísticas usando agregaciones
+        // 1. Total de ventas (count)
+        const totalVentas = await prisma.venta.count({ where: whereClause });
+
+        // 2. Total vendido y promedio (agregaciones)
+        const aggregation = await prisma.venta.aggregate({
+            where: whereClause,
+            _sum: {
+                total_neto: true,
+            },
+            _avg: {
+                total_neto: true,
+            },
+        });
+
+        // 3. Ventas aprobadas (count con filtro adicional)
+        const ventasAprobadas = await prisma.venta.count({
+            where: {
+                ...whereClause,
+                estado_pago: 'aprobado',
+            },
+        });
+
+        const totalVendido = aggregation._sum.total_neto ? Number(aggregation._sum.total_neto) : 0;
+        const promedioVenta = aggregation._avg.total_neto ? Number(aggregation._avg.total_neto) : 0;
+
+        const stats = {
+            totalVentas,
+            totalVendido,
+            promedioVenta,
+            ventasAprobadas,
+        };
+
+        // Guardar en cache (30 minutos)
+        await cacheService.set(cacheKey, stats, this.TTL_LISTA);
+
+        return stats;
     }
 }
 
