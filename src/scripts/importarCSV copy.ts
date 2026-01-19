@@ -90,7 +90,6 @@ function parsearFecha(fecha: string | undefined): Date | null {
  * Retorna Set con los códigos de categorías válidos
  */
 async function importarCategorias(): Promise<Set<string>> {
-  console.log('📦 Importando categorías...');
   const categoriasSet = new Set<string>();
 
   try {
@@ -127,7 +126,6 @@ async function importarCategorias(): Promise<Set<string>> {
       }
     }
 
-    console.log(`✓ Categorías importadas: ${categoriasSet.size}`);
     return categoriasSet;
   } catch (error) {
     console.error('Error leyendo maescate.csv:', error);
@@ -140,7 +138,6 @@ async function importarCategorias(): Promise<Set<string>> {
  * Retorna Set con los códigos de marcas válidos
  */
 async function importarMarcas(): Promise<Set<string>> {
-  console.log('📦 Importando marcas...');
   const marcasSet = new Set<string>();
 
   try {
@@ -177,7 +174,6 @@ async function importarMarcas(): Promise<Set<string>> {
       }
     }
 
-    console.log(`✓ Marcas importadas: ${marcasSet.size}`);
     return marcasSet;
   } catch (error) {
     console.error('Error leyendo TABLMARC.csv:', error);
@@ -190,7 +186,6 @@ async function importarMarcas(): Promise<Set<string>> {
  * Retorna Set con los códigos de grupos válidos
  */
 async function importarGrupos(): Promise<Set<string>> {
-  console.log('📦 Importando grupos...');
   const gruposSet = new Set<string>();
 
   try {
@@ -227,7 +222,6 @@ async function importarGrupos(): Promise<Set<string>> {
       }
     }
 
-    console.log(`✓ Grupos importados: ${gruposSet.size}`);
     return gruposSet;
   } catch (error) {
     console.error('Error leyendo MAESGRAR.csv:', error);
@@ -240,7 +234,6 @@ async function importarGrupos(): Promise<Set<string>> {
  * Retorna mapa de códigos a porcentajes
  */
 async function importarImpuestos(): Promise<Map<string, number>> {
-  console.log('📦 Importando impuestos...');
   const porcentajesMap = new Map<string, number>();
 
   try {
@@ -282,7 +275,6 @@ async function importarImpuestos(): Promise<Map<string, number>> {
       }
     }
 
-    console.log(`✓ Impuestos importados: ${porcentajesMap.size}`);
     return porcentajesMap;
   } catch (error) {
     console.error('Error leyendo tablimpu.csv:', error);
@@ -294,7 +286,6 @@ async function importarImpuestos(): Promise<Map<string, number>> {
  * Carga precios desde maesprec.csv
  */
 function cargarPrecios(): Map<string, { precioVenta: number | null; precioCosto: number | null }> {
-  console.log('📦 Cargando precios...');
   const preciosMap = new Map<string, { precioVenta: number | null; precioCosto: number | null }>();
 
   try {
@@ -329,7 +320,6 @@ function cargarPrecios(): Map<string, { precioVenta: number | null; precioCosto:
       preciosMap.set(codiarti, actual);
     }
 
-    console.log(`✓ Precios cargados: ${preciosMap.size}`);
     return preciosMap;
   } catch (error) {
     console.error('Error leyendo maesprec.csv:', error);
@@ -341,7 +331,6 @@ function cargarPrecios(): Map<string, { precioVenta: number | null; precioCosto:
  * Carga stock desde MAESSTOK.csv
  */
 function cargarStock(): Map<string, number | null> {
-  console.log('📦 Cargando stock...');
   const stockMap = new Map<string, number | null>();
 
   try {
@@ -363,7 +352,6 @@ function cargarStock(): Map<string, number | null> {
       stockMap.set(codiarti, stockActual + (stock || 0));
     }
 
-    console.log(`✓ Stock cargado: ${stockMap.size}`);
     return stockMap;
   } catch (error) {
     console.error('Error leyendo MAESSTOK.csv:', error);
@@ -406,7 +394,6 @@ async function importarProductos(
   preciosMap: Map<string, { precioVenta: number | null; precioCosto: number | null }>,
   stockMap: Map<string, number | null>
 ): Promise<void> {
-  console.log('📦 Importando productos...');
 
   try {
     const contenido = fs.readFileSync(path.join(CSV_DIR, 'MAESARTI.csv'), 'utf-8');
@@ -497,7 +484,6 @@ async function importarProductos(
     }
 
     // Filtrar duplicados antes de insertar
-    console.log('\nFiltrando productos duplicados...');
     const productosUnicos = filtrarDuplicados(todosLosProductos);
     const duplicadosEliminados = todosLosProductos.length - productosUnicos.length;
 
@@ -508,7 +494,6 @@ async function importarProductos(
     }
 
     // Insertar productos únicos en lotes
-    console.log('\nInsertando productos en la base de datos...');
     const BATCH_SIZE = 100;
     let procesados = 0;
 
@@ -516,12 +501,10 @@ async function importarProductos(
       const batch = productosUnicos.slice(i, i + BATCH_SIZE);
       await procesarBatch(batch);
       procesados += batch.length;
-      console.log(`  Procesados: ${procesados}/${productosUnicos.length} productos...`);
     }
 
-    console.log(`✓ Productos importados: ${procesados}`);
     if (errores > 0) {
-      console.log(`⚠ Errores: ${errores}`);
+      console.warn(`⚠ Se encontraron ${errores} errores al procesar productos`);
     }
   } catch (error) {
     console.error('Error importando productos:', error);
@@ -638,7 +621,6 @@ async function procesarBatch(productosBatch: any[]): Promise<void> {
  * Función principal de importación
  */
 async function importarTodo() {
-  console.log('🚀 Iniciando importación de datos desde CSV...\n');
 
   try {
     // 1. Importar tablas de referencia
@@ -661,7 +643,6 @@ async function importarTodo() {
       stockMap
     );
 
-    console.log('\n✅ Importación completada exitosamente!');
   } catch (error) {
     console.error('\n❌ Error en la importación:', error);
     throw error;
@@ -674,7 +655,6 @@ async function importarTodo() {
 if (require.main === module) {
   importarTodo()
     .then(() => {
-      console.log('Proceso finalizado');
       process.exit(0);
     })
     .catch((error) => {

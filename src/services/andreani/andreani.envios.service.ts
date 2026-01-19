@@ -67,7 +67,6 @@ export class AndreaniEnviosService {
             }
 
             // 2. Validar que la venta esté confirmada
-            console.log(`🔍 [Andreani] Verificando estado de venta #${idVenta}: estado_pago = ${venta.estado_pago}`);
             if (venta.estado_pago !== 'aprobado') {
                 throw new Error(
                     `La venta ${idVenta} no está confirmada. ` +
@@ -98,12 +97,9 @@ export class AndreaniEnviosService {
             }
 
             // 4. Preparar datos del envío
-            console.log(`🔄 [Andreani] Preparando datos de pre-envío para venta #${idVenta}...`);
             const ordenEnvio = await this.prepararDatosOrdenEnvio(venta, datosEnvio);
-            console.log(`✅ [Andreani] Datos de pre-envío preparados. Contrato: ${ordenEnvio.contrato}, ID Pedido: ${ordenEnvio.idPedido}`);
 
             // 5. Crear pre-envío en Andreani
-            console.log(`🔄 [Andreani] Enviando solicitud POST a /v2/ordenes-de-envio...`);
             const result = await andreaniApiService.post<IOrdenEnvioResponse>(
                 '/v2/ordenes-de-envio',
                 ordenEnvio
@@ -121,12 +117,8 @@ export class AndreaniEnviosService {
             // Extraer número de envío (tracking) del primer bulto
             const numeroEnvio = ordenCreada.bultos?.[0]?.numeroDeEnvio || null;
             
-            console.log(`✅ [Andreani] Pre-envío creado. Estado: ${ordenCreada.estado}, Número de envío: ${numeroEnvio || 'N/A'}`);
-            console.log(`📦 [Andreani] Agrupador: ${ordenCreada.agrupadorDeBultos}`);
-            console.log(`🏷️ [Andreani] Etiquetas: ${ordenCreada.etiquetasPorAgrupador || 'N/A'}`);
 
             // 6. Guardar pre-envío en BD
-            console.log(`🔄 [Andreani] Guardando pre-envío en base de datos...`);
             const envio = await prisma.envios.create({
                 data: {
                     id_venta: idVenta,
@@ -138,10 +130,8 @@ export class AndreaniEnviosService {
                     observaciones: `Pre-envío Andreani. Estado: ${ordenCreada.estado}. Agrupador: ${ordenCreada.agrupadorDeBultos}. Etiquetas: ${ordenCreada.etiquetasPorAgrupador || 'N/A'}`,
                 },
             });
-            console.log(`✅ [Andreani] Pre-envío guardado en BD. ID: ${envio.id_envio}, Código: ${numeroEnvio || 'N/A'}`);
 
             // 7. Actualizar venta con id_envio
-            console.log(`🔄 [Andreani] Actualizando venta con id_envio...`);
             await prisma.venta.update({
                 where: { id_venta: idVenta },
                 data: {
@@ -149,9 +139,7 @@ export class AndreaniEnviosService {
                     estado_envio: this.mapearEstadoAndreani(ordenCreada.estado),
                 },
             });
-            console.log(`✅ [Andreani] Venta actualizada con id_envio: ${envio.id_envio}`);
 
-            console.log(`✅ [Andreani] Pre-envío creado completamente para venta ${idVenta}`);
 
             return ordenCreada;
         } catch (error: any) {
@@ -505,12 +493,6 @@ export class AndreaniEnviosService {
      */
     async cotizarEnvioAndreani(input: ICotizarEnvioRequest): Promise<ICotizarEnvioResponse> {
         try {
-            console.log(`🔄 [Andreani] Cotizando envío...`, {
-                contrato: input.contrato,
-                cliente: input.cliente,
-                cpDestino: input.cpDestino,
-            });
-
             // Validar campos obligatorios
             if (!input.contrato || !input.cliente || !input.cpDestino || !input['bultos[0][volumen]']) {
                 throw new Error(
@@ -587,7 +569,6 @@ export class AndreaniEnviosService {
                 tarifaConIva: data.tarifaConIva,
             };
 
-            console.log(`✅ [Andreani] Cotización exitosa: $${precio} ARS (con IVA)`);
 
             return respuestaNormalizada;
         } catch (error: any) {

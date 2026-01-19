@@ -37,8 +37,6 @@ export class BrevoClient {
 
         // Mostrar estado de configuración al inicializar
         if (this.isConfigured()) {
-            console.log(`✅ [BrevoClient] Cliente configurado correctamente`);
-            console.log(`   📧 Remitente: ${this.sender.name} <${this.sender.email}>`);
         } else {
             if (!this.apiKey) {
                 console.warn('⚠️ [BrevoClient] BREVO_API_KEY no configurada. Los emails no se enviarán.');

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { VentasService } from '../services/ventas.service';
 import { paymentProcessingService } from '../services/payment-processing.service';
 import { IApiResponse } from '../types';
-import { IVentaFilters, ICreateVentaDTO, IUpdateVentaDTO } from '../types';
+import { IVentaFilters, ICreateVentaDTO, IUpdateVentaDTO, IVenta } from '../types';
 
 const ventasService = new VentasService();
 
@@ -80,11 +80,10 @@ export class VentasController {
                 return;
             }
 
-            const venta = await ventasService.create(data, idUsuario);
+            await ventasService.create(data, idUsuario);
 
             const response: IApiResponse = {
                 success: true,
-                data: venta,
                 message: 'Venta creada exitosamente'
             };
 
@@ -267,9 +266,6 @@ export class VentasController {
             // Convertir null a undefined para cumplir con el tipo esperado
             const idUsuario = req.authenticatedUser?.id || req.decodedToken?.uid || undefined;
             
-            console.log('📝 [VentasController] createFromCheckout - idUsuario:', idUsuario);
-            console.log('📝 [VentasController] createFromCheckout - authenticatedUser:', req.authenticatedUser);
-            console.log('📝 [VentasController] createFromCheckout - decodedToken:', req.decodedToken?.uid);
 
             // Validaciones
             if (!data.detalles || data.detalles.length === 0) {
@@ -318,10 +314,10 @@ export class VentasController {
 
             const venta = await ventasService.createFromCheckout(data, idUsuario);
 
-            const response: IApiResponse = {
+            const response: IApiResponse<IVenta> = {
                 success: true,
-                data: venta,
-                message: 'Pedido creado exitosamente'
+                message: 'Pedido creado exitosamente',
+                data: venta
             };
 
             res.status(201).json(response);
@@ -352,13 +348,12 @@ export class VentasController {
             }
 
             // Confirmar pago usando el servicio centralizado
-            const venta = await paymentProcessingService.confirmPayment(id, {
+            await paymentProcessingService.confirmPayment(id, {
                 notas: notas || 'Pago confirmado manualmente por administrador',
             });
 
             const response: IApiResponse = {
                 success: true,
-                data: venta,
                 message: 'Pago confirmado exitosamente. Stock descontado y orden de envío creada.'
             };
 
@@ -379,6 +374,39 @@ export class VentasController {
             res.status(statusCode).json({
                 success: false,
                 error: error.message || 'Error al confirmar pago'
+            });
+        }
+    }
+
+    async getStats(req: Request, res: Response): Promise<void> {
+        try {
+            const filters: IVentaFilters = {
+                busqueda: req.query.busqueda as string,
+                id_cliente: req.query.id_cliente as string,
+                id_usuario: req.query.id_usuario as string,
+                fecha_desde: req.query.fecha_desde as string,
+                fecha_hasta: req.query.fecha_hasta as string,
+                estado_pago: req.query.estado_pago as any,
+                estado_envio: req.query.estado_envio as any,
+                metodo_pago: req.query.metodo_pago as any,
+                tipo_venta: req.query.tipo_venta as any,
+                total_min: req.query.total_min ? parseFloat(req.query.total_min as string) : undefined,
+                total_max: req.query.total_max ? parseFloat(req.query.total_max as string) : undefined,
+            };
+
+            const stats = await ventasService.getStats(filters);
+            
+            const response: IApiResponse = {
+                success: true,
+                data: stats,
+            };
+
+            res.json(response);
+        } catch (error) {
+            console.error('Error en getStats:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener estadísticas de ventas'
             });
         }
     }

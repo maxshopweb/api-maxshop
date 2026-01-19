@@ -23,7 +23,7 @@ export class ProductosController {
                 order: (req.query.order as any) || 'desc',
                 estado: req.query.estado !== undefined ? parseInt(req.query.estado as string) as 0 | 1 | 2 : undefined,
                 activo: req.query.activo as string | undefined, // "A" = publicado, "I" = despublicado
-                busqueda: req.query.busqueda as string,
+                busqueda: (req.query.busqueda || req.query.search) as string, // Soporte para ambos: busqueda y search
                 id_cat: id_cat ? (isNaN(Number(id_cat)) ? id_cat : Number(id_cat)) : undefined,
                 id_marca: id_marca ? (isNaN(Number(id_marca)) ? id_marca : Number(id_marca)) : undefined,
                 codi_grupo: codi_grupo,
@@ -133,11 +133,11 @@ export class ProductosController {
                 return;
             }
 
-            const nuevoProducto = await productosService.create(data);
+            const producto = await productosService.create(data);
 
             const response: IApiResponse = {
                 success: true,
-                data: nuevoProducto,
+                data: producto,
                 message: 'Producto creado exitosamente'
             };
 
@@ -174,11 +174,11 @@ export class ProductosController {
                 return;
             }
 
-            const productoActualizado = await productosService.update(id, data);
+            const producto = await productosService.update(id, data);
 
             const response: IApiResponse = {
                 success: true,
-                data: productoActualizado,
+                data: producto,
                 message: 'Producto actualizado exitosamente'
             };
 
@@ -344,7 +344,6 @@ export class ProductosController {
                 message: mensaje
             };
 
-            console.log(`✅ ${mensaje}`);
             res.json(response);
         } catch (error) {
             console.error('Error en toggleDestacado:', error);
@@ -369,7 +368,7 @@ export class ProductosController {
                 order_by: (req.query.order_by as any) || 'creado_en',
                 order: (req.query.order as any) || 'desc',
                 estado: req.query.estado !== undefined ? parseInt(req.query.estado as string) as 0 | 1 : undefined,
-                busqueda: req.query.busqueda as string,
+                busqueda: (req.query.busqueda || req.query.search) as string, // Soporte para ambos: busqueda y search
                 id_cat: id_cat ? (isNaN(Number(id_cat)) ? id_cat : Number(id_cat)) : undefined,
                 id_marca: id_marca ? (isNaN(Number(id_marca)) ? id_marca : Number(id_marca)) : undefined,
                 codi_grupo: codi_grupo,
@@ -388,6 +387,38 @@ export class ProductosController {
             res.status(500).json({
                 success: false,
                 error: 'Error al obtener productos con imágenes'
+            });
+        }
+    }
+
+    // Endpoint específico para tienda (client/user): solo marca 051 con imágenes
+    async getProductosTienda(req: Request, res: Response): Promise<void> {
+        try {
+            // Parsear filtros opcionales (marca 051 e imagen son fijos)
+            const id_cat = req.query.id_cat as string | undefined;
+            const codi_grupo = req.query.codi_grupo as string | undefined;
+
+            const filters: IProductoFilters = {
+                page: parseInt(req.query.page as string) || 1,
+                limit: parseInt(req.query.limit as string) || 21,
+                order_by: (req.query.order_by as any) || 'creado_en',
+                order: (req.query.order as any) || 'desc',
+                busqueda: (req.query.busqueda || req.query.search) as string,
+                id_cat: id_cat ? (isNaN(Number(id_cat)) ? id_cat : Number(id_cat)) : undefined,
+                codi_grupo: codi_grupo,
+                precio_min: req.query.precio_min ? parseFloat(req.query.precio_min as string) : undefined,
+                precio_max: req.query.precio_max ? parseFloat(req.query.precio_max as string) : undefined,
+                destacado: req.query.destacado === 'true' ? true : req.query.destacado === 'false' ? false : undefined,
+                financiacion: req.query.financiacion === 'true' ? true : req.query.financiacion === 'false' ? false : undefined,
+            };
+
+            const result = await productosService.getProductosTienda(filters);
+            res.json(result);
+        } catch (error) {
+            console.error('Error en getProductosTienda:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener productos de tienda'
             });
         }
     }

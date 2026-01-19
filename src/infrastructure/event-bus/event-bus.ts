@@ -36,7 +36,6 @@ class EventBus implements IEventBus {
    */
   private async initializeRedis(): Promise<void> {
     if (!this.redisEnabled || !redisClient) {
-      console.log('ℹ️ [EventBus] Redis no disponible, usando EventEmitter en memoria');
       return;
     }
 
@@ -82,7 +81,6 @@ class EventBus implements IEventBus {
         await this.redisSubscriber.psubscribe(`${this.REDIS_CHANNEL_PREFIX}*`);
       }
 
-      console.log('✅ [EventBus] Redis Pub/Sub inicializado correctamente');
     } catch (error) {
       console.warn('⚠️ [EventBus] Error al inicializar Redis Pub/Sub, usando EventEmitter:', error);
       this.redisEnabled = false;

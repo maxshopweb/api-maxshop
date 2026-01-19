@@ -104,6 +104,7 @@ export class AuthService {
     // Verificar que el email esté verificado si el usuario tiene estado 2 (perfil incompleto)
     // El email debe estar verificado para permitir completar el perfil
     const isEmailVerified = decodedToken.email_verified ?? false;
+    console.log(`[loginWithFirebaseToken] Usuario ${userId} - email_verified: ${isEmailVerified}, email: ${decodedToken.email}`);
 
     const fallbackData = this.buildUserDataFromToken(decodedToken);
 
@@ -130,9 +131,22 @@ export class AuthService {
       }
 
       const username = email.split('@')[0];
-      const { id: roleId } = await this.resolveRoleId(null);
+      // Buscar rol USER (id 3)
+      const userRole = await prisma.roles.findFirst({
+        where: {
+          OR: [
+            { id_rol: 3 },
+            { nombre: { equals: 'USER', mode: 'insensitive' } }
+          ]
+        }
+      });
+      let roleId: number | undefined = userRole?.id_rol ?? undefined;
+      if (!roleId) {
+        const { id } = await this.resolveRoleId('USER');
+        roleId = id ?? undefined;
+      }
 
-      // Crear usuario: si email está verificado -> estado 2, si no -> null
+      // Crear usuario: si email está verificado -> estado 2, si no -> estado 1
       userRecord = await prisma.usuarios.create({
         data: {
           id_usuario: userId,
@@ -142,8 +156,8 @@ export class AuthService {
           apellido: null,
           telefono: null,
           nacimiento: null,
-          id_rol: roleId ?? undefined,
-          estado: isEmailVerified ? 2 : null, // Estado 2 solo si email verificado
+          id_rol: roleId,
+          estado: isEmailVerified ? 2 : 1, // Estado 2 si email verificado, estado 1 si no
           creado_en: new Date(),
           ultimo_login: new Date(),
           login_ip: sanitizeString(parsedInput.ip ?? null),
@@ -158,13 +172,26 @@ export class AuthService {
     } else {
       previousUser = this.mapUser(userRecord);
       
-      // Si el email se acaba de verificar y el estado era null, actualizar a estado 2
-      if (isEmailVerified && userRecord.estado === null) {
+      // Si el email se acaba de verificar y el estado era 1, actualizar a estado 2
+      if (isEmailVerified && userRecord.estado === 1) {
+        console.log(`[loginWithFirebaseToken] Actualizando estado de 1 a 2 para usuario ${userRecord.id_usuario} (email verificado)`);
         userRecord = await prisma.usuarios.update({
           where: { id_usuario: userRecord.id_usuario },
           data: { estado: 2, actualizado_en: new Date() },
           include: { roles: true }
         });
+        console.log(`[loginWithFirebaseToken] Estado actualizado a ${userRecord.estado}`);
+      } else if (isEmailVerified && userRecord.estado === null) {
+        // Fallback: si el estado es null (usuarios antiguos), también actualizar a 2
+        console.log(`[loginWithFirebaseToken] Actualizando estado de null a 2 para usuario ${userRecord.id_usuario} (email verificado, usuario antiguo)`);
+        userRecord = await prisma.usuarios.update({
+          where: { id_usuario: userRecord.id_usuario },
+          data: { estado: 2, actualizado_en: new Date() },
+          include: { roles: true }
+        });
+        console.log(`[loginWithFirebaseToken] Estado actualizado a ${userRecord.estado}`);
+      } else {
+        console.log(`[loginWithFirebaseToken] No se actualiza estado - isEmailVerified: ${isEmailVerified}, estado actual: ${userRecord.estado}`);
       }
     }
 
@@ -250,7 +277,36 @@ export class AuthService {
     const apellido = sanitizeString(parsedInput.data.apellido ?? null);
     const username = sanitizeString(parsedInput.data.username ?? email.split('@')[0]);
 
-    const { id: roleId, name: roleName } = await this.resolveRoleId(parsedInput.data.rol ?? null);
+    // Rol por defecto es SIEMPRE 3 (USER)
+    // Buscar el rol USER con id 3, si no existe crearlo
+    let finalRoleId: number | undefined;
+    let roleName: UserRole | null = 'USER';
+    
+    if (parsedInput.data.rol && parsedInput.data.rol !== 'USER') {
+      // Si se especifica un rol diferente (solo ADMIN), usar resolveRoleId
+      const { id, name } = await this.resolveRoleId(parsedInput.data.rol);
+      finalRoleId = id ?? undefined;
+      roleName = name;
+    } else {
+      // SIEMPRE usar rol USER (id 3) por defecto
+      const userRole = await prisma.roles.findFirst({
+        where: {
+          OR: [
+            { id_rol: 3 },
+            { nombre: { equals: 'USER', mode: 'insensitive' } }
+          ]
+        }
+      });
+      if (userRole) {
+        finalRoleId = userRole.id_rol;
+      } else {
+        // Si no existe, crear rol USER
+        const newRole = await prisma.roles.create({
+          data: { nombre: 'USER' }
+        });
+        finalRoleId = newRole.id_rol;
+      }
+    }
 
     let userRecord = await prisma.usuarios.findFirst({
       where: {
@@ -280,7 +336,7 @@ export class AuthService {
       username,
       telefono,
       nacimiento,
-      id_rol: roleId ?? undefined,
+      id_rol: finalRoleId ?? undefined,
       ultimo_login: new Date(),
       login_ip: loginIp,
       actualizado_en: new Date()
@@ -299,13 +355,13 @@ export class AuthService {
         }
       });
     } else {
-      // Estado inicial: null (sin verificar email)
+      // Estado inicial: 1 (creado, sin verificar email)
       // Cuando se verifique el email, se actualizará a estado 2 en loginWithFirebaseToken
       userRecord = await prisma.usuarios.create({
         data: {
           id_usuario: idUsuario,
           ...dataToPersist,
-          estado: null, // Sin verificar email aún
+          estado: 1, // Estado 1 = creado, sin verificar email
           creado_en: new Date()
         },
         include: {
@@ -345,19 +401,25 @@ export class AuthService {
   }
 
   async completeProfile(
-    input: CompleteProfileInput & { ip?: string | null; userAgent?: string | null; endpoint?: string | null }
+    input: { 
+      data: CompleteProfileInput['data'];
+      decodedTokenUid: string;
+      decodedTokenEmail?: string | null;
+      ip?: string | null; 
+      userAgent?: string | null; 
+      endpoint?: string | null;
+    }
   ): Promise<AuthOperationResult> {
     const parsedInput = completeProfileSchema.parse({
-      idToken: input.idToken,
       data: input.data
     });
 
     const start = performance.now();
+    const firebaseUid = input.decodedTokenUid;
 
-    const decodedToken = await this.verifyFirebaseToken(parsedInput.idToken);
-    const firebaseUid = decodedToken.uid;
+    console.log(`[completeProfile] Buscando usuario con UID: ${firebaseUid}, email: ${input.decodedTokenEmail ?? 'sin email'}`);
 
-    // Buscar usuario existente
+    // Buscar usuario existente por UID
     let userRecord = await prisma.usuarios.findFirst({
       where: {
         id_usuario: firebaseUid
@@ -365,6 +427,57 @@ export class AuthService {
       include: {
         roles: true
       }
+    });
+
+    // Si no se encuentra por UID, buscar por email (fallback)
+    if (!userRecord && input.decodedTokenEmail) {
+      console.log(`[completeProfile] Usuario no encontrado por UID, buscando por email: ${input.decodedTokenEmail}`);
+      userRecord = await prisma.usuarios.findFirst({
+        where: {
+          email: input.decodedTokenEmail
+        },
+        include: {
+          roles: true
+        }
+      });
+      
+      if (userRecord) {
+        console.log(`[completeProfile] Usuario encontrado por email. UID en BD: ${userRecord.id_usuario}, UID del token: ${firebaseUid}`);
+        // Si el UID es diferente, actualizar el id_usuario para que coincida
+        if (userRecord.id_usuario !== firebaseUid) {
+          console.warn(`[completeProfile] UID diferente, actualizando id_usuario de ${userRecord.id_usuario} a ${firebaseUid}`);
+          try {
+            // Verificar que no exista otro usuario con el nuevo UID
+            const existingUserWithNewUid = await prisma.usuarios.findUnique({
+              where: { id_usuario: firebaseUid },
+              include: { roles: true }
+            });
+            
+            if (existingUserWithNewUid) {
+              console.log(`[completeProfile] Usuario con nuevo UID ya existe, usando ese`);
+              userRecord = existingUserWithNewUid;
+            } else {
+              // Actualizar el id_usuario
+              userRecord = await prisma.usuarios.update({
+                where: { id_usuario: userRecord.id_usuario },
+                data: { id_usuario: firebaseUid, actualizado_en: new Date() },
+                include: { roles: true }
+              });
+              console.log(`[completeProfile] id_usuario actualizado correctamente`);
+            }
+          } catch (updateError) {
+            console.error(`[completeProfile] Error al actualizar id_usuario:`, updateError);
+            // Usar el usuario encontrado aunque el UID sea diferente
+          }
+        }
+      }
+    }
+
+    console.log(`[completeProfile] Usuario encontrado:`, {
+      encontrado: !!userRecord,
+      idUsuario: userRecord?.id_usuario,
+      email: userRecord?.email,
+      estado: userRecord?.estado
     });
 
     if (!userRecord) {
@@ -544,6 +657,13 @@ export class AuthService {
         roles: true
       }
     });
+    
+    console.log('🔍 [registerGuest] Búsqueda de usuario existente:', {
+      firebaseUid,
+      email,
+      encontrado: !!userRecord,
+      idUsuarioEncontrado: userRecord?.id_usuario
+    });
 
     const previousUser = userRecord ? this.mapUser(userRecord) : null;
     const { id: roleId } = await this.resolveRoleId('USER'); // Usar USER como rol base, se puede cambiar después
@@ -655,6 +775,23 @@ export class AuthService {
           }
         });
         created = true;
+        
+        // Verificar que el usuario se guardó correctamente
+        const verifyUser = await prisma.usuarios.findUnique({
+          where: { id_usuario: firebaseUid }
+        });
+        
+        if (!verifyUser) {
+          console.error('❌ [registerGuest] Usuario creado pero no se encuentra al verificar:', {
+            firebaseUid,
+            email
+          });
+        } else {
+          console.log('✅ [registerGuest] Usuario creado y verificado:', {
+            id_usuario: verifyUser.id_usuario,
+            email: verifyUser.email
+          });
+        }
       } catch (error) {
         // Si falla por campo no existente, intentar sin email_no_verificado
         if (error instanceof Error && (error.message.includes('Unknown argument') || error.message.includes('does not exist'))) {
@@ -666,6 +803,23 @@ export class AuthService {
             }
           });
           created = true;
+          
+          // Verificar que el usuario se guardó correctamente
+          const verifyUser = await prisma.usuarios.findUnique({
+            where: { id_usuario: firebaseUid }
+          });
+          
+          if (!verifyUser) {
+            console.error('❌ [registerGuest] Usuario creado (sin email_no_verificado) pero no se encuentra al verificar:', {
+              firebaseUid,
+              email
+            });
+          } else {
+            console.log('✅ [registerGuest] Usuario creado (sin email_no_verificado) y verificado:', {
+              id_usuario: verifyUser.id_usuario,
+              email: verifyUser.email
+            });
+          }
         } else {
           throw error;
         }

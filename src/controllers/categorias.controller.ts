@@ -16,17 +16,13 @@ export class CategoriasController {
 
     async getAllCategorias(req: Request, res: Response): Promise<void> {
         try {
-            console.log('🔍 Iniciando getAllCategorias...');
             const categorias = await categoriasService.getAllCategorias();
-            console.log('✅ Categorías obtenidas:', categorias);
-            console.log('📊 Cantidad:', categorias.length);
             
             const response: IApiResponse = {
                 success: true,
                 data: categorias
             };
 
-            console.log('📤 Enviando respuesta...');
             res.json(response);
         } catch (error) {
             console.error('❌ Error en getAllCategorias:', error);
@@ -126,11 +122,10 @@ export class CategoriasController {
                 return;
             }
 
-            const nuevaCategoria = await categoriasService.createCategoria(data);
+            await categoriasService.createCategoria(data);
 
             const response: IApiResponse = {
                 success: true,
-                data: nuevaCategoria,
                 message: 'Categoría creada exitosamente'
             };
 

@@ -43,7 +43,6 @@ export class WebSocketServerManager {
     // Suscribirse a eventos del Event Bus
     this.subscribeToEvents();
 
-    console.log('✅ [WebSocket] Servidor WebSocket inicializado en /ws');
   }
 
   /**
@@ -53,7 +52,6 @@ export class WebSocketServerManager {
     ws.isAuthenticated = false;
     this.clients.add(ws);
 
-    console.log(`📡 [WebSocket] Nueva conexión (total: ${this.clients.size})`);
 
     // Esperar mensaje de autenticación
     ws.on('message', async (data: Buffer) => {
@@ -76,7 +74,6 @@ export class WebSocketServerManager {
     // Manejar desconexión
     ws.on('close', () => {
       this.clients.delete(ws);
-      console.log(`📡 [WebSocket] Cliente desconectado (total: ${this.clients.size})`);
     });
 
     // Manejar errores
@@ -131,7 +128,6 @@ export class WebSocketServerManager {
         message: 'Autenticación exitosa',
       });
 
-      console.log(`✅ [WebSocket] Cliente autenticado: ${user.id_usuario} (${roleName})`);
     } catch (error: any) {
       console.error('❌ [WebSocket] Error de autenticación:', error.message);
       this.sendMessage(ws, {
@@ -196,7 +192,6 @@ export class WebSocketServerManager {
       }
     });
 
-    console.log(`📢 [WebSocket] Evento transmitido a ${sentCount} admin(s)`);
   }
 
   /**

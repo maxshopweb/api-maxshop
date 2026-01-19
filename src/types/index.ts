@@ -232,6 +232,12 @@ export interface IEnvios {
     // URLs de consulta (agregadas en el servicio)
     consultaUrl?: string | null;
     trackingUrl?: string | null;
+    // Campos adicionales para tracking
+    codigoTracking?: string | null;
+    numeroSeguimiento?: string | null;
+    preEnvioUrl?: string | null;
+    envioUrl?: string | null;
+    trazasUrl?: string | null;
     // Relaciones
     venta?: IVenta | null;
 }

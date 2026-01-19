@@ -19,6 +19,7 @@ import {
     IConsultaOrdenResponse,
     IApiResult,
 } from './andreani.types';
+import mailService from '../../mail';
 
 export class AndreaniPreEnvioService {
     /**
@@ -58,7 +59,6 @@ export class AndreaniPreEnvioService {
             }
 
             // 2. Validar que la venta esté confirmada
-            console.log(`🔍 [Andreani Pre-envío] Verificando estado de venta #${idVenta}: estado_pago = ${venta.estado_pago}`);
             if (venta.estado_pago !== 'aprobado') {
                 throw new Error(
                     `La venta ${idVenta} no está confirmada. ` +
@@ -113,27 +113,9 @@ export class AndreaniPreEnvioService {
             }
 
             // 4. Preparar datos del pre-envío
-            console.log(`🔄 [Andreani Pre-envío] Preparando datos de pre-envío para venta #${idVenta}...`);
             const ordenEnvio = await this.prepararDatosOrdenEnvio(venta, datosEnvio);
-            console.log(`✅ [Andreani Pre-envío] Datos de pre-envío preparados. Contrato: ${ordenEnvio.contrato}, ID Pedido: ${ordenEnvio.idPedido}`);
 
             // 5. Crear pre-envío en Andreani
-            console.log(`🔄 [Andreani Pre-envío] Enviando solicitud POST a /v2/ordenes-de-envio...`);
-            console.log(`🔍 [Andreani Pre-envío] Datos del origen:`, {
-                codigoPostal: ordenEnvio.origen.postal?.codigoPostal || 'N/A',
-                localidad: ordenEnvio.origen.postal?.localidad || 'N/A',
-                region: ordenEnvio.origen.postal?.region || 'N/A',
-                calle: ordenEnvio.origen.postal?.calle || 'N/A',
-            });
-            console.log(`🔍 [Andreani Pre-envío] Datos del destino:`, {
-                codigoPostal: ordenEnvio.destino.postal?.codigoPostal || 'N/A',
-                localidad: ordenEnvio.destino.postal?.localidad || 'N/A',
-                region: ordenEnvio.destino.postal?.region || 'N/A',
-                calle: ordenEnvio.destino.postal?.calle || 'N/A',
-            });
-            console.log(`🔍 [Andreani Pre-envío] Contrato: ${ordenEnvio.contrato}`);
-            console.log(`🔍 [Andreani Pre-envío] SucursalClienteID: ${ordenEnvio.sucursalClienteID || 'NO ENVIADO'}`);
-            
             const result = await andreaniApiService.post<IOrdenEnvioResponse>(
                 '/v2/ordenes-de-envio',
                 ordenEnvio
@@ -151,12 +133,8 @@ export class AndreaniPreEnvioService {
             // Extraer número de envío (tracking) del primer bulto
             const numeroEnvio = preEnvioCreado.bultos?.[0]?.numeroDeEnvio || null;
             
-            console.log(`✅ [Andreani Pre-envío] Pre-envío creado. Estado: ${preEnvioCreado.estado}, Número de envío: ${numeroEnvio || 'N/A'}`);
-            console.log(`📦 [Andreani Pre-envío] Agrupador: ${preEnvioCreado.agrupadorDeBultos}`);
-            console.log(`🏷️ [Andreani Pre-envío] Etiquetas: ${preEnvioCreado.etiquetasPorAgrupador || 'N/A'}`);
 
             // 6. Guardar pre-envío en BD
-            console.log(`🔄 [Andreani Pre-envío] Guardando pre-envío en base de datos...`);
             const envio = await prisma.envios.create({
                 data: {
                     id_venta: idVenta,
@@ -168,10 +146,8 @@ export class AndreaniPreEnvioService {
                     observaciones: `Pre-envío Andreani. Estado: ${preEnvioCreado.estado}. Agrupador: ${preEnvioCreado.agrupadorDeBultos}. Etiquetas: ${preEnvioCreado.etiquetasPorAgrupador || 'N/A'}`,
                 },
             });
-            console.log(`✅ [Andreani Pre-envío] Pre-envío guardado en BD. ID: ${envio.id_envio}, Código: ${numeroEnvio || 'N/A'}`);
 
             // 7. Actualizar venta con id_envio
-            console.log(`🔄 [Andreani Pre-envío] Actualizando venta con id_envio...`);
             await prisma.venta.update({
                 where: { id_venta: idVenta },
                 data: {
@@ -179,9 +155,24 @@ export class AndreaniPreEnvioService {
                     estado_envio: this.mapearEstadoPreEnvio(preEnvioCreado.estado),
                 },
             });
-            console.log(`✅ [Andreani Pre-envío] Venta actualizada con id_envio: ${envio.id_envio}`);
 
-            console.log(`✅ [Andreani Pre-envío] Pre-envío creado completamente para venta ${idVenta}`);
+            // 8. Enviar email al cliente con el número de envío (no bloqueante)
+            if (numeroEnvio && venta.cliente?.usuarios?.email) {
+                mailService.sendShippingSent({
+                    orderId: idVenta,
+                    trackingCode: numeroEnvio,
+                    carrier: 'Andreani',
+                    cliente: {
+                        email: venta.cliente.usuarios.email,
+                        nombre: venta.cliente.usuarios.nombre || 'Cliente',
+                    },
+                }).catch((error) => {
+                    console.error(`❌ [Andreani Pre-envío] Error al enviar email de envío para venta ${idVenta}:`, error);
+                    // No lanzar error para no interrumpir el flujo
+                });
+            } else {
+                console.warn(`⚠️ [Andreani Pre-envío] No se pudo enviar email de envío para venta ${idVenta}. Número de envío: ${numeroEnvio || 'N/A'}, Email: ${venta.cliente?.usuarios?.email || 'N/A'}`);
+            }
 
             return preEnvioCreado;
         } catch (error: any) {
@@ -342,14 +333,6 @@ export class AndreaniPreEnvioService {
 
         // Obtener y validar código postal del cliente
         const codigoPostalCliente = cliente.cod_postal?.toString()?.trim();
-        console.log(`🔍 [Andreani Pre-envío] Datos del cliente para venta #${venta.id_venta}:`, {
-            direccion: cliente.direccion,
-            ciudad: cliente.ciudad,
-            provincia: cliente.provincia,
-            cod_postal: cliente.cod_postal,
-            cod_postal_tipo: typeof cliente.cod_postal,
-            cod_postal_procesado: codigoPostalCliente,
-        });
 
         if (!codigoPostalCliente || codigoPostalCliente === '0' || codigoPostalCliente === '0000') {
             throw new Error(
@@ -459,9 +442,6 @@ export class AndreaniPreEnvioService {
             ...(datosAdicionales?.codigoVerificadorDeEntrega && { codigoVerificadorDeEntrega: datosAdicionales.codigoVerificadorDeEntrega }),
             ...(datosAdicionales?.pagoPendienteEnMostrador !== undefined && { pagoPendienteEnMostrador: datosAdicionales.pagoPendienteEnMostrador }),
         };
-
-        // Agregar logging para debug
-        console.log(`🔍 [Andreani Pre-envío] Payload completo que se enviará:`, JSON.stringify(ordenEnvio, null, 2));
 
         return ordenEnvio;
     }

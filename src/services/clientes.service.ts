@@ -11,11 +11,9 @@ export class ClientesService {
         
         const cached = await cacheService.get<IPaginatedResponse<ICliente>>(cacheKey);
         if (cached) {
-            console.log(`✅ Lista de clientes encontrada en cache`);
             return cached;
         }
 
-        console.log(`❌ Lista de clientes no encontrada en cache`);
 
         const {
             page = 1,
@@ -164,11 +162,9 @@ export class ClientesService {
         
         const cached = await cacheService.get<ICliente>(cacheKey);
         if (cached) {
-            console.log(`✅ Cliente ${id} encontrado en cache`);
             return cached;
         }
 
-        console.log(`❌ Cliente ${id} no encontrado en cache`);
 
         const cliente = await prisma.cliente.findUnique({
             where: { id_usuario: id },
@@ -238,7 +234,6 @@ export class ClientesService {
         
         const cached = await cacheService.get<IClienteStats>(cacheKey);
         if (cached) {
-            console.log(`✅ Estadísticas del cliente ${id} encontradas en cache`);
             return cached;
         }
 

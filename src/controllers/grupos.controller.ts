@@ -122,11 +122,10 @@ export class GruposController {
                 return;
             }
 
-            const nuevoGrupo = await gruposService.create(data);
+            await gruposService.create(data);
 
             const response: IApiResponse = {
                 success: true,
-                data: nuevoGrupo,
                 message: 'Grupo creado exitosamente'
             };
 

@@ -46,11 +46,9 @@ export class DireccionesService {
         
         const cached = await cacheService.get<IDireccion[]>(cacheKey);
         if (cached) {
-            console.log(`✅ Direcciones del usuario ${idUsuario} encontradas en cache`);
             return cached;
         }
 
-        console.log(`❌ Direcciones del usuario ${idUsuario} no encontradas en cache`);
 
         const direcciones = await prisma.direcciones.findMany({
             where: {

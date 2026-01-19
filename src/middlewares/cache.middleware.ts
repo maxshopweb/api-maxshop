@@ -17,7 +17,6 @@ export const cacheMiddleware = (ttl: number = 300) => {
             const cachedResponse = await cacheService.get(cacheKey);
 
             if (cachedResponse) {
-                console.log(`✅ Respuesta cacheada para: ${req.originalUrl}`);
                 return res.json(cachedResponse);
             }
 
