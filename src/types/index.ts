@@ -1,6 +1,10 @@
 import { IProductos } from "./product.type";
 export type { UserRole } from './auth.type';
 
+// ============================================
+// TIPOS BASE / ENUMS
+// ============================================
+
 // 1 = activo, 2 = inactivo, 0 = eliminado, 3 = perfil incompleto
 export type EstadoGeneral = 0 | 1 | 2 | 3;
 
@@ -13,6 +17,10 @@ export type TipoVenta = 'presencial' | 'online' | 'telefono';
 export type MetodoPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'mercadopago' | 'otro';
 
 export type TipoDescuento = 'porcentaje' | 'monto_fijo';
+
+export type TipoDireccion = 'envio' | 'facturacion' | 'principal';
+
+export type WebhookStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 
 export interface INegocio {
@@ -69,12 +77,81 @@ export interface ICliente {
     id_cliente?: string | null;
     id_usuario: string;
     direccion?: string | null;
+    altura?: string | null;
+    piso?: string | null;
+    dpto?: string | null;
     cod_postal?: number | null;
     ciudad?: string | null;
     provincia?: string | null;
     // Relaciones
     usuario?: IUsuarios;
     ventas?: IVenta[];
+    direcciones?: IDireccion[];
+}
+
+// ============================================
+// INTERFACES DE DIRECCIONES
+// ============================================
+
+export interface IDireccion {
+    id_direccion: string;
+    id_usuario?: string | null;
+    id_cliente?: string | null;
+    id_venta?: number | null;
+    
+    // Dirección ingresada por usuario
+    direccion_usuario?: string | null;
+    
+    // Campos tradicionales
+    nombre?: string | null;
+    direccion?: string | null;
+    altura?: string | null;
+    piso?: string | null;
+    dpto?: string | null;
+    cod_postal?: string | null;
+    ciudad?: string | null;
+    provincia?: string | null;
+    
+    // Campos de geocodificación (OpenCage)
+    direccion_formateada?: string | null;
+    calle?: string | null;
+    pais?: string | null;
+    latitud?: number | null;
+    longitud?: number | null;
+    
+    // Metadata
+    es_principal?: boolean | null;
+    tipo?: TipoDireccion | null;
+    activo?: boolean | null;
+    creado_en?: Date;
+    actualizado_en?: Date | null;
+}
+
+/// DTO para respuesta normalizada de OpenCage
+export interface IDireccionOpenCageDTO {
+    direccion_formateada: string;
+    calle?: string;
+    ciudad?: string;
+    provincia?: string;
+    cod_postal?: string;
+    pais?: string;
+    latitud: number;
+    longitud: number;
+}
+
+/// DTO para crear/actualizar direcciones
+export interface IDireccionDTO {
+    direccion_usuario: string;
+    direccion_formateada?: string | null;
+    calle?: string | null;
+    cod_postal?: string | null;
+    ciudad?: string | null;
+    provincia?: string | null;
+    pais?: string | null;
+    latitud?: number | null;
+    longitud?: number | null;
+    tipo?: TipoDireccion;
+    es_principal?: boolean;
 }
 
 export interface IClienteFilters {
@@ -200,6 +277,8 @@ export interface IVenta {
     cliente?: ICliente | null;
     detalles?: IVentaDetalle[];
     envio?: IEnvios | null;
+    direcciones?: IDireccion[];
+    mercado_pago_payments?: IMercadoPagoPayment[];
 }
 
 export interface IVentaDetalle {
@@ -272,6 +351,8 @@ export interface ICreateVentaDTO {
     observaciones?: string;
     detalles: IVentaDetalleDTO[];
     costo_envio?: number; // Costo del envío calculado desde cotización
+    direccion?: IDireccionDTO; // Dirección de envío
+    direccionFacturacion?: IDireccionDTO; // Dirección de facturación (opcional)
 }
 
 export interface IVentaDetalleDTO {
@@ -365,3 +446,204 @@ export interface IUpdateMarcaDTO {
     nombre?: string;
     descripcion?: string;
 }
+
+// ============================================
+// INTERFACES DE MERCADO PAGO
+// ============================================
+
+export interface IMercadoPagoPayment {
+    id: bigint | number;
+    venta_id: number;
+    
+    // Identificación MP
+    payment_id: string;
+    preference_id?: string | null;
+    external_reference: string;
+    
+    // Estado del pago
+    status_mp: string;
+    status_detail?: string | null;
+    estado_venta_relacionado?: string | null;
+    
+    // Método de pago
+    payment_type_id: string;
+    payment_method_id?: string | null;
+    installments?: number | null;
+    
+    // Montos
+    transaction_amount: number;
+    total_paid_amount?: number | null;
+    net_received_amount?: number | null;
+    commission_amount?: number | null;
+    fee_details?: any;
+    
+    // Moneda y tipo
+    currency_id: string;
+    operation_type?: string | null;
+    
+    // Fechas
+    date_created: Date;
+    date_approved?: Date | null;
+    money_release_date?: Date | null;
+    
+    // Información adicional
+    card_info?: any;
+    payer_info?: any;
+    processing_mode?: string | null;
+    live_mode: boolean;
+    
+    // Metadata interna
+    webhook_id?: bigint | number | null;
+    webhook_processed_at?: Date | null;
+    created_at: Date;
+    updated_at: Date;
+    notes?: string | null;
+    
+    // Relaciones
+    venta?: IVenta;
+}
+
+// Mapeo de estados de MP a estados de venta
+export const MP_STATUS_TO_VENTA_STATUS: Record<string, EstadoPago> = {
+    'pending': 'pendiente',
+    'in_process': 'pendiente',
+    'approved': 'aprobado',
+    'authorized': 'aprobado',
+    'rejected': 'rechazado',
+    'cancelled': 'cancelado',
+    'refunded': 'cancelado',
+    'charged_back': 'cancelado',
+};
+
+// ============================================
+// INTERFACES DE WEBHOOKS
+// ============================================
+
+export interface IFailedWebhook {
+    id: bigint | number;
+    payment_id?: string | null;
+    webhook_data: any;
+    error_message: string;
+    error_stack?: string | null;
+    retry_count: number;
+    max_retries: number;
+    last_retry_at?: Date | null;
+    next_retry_at?: Date | null;
+    status: WebhookStatus;
+    created_at: Date;
+    updated_at: Date;
+}
+
+export interface IMercadoPagoWebhookEvent {
+    action: string;
+    data: {
+        id: string | number;
+    };
+    type?: string;
+    date_created?: string;
+    user_id?: string;
+    api_version?: string;
+}
+
+// ============================================
+// INTERFACES DE EVENT BUS
+// ============================================
+
+export interface IEventLog {
+    id: bigint | number;
+    event_type: string;
+    payload: any;
+    handlers_executed: number;
+    handlers_succeeded: number;
+    handlers_failed: number;
+    total_duration_ms?: number | null;
+    handler_results?: any;
+    source?: string | null;
+    triggered_by?: string | null;
+    created_at: Date;
+}
+
+/// Handler de eventos
+export type EventHandler<T = unknown> = (payload: T) => Promise<void>;
+
+/// Handler registrado con metadata
+export interface RegisteredHandler<T = unknown> {
+    name: string;
+    handler: EventHandler<T>;
+    priority?: number;
+}
+
+/// Resultado de ejecución de un handler
+export interface HandlerResult {
+    handlerName: string;
+    status: 'fulfilled' | 'rejected';
+    duration: number;
+    error?: Error;
+}
+
+/// Resultado de emisión de un evento
+export interface EmitResult {
+    eventType: string;
+    handlersExecuted: number;
+    handlersSucceeded: number;
+    handlersFailed: number;
+    totalDuration: number;
+    results: HandlerResult[];
+}
+
+// ============================================
+// TIPOS DE EVENTOS
+// ============================================
+
+/// Evento emitido cuando un pedido cambia de 'pendiente' a 'aprobado'
+export interface PedidoConfirmadoEvent {
+    id_venta: number;
+    fecha_confirmacion: Date;
+    estado_anterior: 'pendiente';
+    estado_actual: 'aprobado';
+    id_cliente: string | null;
+    cliente_email: string | null;
+    cliente_nombre: string | null;
+    total_neto: number | null;
+    metodo_pago: string | null;
+    tipo_venta: string | null;
+    timestamp: Date;
+}
+
+/// Evento emitido cuando se crea un nuevo pedido
+export interface PedidoCreadoEvent {
+    id_venta: number;
+    id_cliente: string | null;
+    total_neto: number | null;
+    metodo_pago: string | null;
+    tipo_venta: string | null;
+    timestamp: Date;
+}
+
+/// Evento emitido cuando un pedido es cancelado
+export interface PedidoCanceladoEvent {
+    id_venta: number;
+    id_cliente: string | null;
+    motivo?: string;
+    timestamp: Date;
+}
+
+/// Evento emitido cuando se genera código de envío
+export interface CodigoEnvioGeneradoEvent {
+    id_venta: number;
+    id_envio: string;
+    codigo_seguimiento: string;
+    empresa_envio: string;
+    timestamp: Date;
+}
+
+/// Mapa de todos los eventos disponibles
+export interface EventMap {
+    PedidoConfirmado: PedidoConfirmadoEvent;
+    PedidoCreado: PedidoCreadoEvent;
+    PedidoCancelado: PedidoCanceladoEvent;
+    CodigoEnvioGenerado: CodigoEnvioGeneradoEvent;
+}
+
+/// Tipos de eventos disponibles
+export type EventType = keyof EventMap;
