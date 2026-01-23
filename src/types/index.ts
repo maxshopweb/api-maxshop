@@ -96,28 +96,23 @@ export interface ICliente {
 export interface IDireccion {
     id_direccion: string;
     id_usuario?: string | null;
-    id_cliente?: string | null;
     id_venta?: number | null;
     
-    // Dirección ingresada por usuario
-    direccion_usuario?: string | null;
-    
-    // Campos tradicionales
+    // Campos tradicionales (coinciden con schema Prisma)
     nombre?: string | null;
     direccion?: string | null;
     altura?: string | null;
     piso?: string | null;
     dpto?: string | null;
-    cod_postal?: string | null;
+    cod_postal?: number | null;
     ciudad?: string | null;
     provincia?: string | null;
     
     // Campos de geocodificación (OpenCage)
-    direccion_formateada?: string | null;
-    calle?: string | null;
-    pais?: string | null;
     latitud?: number | null;
     longitud?: number | null;
+    direccion_formateada?: string | null;
+    pais?: string | null;
     
     // Metadata
     es_principal?: boolean | null;
@@ -130,10 +125,11 @@ export interface IDireccion {
 /// DTO para respuesta normalizada de OpenCage
 export interface IDireccionOpenCageDTO {
     direccion_formateada: string;
-    calle?: string;
+    direccion?: string;
+    altura?: string;
     ciudad?: string;
     provincia?: string;
-    cod_postal?: string;
+    cod_postal?: string; // OpenCage devuelve string, se parsea a number al guardar
     pais?: string;
     latitud: number;
     longitud: number;
@@ -141,16 +137,18 @@ export interface IDireccionOpenCageDTO {
 
 /// DTO para crear/actualizar direcciones
 export interface IDireccionDTO {
-    direccion_usuario: string;
-    direccion_formateada?: string | null;
-    calle?: string | null;
-    cod_postal?: string | null;
+    nombre?: string;
+    direccion: string;
+    altura?: string | null;
+    piso?: string | null;
+    dpto?: string | null;
+    cod_postal?: number | null;
     ciudad?: string | null;
     provincia?: string | null;
     pais?: string | null;
     latitud?: number | null;
     longitud?: number | null;
-    tipo?: TipoDireccion;
+    direccion_formateada?: string | null;
     es_principal?: boolean;
 }
 

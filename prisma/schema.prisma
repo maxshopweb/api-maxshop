@@ -7,10 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// MODELOS DE USUARIOS Y AUTENTICACIÓN
-// ============================================
-
 model admin {
   id_admin   String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   id_usuario String   @id @db.VarChar(150)
@@ -36,10 +32,6 @@ model auditoria {
   @@index([id_usuario], map: "idx_auditoria_usuario")
 }
 
-// ============================================
-// MODELOS DE CATÁLOGO
-// ============================================
-
 model categoria {
   id_cat         Int         @id @default(autoincrement())
   codi_categoria String      @unique @db.VarChar(4)
@@ -53,71 +45,49 @@ model categoria {
   @@index([codi_categoria], map: "idx_categoria_codigo")
 }
 
-// ============================================
-// MODELOS DE CLIENTES Y DIRECCIONES
-// ============================================
-
 model cliente {
-  id_cliente  String?       @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  id_usuario  String        @id @db.VarChar(150)
-  direccion   String?       @db.VarChar(255)
-  altura      String?       @db.VarChar(20)
-  piso        String?       @db.VarChar(20)
-  dpto        String?       @db.VarChar(20)
-  cod_postal  Int?
-  ciudad      String?       @db.VarChar(100)
-  provincia   String?       @db.VarChar(100)
-  usuarios    usuarios      @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
-  venta       venta[]
-  direcciones direcciones[]
+  id_cliente String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_usuario String   @id @db.VarChar(150)
+  direccion  String?  @db.VarChar(255)
+  altura     String?  @db.VarChar(20)
+  piso       String?  @db.VarChar(20)
+  dpto       String?  @db.VarChar(20)
+  cod_postal Int?
+  ciudad     String?  @db.VarChar(100)
+  provincia  String?  @db.VarChar(100)
+  usuarios   usuarios @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
+  venta      venta[]
 }
 
-/// Modelo de direcciones mejorado
-/// Soporta direcciones asociadas a usuarios Y a ventas específicas
-/// Incluye campos de geocodificación (OpenCage)
 model direcciones {
-  id_direccion String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  id_usuario   String? @db.VarChar(150)
-  id_cliente   String? @db.VarChar(150)
-  id_venta     Int?
-
-  // Dirección ingresada por usuario (texto libre)
-  direccion_usuario String? @db.VarChar(500)
-
-  // Campos de dirección tradicionales (compatibilidad)
-  nombre     String? @db.VarChar(100)
-  direccion  String? @db.VarChar(255)
-  altura     String? @db.VarChar(20)
-  piso       String? @db.VarChar(20)
-  dpto       String? @db.VarChar(20)
-  cod_postal String? @db.VarChar(10)
-  ciudad     String? @db.VarChar(100)
-  provincia  String? @db.VarChar(100)
-
-  // Datos normalizados por OpenCage (geocodificación)
-  direccion_formateada String?  @db.VarChar(500)
-  calle                String?  @db.VarChar(255)
-  pais                 String?  @default("Argentina") @db.VarChar(50)
-  latitud              Decimal? @db.Decimal(10, 8)
-  longitud             Decimal? @db.Decimal(11, 8)
-
-  // Metadata
-  es_principal   Boolean?  @default(false)
-  tipo           String?   @db.VarChar(20) // "envio", "facturacion", "principal"
-  activo         Boolean?  @default(true)
-  creado_en      DateTime  @default(now()) @db.Timestamp(6)
-  actualizado_en DateTime? @default(now()) @db.Timestamp(6)
-
+  id_direccion         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_usuario           String?   @db.VarChar(150)
+  id_venta             Int?
+  nombre               String?   @db.VarChar(100)
+  direccion            String?   @db.VarChar(255)
+  altura               String?   @db.VarChar(20)
+  piso                 String?   @db.VarChar(20)
+  dpto                 String?   @db.VarChar(20)
+  cod_postal           Int?
+  ciudad               String?   @db.VarChar(100)
+  provincia            String?   @db.VarChar(100)
+  es_principal         Boolean?  @default(false)
+  activo               Boolean?  @default(true)
+  tipo                 String?   @db.VarChar(20)
+  creado_en            DateTime? @default(now()) @db.Timestamp(6)
+  actualizado_en       DateTime? @default(now()) @db.Timestamp(6)
+  // Campos de geocodificación (OpenCage)
+  latitud              Float?
+  longitud             Float?
+  direccion_formateada String?   @db.VarChar(500)
+  pais                 String?   @default("Argentina") @db.VarChar(100)
   // Relaciones
-  usuarios usuarios? @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
-  cliente  cliente?  @relation(fields: [id_cliente], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
-  venta    venta?    @relation(fields: [id_venta], references: [id_venta], onDelete: Cascade, onUpdate: NoAction)
+  usuarios             usuarios? @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade, onUpdate: NoAction)
+  venta                venta?    @relation(fields: [id_venta], references: [id_venta], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([id_usuario], map: "idx_direcciones_usuario")
-  @@index([id_cliente], map: "idx_direcciones_cliente")
   @@index([id_venta], map: "idx_direcciones_venta")
   @@index([es_principal], map: "idx_direcciones_principal")
-  @@index([tipo], map: "idx_direcciones_tipo")
   @@map("direcciones")
 }
 
@@ -189,6 +159,111 @@ model marca {
   productos      productos[]
 
   @@index([codi_marca], map: "idx_marca_codigo")
+}
+
+// ============================================
+// TABLAS DE REFERENCIA ADICIONALES (DESDE CSV)
+// ============================================
+
+model lista_precio {
+  id_lista          Int      @id @default(autoincrement())
+  codi_lista        String   @unique @db.VarChar(1)   // CODILIST del CSV
+  nombre            String?  @db.VarChar(15)          // DESCLIST
+  tipo_lista        String?  @db.VarChar(1)           // TIPOLIST
+  venta_lista       String?  @db.VarChar(1)          // VENTLIST
+  activo_cuenta     Boolean?                          // ACTUCUEN (L)
+  codi_forma_pago   String?  @db.VarChar(1)          // CODIFOPA
+  activo_lista      String?  @db.VarChar(1)          // ACTULIST
+  porc_descuento    Decimal? @db.Decimal(5, 2)       // PORCDESC
+  porc_descuento_m  Decimal? @db.Decimal(5, 2)       // PORCDESC_M
+  valor_lista       Decimal? @db.Decimal(5, 2)        // VALOLIST
+  activo            Boolean? @default(true)
+  creado_en         DateTime? @default(now()) @db.Timestamp(6)
+  actualizado_en    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([codi_lista], map: "idx_lista_precio_codigo")
+  @@map("lista_precio")
+}
+
+model situacion_fiscal {
+  id_sifi           Int      @id @default(autoincrement())
+  codi_sifi         String   @unique @db.VarChar(2)   // CODISIFI del CSV
+  nombre            String?  @db.VarChar(25)         // DESCSIFI
+  sim1_sifi         Decimal? @db.Decimal(5, 2)        // SIM1SIFI
+  cuenta_venta      String?  @db.VarChar(6)          // CUE1SIFI
+  cuenta_compra     String?  @db.VarChar(6)          // CUC1SIFI
+  idis_sifi         String?  @db.VarChar(1)         // IDISSIFI
+  idic_sifi         String?  @db.VarChar(1)         // IDICSIFI
+  minimo_sifi       Decimal? @db.Decimal(15, 2)       // MINISIFI
+  prbi_sifi         Decimal? @db.Decimal(5, 2)        // PRBISIFI
+  prse_sifi         Decimal? @db.Decimal(5, 2)        // PRSESIFI
+  codi_sucursal     String?  @db.VarChar(4)          // CODISUCU
+  codi_impuesto     String?  @db.VarChar(2)          // CODIIMPU
+  menos_impuesto    String?  @db.VarChar(1)          // MOINSIFI
+  activo            Boolean? @default(true)
+  creado_en         DateTime? @default(now()) @db.Timestamp(6)
+  actualizado_en    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([codi_sifi], map: "idx_situacion_fiscal_codigo")
+  @@map("situacion_fiscal")
+}
+
+model provincia {
+  id_provincia      Int      @id @default(autoincrement())
+  codi_provincia    String   @unique @db.VarChar(1)   // CODIPCIA del CSV
+  nombre            String?  @db.VarChar(20)          // DESCPCIA
+  alicuota_1        Decimal? @db.Decimal(5, 2)        // ALI1PCIA
+  alicuota_2        Decimal? @db.Decimal(5, 2)        // ALI2PCIA
+  alicuota_3        Decimal? @db.Decimal(5, 2)        // ALI3PCIA
+  alicuota_4        Decimal? @db.Decimal(5, 2)        // ALI4PCIA
+  activo            Boolean? @default(true)
+  creado_en         DateTime? @default(now()) @db.Timestamp(6)
+  actualizado_en    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([codi_provincia], map: "idx_provincia_codigo")
+  @@map("provincia")
+}
+
+model plataforma_pago {
+  id_plataforma     Int      @id @default(autoincrement())
+  codi_plataforma   String   @unique @db.VarChar(2)   // CODIPLAT del CSV
+  nombre            String?  @db.VarChar(30)          // DESCPLAT
+  tipo_plataforma   String?  @db.VarChar(1)           // TIPOPLAT
+  activo            Boolean? @default(true)
+  creado_en         DateTime? @default(now()) @db.Timestamp(6)
+  actualizado_en    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([codi_plataforma], map: "idx_plataforma_pago_codigo")
+  @@map("plataforma_pago")
+}
+
+model forma_pago {
+  id_forma_pago     Int      @id @default(autoincrement())
+  codi_forma_pago   String   @unique @db.VarChar(1)   // CODIFOPA del CSV
+  nombre            String?  @db.VarChar(20)          // DESCFOPA
+  cuenta_venta      String?  @db.VarChar(6)          // CUVEFOPA
+  cuenta_compra     String?  @db.VarChar(6)          // CUCOFOPA
+  ico_banco         String?  @db.VarChar(1)          // ICOBFOPA
+  ipag_fopa         String?  @db.VarChar(1)          // IPAGFOPA
+  iven_fopa         String?  @db.VarChar(1)          // IVENFOPA
+  iban_fopa         String?  @db.VarChar(1)          // IBANFOPA
+  icaj_fopa         String?  @db.VarChar(1)          // ICAJFOPA
+  iuni_fopa         String?  @db.VarChar(1)          // IUNIFOPA
+  icom_fopa         String?  @db.VarChar(1)          // ICOMFOPA
+  idis_fopa         String?  @db.VarChar(1)          // IDISFOPA
+  caja_fopa         String?  @db.VarChar(1)          // CAJAFOPA
+  debe_fopa         Decimal? @db.Decimal(19, 2)       // AUDEFOPA
+  haber_fopa        Decimal? @db.Decimal(19, 2)      // AUCRFOPA
+  codi_descuento    String?  @db.VarChar(2)          // CODIDEOP
+  imod_descuento    String?  @db.VarChar(1)          // IMODDEOP
+  itar_fopa         String?  @db.VarChar(1)          // ITARFOPA
+  porc_fopa         Decimal? @db.Decimal(6, 2)        // PORCFOPA
+  activo            Boolean? @default(true)
+  creado_en         DateTime? @default(now()) @db.Timestamp(6)
+  actualizado_en    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([codi_forma_pago], map: "idx_forma_pago_codigo")
+  @@map("forma_pago")
 }
 
 model negocio {
@@ -287,29 +362,29 @@ model roles {
 }
 
 model usuarios {
-  id_usuario          String        @id @db.VarChar(150)
-  nombre              String?       @db.VarChar(255)
-  apellido            String?       @db.VarChar(255)
-  email               String?       @db.VarChar(255)
-  telefono            String?       @db.VarChar(50)
-  username            String?       @db.VarChar(100)
-  password            String?       @db.VarChar(255)
+  id_usuario          String      @id @db.VarChar(150)
+  nombre              String?     @db.VarChar(255)
+  apellido            String?     @db.VarChar(255)
+  email               String?     @db.VarChar(255)
+  telefono            String?     @db.VarChar(50)
+  username            String?     @db.VarChar(100)
+  password            String?     @db.VarChar(255)
   id_rol              Int?
   estado              Int?
-  creado_en           DateTime?     @default(now()) @db.Timestamp(6)
-  actualizado_en      DateTime?     @default(now()) @db.Timestamp(6)
-  img                 String?       @db.VarChar(255)
-  ultimo_login        DateTime?     @db.Timestamp(6)
-  login_ip            String?       @db.VarChar(100)
-  nacimiento          DateTime?     @db.Date
-  es_anonimo          Boolean?      @default(false)
-  activo              Boolean?      @default(true)
-  email_no_verificado Boolean?      @default(false)
+  creado_en           DateTime?   @default(now()) @db.Timestamp(6)
+  actualizado_en      DateTime?   @default(now()) @db.Timestamp(6)
+  img                 String?     @db.VarChar(255)
+  ultimo_login        DateTime?   @db.Timestamp(6)
+  login_ip            String?     @db.VarChar(100)
+  nacimiento          DateTime?   @db.Date
+  es_anonimo          Boolean?    @default(false)
+  activo              Boolean?    @default(true)
+  email_no_verificado Boolean?    @default(false)
   admin               admin?
   auditoria           auditoria[]
   cliente             cliente?
   direcciones         direcciones[]
-  roles               roles?        @relation(fields: [id_rol], references: [id_rol])
+  roles               roles?      @relation(fields: [id_rol], references: [id_rol])
   venta               venta[]
 
   @@index([email], map: "idx_usuarios_email")
@@ -318,31 +393,29 @@ model usuarios {
 }
 
 model venta {
-  id_venta        Int       @id @default(autoincrement())
-  id_usuario      String?   @db.VarChar(150)
-  fecha           DateTime? @default(now()) @db.Timestamp(6)
-  id_cliente      String?   @db.VarChar(150)
-  total_sin_iva   Decimal?  @db.Decimal(10, 2)
-  total_con_iva   Decimal?  @db.Decimal(10, 2)
-  descuento_total Decimal?  @db.Decimal(10, 2)
-  total_neto      Decimal?  @db.Decimal(10, 2)
-  metodo_pago     String?   @db.VarChar(50)
-  estado_pago     String?   @db.VarChar(50)
-  estado_envio    String?   @db.VarChar(50)
-  id_envio        String?   @db.Uuid
-  tipo_venta      String?   @db.VarChar(50)
-  observaciones   String?
-  factura_url     String?   @db.VarChar(255)
-  creado_en       DateTime? @default(now()) @db.Timestamp(6)
-  actualizado_en  DateTime? @default(now()) @db.Timestamp(6)
-
-  // Relaciones
+  id_venta              Int                     @id @default(autoincrement())
+  id_usuario            String?                 @db.VarChar(150)
+  fecha                 DateTime?               @default(now()) @db.Timestamp(6)
+  id_cliente            String?                 @db.VarChar(150)
+  total_sin_iva         Decimal?                @db.Decimal(10, 2)
+  total_con_iva         Decimal?                @db.Decimal(10, 2)
+  descuento_total       Decimal?                @db.Decimal(10, 2)
+  total_neto            Decimal?                @db.Decimal(10, 2)
+  metodo_pago           String?                 @db.VarChar(50)
+  estado_pago           String?                 @db.VarChar(50)
+  estado_envio          String?                 @db.VarChar(50)
+  id_envio              String?                 @db.Uuid
+  tipo_venta            String?                 @db.VarChar(50)
+  observaciones         String?
+  factura_url           String?                 @db.VarChar(255)
+  creado_en             DateTime?               @default(now()) @db.Timestamp(6)
+  actualizado_en        DateTime?               @default(now()) @db.Timestamp(6)
   envios                envios[]
   cliente               cliente?                @relation(fields: [id_cliente], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
   usuarios              usuarios?               @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
   venta_detalle         venta_detalle[]
-  direcciones           direcciones[]
   mercado_pago_payments mercado_pago_payments[]
+  direcciones           direcciones[]
 
   @@index([id_cliente], map: "idx_venta_cliente")
   @@index([fecha], map: "idx_venta_fecha")
@@ -367,61 +440,41 @@ model venta_detalle {
 }
 
 // ============================================
-// MODELOS DE MERCADO PAGO
+// MODELOS NUEVOS - MERCADO PAGO Y EVENT BUS
 // ============================================
 
-/// Almacena información completa de pagos de Mercado Pago
-/// Permite trazabilidad completa y reprocesamiento de webhooks
 model mercado_pago_payments {
-  id       BigInt @id @default(autoincrement())
-  venta_id Int    @db.Integer
-
-  // Identificación MP
-  payment_id         String  @unique @db.VarChar(100)
-  preference_id      String? @db.VarChar(100)
-  external_reference String  @db.VarChar(255)
-
-  // Estado del pago
-  status_mp                String  @db.VarChar(50)
-  status_detail            String? @db.VarChar(100)
-  estado_venta_relacionado String? @db.VarChar(50)
-
-  // Método de pago
-  payment_type_id   String  @db.VarChar(50)
-  payment_method_id String? @db.VarChar(50)
-  installments      Int?    @default(1)
-
-  // Montos
-  transaction_amount  Decimal  @db.Decimal(12, 2)
-  total_paid_amount   Decimal? @db.Decimal(12, 2)
-  net_received_amount Decimal? @db.Decimal(12, 2)
-  commission_amount   Decimal? @db.Decimal(12, 2)
-  fee_details         Json?
-
-  // Moneda y tipo
-  currency_id    String  @default("ARS") @db.VarChar(3)
-  operation_type String? @db.VarChar(50)
-
-  // Fechas
-  date_created       DateTime  @db.Timestamp(6)
-  date_approved      DateTime? @db.Timestamp(6)
-  money_release_date DateTime? @db.Timestamp(6)
-
-  // Información adicional
-  card_info       Json?
-  payer_info      Json?
-  processing_mode String? @db.VarChar(50)
-  live_mode       Boolean @default(false)
-
-  // Metadata interna
-  webhook_id           BigInt?
-  webhook_processed_at DateTime? @db.Timestamp(6)
-  created_at           DateTime  @default(now()) @db.Timestamp(6)
-  updated_at           DateTime  @default(now()) @db.Timestamp(6)
-  notes                String?   @db.Text
-
-  // Relaciones
-  venta venta @relation(fields: [venta_id], references: [id_venta], onDelete: Cascade, onUpdate: NoAction)
+  id                       BigInt    @id @default(autoincrement())
+  venta_id                 Int
+  payment_id               String    @unique @db.VarChar(100)
+  preference_id            String?   @db.VarChar(100)
+  external_reference       String    @db.VarChar(255)
+  status_mp                String    @db.VarChar(50)
+  status_detail            String?   @db.VarChar(100)
+  estado_venta_relacionado String?   @db.VarChar(50)
+  payment_type_id          String    @db.VarChar(50)
+  payment_method_id        String?   @db.VarChar(50)
+  installments             Int?      @default(1)
+  transaction_amount       Decimal   @db.Decimal(12, 2)
+  total_paid_amount        Decimal?  @db.Decimal(12, 2)
+  net_received_amount      Decimal?  @db.Decimal(12, 2)
+  commission_amount        Decimal?  @db.Decimal(12, 2)
+  fee_details              Json?
+  currency_id              String    @default("ARS") @db.VarChar(3)
+  operation_type           String?   @db.VarChar(50)
+  date_created             DateTime  @db.Timestamp(6)
+  date_approved            DateTime? @db.Timestamp(6)
+  money_release_date       DateTime? @db.Timestamp(6)
+  card_info                Json?
+  payer_info               Json?
+  processing_mode          String?   @db.VarChar(50)
+  live_mode                Boolean   @default(false)
+  webhook_id               BigInt?
+  webhook_processed_at     DateTime? @db.Timestamp(6)
+  created_at               DateTime  @default(now()) @db.Timestamp(6)
+  updated_at               DateTime  @default(now()) @db.Timestamp(6)
+  notes                    String?   @db.Text
+  venta                    venta     @relation(fields: [venta_id], references: [id_venta], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([venta_id], map: "idx_mp_payments_venta")
   @@index([status_mp], map: "idx_mp_payments_status")
@@ -429,7 +482,6 @@ model mercado_pago_payments {
   @@map("mercado_pago_payments")
 }
 
-/// Almacena webhooks que fallaron para reprocesamiento
 model failed_webhooks {
   id            BigInt    @id @default(autoincrement())
   payment_id    String?   @db.VarChar(100)
@@ -440,7 +492,7 @@ model failed_webhooks {
   max_retries   Int       @default(5)
   last_retry_at DateTime? @db.Timestamp(6)
   next_retry_at DateTime? @db.Timestamp(6)
-  status        String    @default("pending") @db.VarChar(20) // pending, processing, completed, failed
+  status        String    @default("pending") @db.VarChar(20)
   created_at    DateTime  @default(now()) @db.Timestamp(6)
   updated_at    DateTime  @default(now()) @db.Timestamp(6)
 
@@ -449,30 +501,18 @@ model failed_webhooks {
   @@map("failed_webhooks")
 }
 
-// ============================================
-// MODELOS PARA EVENT BUS (Auditoría de eventos)
-// ============================================
-
-/// Registro de eventos emitidos por el Event Bus
-/// Útil para debugging, auditoría y reprocesamiento
 model event_logs {
-  id         BigInt @id @default(autoincrement())
-  event_type String @db.VarChar(100)
-  payload    Json
-
-  // Resultados de ejecución
-  handlers_executed  Int  @default(0)
-  handlers_succeeded Int  @default(0)
-  handlers_failed    Int  @default(0)
+  id                 BigInt   @id @default(autoincrement())
+  event_type         String   @db.VarChar(100)
+  payload            Json
+  handlers_executed  Int      @default(0)
+  handlers_succeeded Int      @default(0)
+  handlers_failed    Int      @default(0)
   total_duration_ms  Int?
-
-  // Detalles de handlers
-  handler_results Json? // Array de resultados por handler
-
-  // Metadata
-  source       String?  @db.VarChar(100) // "webhook", "manual", "system"
-  triggered_by String?  @db.VarChar(150) // id_usuario que disparó el evento
-  created_at   DateTime @default(now()) @db.Timestamp(6)
+  handler_results    Json?
+  source             String?  @db.VarChar(100)
+  triggered_by       String?  @db.VarChar(150)
+  created_at         DateTime @default(now()) @db.Timestamp(6)
 
   @@index([event_type], map: "idx_event_logs_type")
   @@index([created_at], map: "idx_event_logs_date")

@@ -94,37 +94,47 @@ export class PaymentProcessingService {
             let ventaActualizada = await ventasService.getById(idVenta);
 
 
-            // Emitir evento SALE_CREATED cuando se confirma el pago
-            // Según requisitos: "se crea/actualiza una venta en estado confirmada (ej: Mercado Pago)"
-            // Esto cubre el caso de pagos confirmados (Mercado Pago webhook o confirmación manual)
-            if (ventaActualizada.estado_pago && ventaActualizada.fecha) {
+            // Emitir evento SALE_CREATED SOLO cuando el pago está aprobado
+            // Los handlers del Event Bus se ejecutarán automáticamente
+            if (ventaActualizada.estado_pago === 'aprobado' && ventaActualizada.fecha) {
                 const event = SaleEventFactory.createSaleCreated({
                     id_venta: ventaActualizada.id_venta,
-                    estado_pago: ventaActualizada.estado_pago as 'pendiente' | 'aprobado' | 'cancelado',
+                    estado_pago: 'aprobado',
                     fecha: ventaActualizada.fecha.toISOString(),
+                    venta: ventaActualizada, // Incluir datos completos de la venta
+                    paymentData: paymentData ? {
+                        metodoPago: paymentData.metodoPago,
+                        transactionId: paymentData.transactionId,
+                        paymentDate: paymentData.paymentDate?.toISOString(),
+                        notas: paymentData.notas,
+                    } : undefined,
                 });
                 await eventBus.emit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
                     console.error('❌ [PaymentProcessing] Error al emitir evento SALE_CREATED:', error);
                 });
             }
 
-            // 6. Crear pre-envío en Andreani (solo si es envío, no retiro)
-            // Verificar si es retiro en tienda (si observaciones contiene "Retiro en tienda")
+            // NOTA: La creación del pre-envío en Andreani ahora se hace a través del Event Bus
+            // El handler AndreaniHandler se ejecutará automáticamente cuando se emita SALE_CREATED
+            // Mantenemos este código comentado por si se necesita crear el envío de forma síncrona
+            // (por ahora, el Event Bus lo maneja de forma asíncrona)
+            
+            // 6. Crear pre-envío en Andreani (ahora manejado por Event Bus)
+            // El AndreaniHandler se ejecutará automáticamente desde el Event Bus
+            // Si necesitas crear el envío de forma síncrona, descomenta el código siguiente:
+            /*
             const esRetiro = ventaActualizada.observaciones?.toLowerCase().includes('retiro en tienda') || 
                             ventaActualizada.observaciones?.toLowerCase().includes('tipo: retiro');
             
             if (!esRetiro) {
                 try {
                     await andreaniPreEnvioService.crearPreEnvio(idVenta);
-                    // Obtener venta actualizada nuevamente para incluir el envío con número de seguimiento
                     ventaActualizada = await ventasService.getById(idVenta);
                 } catch (error: any) {
                     console.error(`❌ [PaymentProcessing] Error al crear pre-envío para venta #${idVenta}:`, error);
-                    console.error(`❌ [PaymentProcessing] Stack trace:`, error.stack);
-                    // No lanzar error, el pre-envío se puede crear después manualmente
-                    // Pero logueamos el error completo para debugging
                 }
             }
+            */
 
             // 7. Enviar email de confirmación con tracking (no bloqueante)
             // El número de seguimiento se obtiene de ventaActualizada.envio?.cod_seguimiento

@@ -59,6 +59,15 @@ if (process.env.VERCEL !== '1') {
             // Inicializar WebSocket Server
             websocketServer.initialize(httpServer);
 
+            // Inicializar servicio de retry de webhooks fallidos (después de que Prisma esté listo)
+            const { failedWebhookRetryService } = require('./services/failed-webhook-retry.service');
+            failedWebhookRetryService.start();
+            console.log('✅ [Server] Servicio de retry de webhooks iniciado');
+
+            // Inicializar handlers del Event Bus
+            const { handlerExecutorService } = require('./services/handlers/handler-executor.service');
+            handlerExecutorService.initialize();
+
             httpServer.listen(PORT);
         } catch (error) {
             console.error('❌ Error al iniciar el servidor:', error);
@@ -69,6 +78,10 @@ if (process.env.VERCEL !== '1') {
     process.on('SIGINT', async () => {
         // Cerrar WebSocket Server
         websocketServer.close();
+        
+        // Cerrar servicio de retry de webhooks
+        const { failedWebhookRetryService } = require('./services/failed-webhook-retry.service');
+        failedWebhookRetryService.stop();
         
         // Cerrar Event Bus (cierra conexiones Redis)
         const { eventBus } = require('./infrastructure/event-bus/event-bus');

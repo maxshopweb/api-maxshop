@@ -6,6 +6,7 @@ import { paymentProcessingService } from './payment-processing.service';
 import { eventBus } from '../infrastructure/event-bus/event-bus';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
 import { direccionesService } from './direcciones.service';
+import { mercadoPagoService } from './mercado-pago.service';
 
 export class VentasService {
     private TTL_VENTA = 3600; // 1 hora
@@ -406,13 +407,16 @@ export class VentasService {
 
         const ventaCompleta = await this.getById(venta.id_venta);
 
-        // Emitir evento SALE_CREATED (venta en estado pendiente)
-        // Solo emitir si el estado es pendiente (según requisitos)
+        // NOTA: Evento SALE_CREATED ahora se emite SOLO cuando estado_pago = 'aprobado'
+        // Esto se hace desde PaymentProcessingService.confirmPayment()
+        // Mantenemos esta emisión para ventas pendientes por compatibilidad (puede ser útil para WebSocket)
+        // Pero los handlers del Event Bus solo se ejecutan cuando estado = 'aprobado'
         if (ventaCompleta.estado_pago === 'pendiente' && ventaCompleta.fecha) {
             const event = SaleEventFactory.createSaleCreated({
                 id_venta: ventaCompleta.id_venta,
                 estado_pago: ventaCompleta.estado_pago,
                 fecha: ventaCompleta.fecha.toISOString(),
+                venta: ventaCompleta, // Incluir datos completos
             });
             await eventBus.emit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
                 console.error('❌ [VentasService] Error al emitir evento SALE_CREATED:', error);
@@ -612,17 +616,87 @@ export class VentasService {
                 }
             }
 
-            // Emitir evento SALE_CREATED (venta creada desde checkout)
-            // Siempre emitir porque createFromCheckout crea ventas en estado pendiente
+            // NOTA: Evento SALE_CREATED ahora se emite SOLO cuando estado_pago = 'aprobado'
+            // Esto se hace desde PaymentProcessingService.confirmPayment()
+            // Mantenemos esta emisión para ventas pendientes por compatibilidad (puede ser útil para WebSocket)
             if (venta.estado_pago && venta.fecha) {
                 const event = SaleEventFactory.createSaleCreated({
                     id_venta: venta.id_venta,
                     estado_pago: venta.estado_pago as 'pendiente' | 'aprobado' | 'cancelado',
                     fecha: venta.fecha.toISOString(),
+                    venta: venta, // Incluir datos completos
                 });
                 await eventBus.emit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
                     console.error('❌ [VentasService] Error al emitir evento SALE_CREATED:', error);
                 });
+            }
+
+            // Si el método de pago es Mercado Pago, crear preferencia de pago
+            let mercadoPagoPreferenceUrl: string | null = null;
+            
+            if (metodoPagoNormalizado === 'mercadopago') {
+                try {
+                    // Verificar que el servicio esté configurado
+                    if (!mercadoPagoService.isConfigured()) {
+                        throw new Error('Mercado Pago no está configurado. Verifica las credenciales en .env');
+                    }
+
+                    // Obtener URLs de retorno desde variables de entorno o usar defaults
+                    // SIMPLIFICADO: En sandbox, usar URLs simples sin auto_return para evitar problemas
+                    const baseUrl = process.env.DEFAULT_SUCCESS_URL 
+                        ? process.env.DEFAULT_SUCCESS_URL.replace(/\/checkout\/resultado.*$/, '')
+                        : process.env.FRONTEND_URL || 'http://localhost:3000';
+                    
+                    let successUrl = process.env.DEFAULT_SUCCESS_URL 
+                        || process.env.MERCADOPAGO_SUCCESS_URL
+                        || `${baseUrl}/checkout/resultado?status=approved`;
+                    
+                    let failureUrl = process.env.DEFAULT_FAILURE_URL 
+                        || process.env.MERCADOPAGO_FAILURE_URL
+                        || `${baseUrl}/checkout/resultado?status=rejected`;
+                    
+                    let pendingUrl = process.env.DEFAULT_PENDING_URL 
+                        || process.env.MERCADOPAGO_PENDING_URL
+                        || `${baseUrl}/checkout/resultado?status=pending`;
+                    
+                    // Determinar si usar auto_return
+                    // En producción: usar auto_return si es HTTPS
+                    // En desarrollo/sandbox: NO usar auto_return para evitar problemas
+                    const isProduction = process.env.NODE_ENV === 'production' && process.env.MERCADOPAGO_ENV === 'production';
+                    const isLocalhost = successUrl.includes('localhost') || successUrl.includes('127.0.0.1');
+                    const isHttp = successUrl.startsWith('http://');
+                    const shouldUseAutoReturn = isProduction && !isLocalhost && !isHttp;
+                    
+                    // Validar que las URLs sean válidas
+                    if (!successUrl || !successUrl.startsWith('http')) {
+                        throw new Error(`URL de éxito inválida: ${successUrl}. Debe ser una URL HTTP/HTTPS válida.`);
+                    }
+
+                    const backUrls = {
+                        success: successUrl,
+                        failure: failureUrl,
+                        pending: pendingUrl,
+                    };
+
+                    // Crear preferencia de pago
+                    const preference = await mercadoPagoService.createPreferenceFromVenta({
+                        venta,
+                        backUrls,
+                        useAutoReturn: shouldUseAutoReturn, // Pasar flag para controlar auto_return
+                    });
+
+                    // Usar sandbox_init_point en modo test, init_point en producción
+                    mercadoPagoPreferenceUrl = mercadoPagoService.getMode() === 'sandbox'
+                        ? preference.sandbox_init_point
+                        : preference.init_point;
+
+                    console.log(`✅ [VentasService] Preferencia de MP creada para venta #${venta.id_venta}: ${preference.id}`);
+                    console.log(`🔗 [VentasService] URL de pago: ${mercadoPagoPreferenceUrl}`);
+                } catch (error: any) {
+                    console.error(`❌ [VentasService] Error al crear preferencia de Mercado Pago:`, error);
+                    // No lanzar error, pero loguear. La venta ya está creada.
+                    // El frontend puede manejar la ausencia de URL mostrando un error.
+                }
             }
 
             // Enviar emails según el método de pago
@@ -642,6 +716,11 @@ export class VentasService {
                 this.sendPendingOrderEmail(venta).catch((error) => {
                     console.error('❌ Error al enviar email de pedido pendiente:', error);
                 });
+            }
+
+            // Agregar URL de Mercado Pago a la venta (si existe)
+            if (mercadoPagoPreferenceUrl) {
+                (venta as any).mercadoPagoPreferenceUrl = mercadoPagoPreferenceUrl;
             }
 
             return venta;

@@ -9,6 +9,10 @@ import clientesRoutes from './clientes.routes';
 import andreaniRoutes from './andreani.routes';
 import dashboardRoutes from './dashboard.routes';
 import direccionesRoutes from './direcciones.routes';
+import locationRoutes from './location.routes';
+import webhookRoutes from './webhook.routes';
+import dbfConverterRoutes from './dbf-converter.routes';
+import sincronizacionRoutes from './sincronizacion.routes';
 
 const apiRoutes = Router();
 
@@ -22,6 +26,10 @@ apiRoutes.use('/clientes', clientesRoutes);
 apiRoutes.use('/andreani', andreaniRoutes);
 apiRoutes.use('/admin/dashboard', dashboardRoutes);
 apiRoutes.use('/direcciones', direccionesRoutes);
+apiRoutes.use('/location', locationRoutes);
+apiRoutes.use('/webhooks', webhookRoutes);
+apiRoutes.use('/dbf-converter', dbfConverterRoutes);
+apiRoutes.use('/sincronizacion', sincronizacionRoutes);
 
 
 export default apiRoutes;   

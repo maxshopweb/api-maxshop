@@ -1,9 +1,10 @@
 import { prisma } from '../index';
 import cacheService from './cache.service';
 
-export interface IDireccion {
+export interface IDireccionLocal {
     id_direccion: string;
-    id_usuario: string;
+    id_usuario?: string | null;
+    id_venta?: number | null;
     nombre?: string | null;
     direccion?: string | null;
     altura?: string | null;
@@ -14,8 +15,14 @@ export interface IDireccion {
     provincia?: string | null;
     es_principal: boolean;
     activo: boolean;
+    tipo?: string | null;
     creado_en?: Date | null;
     actualizado_en?: Date | null;
+    // Campos de geocodificaci?n
+    latitud?: number | null;
+    longitud?: number | null;
+    direccion_formateada?: string | null;
+    pais?: string | null;
 }
 
 export interface ICreateDireccionDTO {
@@ -41,14 +48,13 @@ export class DireccionesService {
     /**
      * Obtiene todas las direcciones activas de un usuario
      */
-    async getByUsuario(idUsuario: string): Promise<IDireccion[]> {
+    async getByUsuario(idUsuario: string): Promise<IDireccionLocal[]> {
         const cacheKey = `direcciones:usuario:${idUsuario}`;
         
-        const cached = await cacheService.get<IDireccion[]>(cacheKey);
+        const cached = await cacheService.get<IDireccionLocal[]>(cacheKey);
         if (cached) {
             return cached;
         }
-
 
         const direcciones = await prisma.direcciones.findMany({
             where: {
@@ -61,9 +67,10 @@ export class DireccionesService {
             ],
         });
 
-        const formatted: IDireccion[] = direcciones.map((d) => ({
+        const formatted: IDireccionLocal[] = direcciones.map((d) => ({
             id_direccion: d.id_direccion,
             id_usuario: d.id_usuario,
+            id_venta: d.id_venta,
             nombre: d.nombre,
             direccion: d.direccion,
             altura: d.altura,
@@ -74,8 +81,13 @@ export class DireccionesService {
             provincia: d.provincia,
             es_principal: d.es_principal || false,
             activo: d.activo || true,
+            tipo: d.tipo,
             creado_en: d.creado_en,
             actualizado_en: d.actualizado_en,
+            latitud: d.latitud,
+            longitud: d.longitud,
+            direccion_formateada: d.direccion_formateada,
+            pais: d.pais,
         }));
 
         await cacheService.set(cacheKey, formatted, this.TTL_DIRECCIONES);
@@ -83,9 +95,9 @@ export class DireccionesService {
     }
 
     /**
-     * Obtiene una dirección por ID
+     * Obtiene una direcci?n por ID
      */
-    async getById(idDireccion: string, idUsuario: string): Promise<IDireccion> {
+    async getById(idDireccion: string, idUsuario: string): Promise<IDireccionLocal> {
         const direccion = await prisma.direcciones.findFirst({
             where: {
                 id_direccion: idDireccion,
@@ -101,6 +113,7 @@ export class DireccionesService {
         return {
             id_direccion: direccion.id_direccion,
             id_usuario: direccion.id_usuario,
+            id_venta: direccion.id_venta,
             nombre: direccion.nombre,
             direccion: direccion.direccion,
             altura: direccion.altura,
@@ -111,17 +124,22 @@ export class DireccionesService {
             provincia: direccion.provincia,
             es_principal: direccion.es_principal || false,
             activo: direccion.activo || true,
+            tipo: direccion.tipo,
             creado_en: direccion.creado_en,
             actualizado_en: direccion.actualizado_en,
+            latitud: direccion.latitud,
+            longitud: direccion.longitud,
+            direccion_formateada: direccion.direccion_formateada,
+            pais: direccion.pais,
         };
     }
 
     /**
-     * Crea una nueva dirección
-     * Valida que no se exceda el máximo de 3 direcciones
+     * Crea una nueva direcci?n
+     * Valida que no se exceda el m?ximo de 3 direcciones
      */
-    async create(data: ICreateDireccionDTO, idUsuario: string): Promise<IDireccion> {
-        // Validar límite de direcciones
+    async create(data: ICreateDireccionDTO, idUsuario: string): Promise<IDireccionLocal> {
+        // Validar l?mite de direcciones
         const count = await prisma.direcciones.count({
             where: {
                 id_usuario: idUsuario,
@@ -130,10 +148,10 @@ export class DireccionesService {
         });
 
         if (count >= this.MAX_DIRECCIONES) {
-            throw new Error(`No se pueden guardar más de ${this.MAX_DIRECCIONES} direcciones`);
+            throw new Error(`No se pueden guardar m?s de ${this.MAX_DIRECCIONES} direcciones`);
         }
 
-        // Si se marca como principal, desmarcar las demás
+        // Si se marca como principal, desmarcar las dem?s
         if (data.es_principal) {
             await prisma.direcciones.updateMany({
                 where: {
@@ -169,14 +187,14 @@ export class DireccionesService {
     }
 
     /**
-     * Actualiza una dirección
+     * Actualiza una direcci?n
      */
     async update(
         idDireccion: string,
         data: IUpdateDireccionDTO,
         idUsuario: string
-    ): Promise<IDireccion> {
-        // Verificar que la dirección pertenece al usuario
+    ): Promise<IDireccionLocal> {
+        // Verificar que la direcci?n pertenece al usuario
         const direccionExistente = await prisma.direcciones.findFirst({
             where: {
                 id_direccion: idDireccion,
@@ -185,10 +203,10 @@ export class DireccionesService {
         });
 
         if (!direccionExistente) {
-            throw new Error('Dirección no encontrada');
+            throw new Error('Direcci?n no encontrada');
         }
 
-        // Si se marca como principal, desmarcar las demás
+        // Si se marca como principal, desmarcar las dem?s
         if (data.es_principal) {
             await prisma.direcciones.updateMany({
                 where: {
@@ -229,7 +247,7 @@ export class DireccionesService {
     }
 
     /**
-     * Elimina una dirección (soft delete)
+     * Elimina una direcci?n (soft delete)
      */
     async delete(idDireccion: string, idUsuario: string): Promise<void> {
         const direccion = await prisma.direcciones.findFirst({
@@ -240,7 +258,7 @@ export class DireccionesService {
         });
 
         if (!direccion) {
-            throw new Error('Dirección no encontrada');
+            throw new Error('Direcci?n no encontrada');
         }
 
         // Si es la principal, marcar otra como principal (si existe)
@@ -276,10 +294,10 @@ export class DireccionesService {
     }
 
     /**
-     * Marca una dirección como principal
+     * Marca una direcci?n como principal
      */
-    async setPrincipal(idDireccion: string, idUsuario: string): Promise<IDireccion> {
-        // Desmarcar todas las demás
+    async setPrincipal(idDireccion: string, idUsuario: string): Promise<IDireccionLocal> {
+        // Desmarcar todas las dem?s
         await prisma.direcciones.updateMany({
             where: {
                 id_usuario: idUsuario,

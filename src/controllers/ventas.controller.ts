@@ -314,10 +314,16 @@ export class VentasController {
 
             const venta = await ventasService.createFromCheckout(data, idUsuario);
 
-            const response: IApiResponse<IVenta> = {
+            // Extraer URL de Mercado Pago si existe
+            const mercadoPagoPreferenceUrl = (venta as any).mercadoPagoPreferenceUrl || null;
+
+            const response: IApiResponse<IVenta & { mercadoPagoPreferenceUrl?: string | null }> = {
                 success: true,
                 message: 'Pedido creado exitosamente',
-                data: venta
+                data: {
+                    ...venta,
+                    mercadoPagoPreferenceUrl,
+                }
             };
 
             res.status(201).json(response);

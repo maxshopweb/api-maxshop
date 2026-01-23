@@ -13,12 +13,26 @@ export enum SaleEventType {
 
 /**
  * Payload del evento SALE_CREATED
- * Solo incluye datos mínimos necesarios (sin información sensible)
+ * Incluye datos completos de la venta para que los handlers puedan procesarla
  */
+import { IVenta } from '../../types';
+
 export interface SaleCreatedPayload {
+  // Datos básicos
   id_venta: number;
   estado_pago: 'pendiente' | 'aprobado' | 'cancelado';
   fecha: string; // ISO string
+  
+  // Datos completos de la venta (para handlers que los necesiten)
+  venta?: IVenta | null;
+  
+  // Metadatos adicionales
+  paymentData?: {
+    metodoPago?: string;
+    transactionId?: string;
+    paymentDate?: string; // ISO string
+    notas?: string;
+  };
 }
 
 /**
