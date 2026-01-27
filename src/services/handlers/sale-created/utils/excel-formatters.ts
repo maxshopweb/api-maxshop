@@ -26,6 +26,7 @@ export function formatFechaVenta(fecha: Date | null | undefined): string {
 
 /**
  * Formatea una fecha al formato DD-MM-YYYY HH:MM
+ * @deprecated Usar formatFechaVenta para mantener consistencia con columna B
  */
 export function formatFechaAprobacion(fecha: Date | null | undefined): string {
   if (!fecha) return '';

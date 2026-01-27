@@ -52,7 +52,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             const ventaCompleta = await this.getVentaCompleta(id_venta);
 
             // 2. Mapear venta a filas Excel (pasar también el contexto para acceder a datos de Andreani)
-            const ventaRows = this.mapVentaToExcelRows(ventaCompleta, context);
+            const ventaRows = await this.mapVentaToExcelRows(ventaCompleta, context);
 
             if (ventaRows.length === 0) {
                 console.warn(`⚠️ [ExcelHandler] Venta #${id_venta} sin detalles - saltando`);
@@ -223,7 +223,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
     /**
      * Mapea una venta a filas Excel (una fila por cada detalle)
      */
-    private mapVentaToExcelRows(venta: IVenta, context: EventContext): VentaExcelRow[] {
+    private async mapVentaToExcelRows(venta: IVenta, context: EventContext): Promise<VentaExcelRow[]> {
         const rows: VentaExcelRow[] = [];
 
         if (!venta.detalles || venta.detalles.length === 0) {
@@ -245,98 +245,237 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             ? venta.direcciones[0]
             : null;
 
-        // Obtener datos de envío de la base de datos
-        const envio = venta.envio || null;
-
-        // Obtener datos de Andreani del contexto (si el handler de Andreani ya se ejecutó)
+        // Obtener datos de Andreani (primero del contexto, luego de la base de datos)
         const andreaniData = context.handlerData['andreani-handler'];
-        const codigoEnvioAndreani = andreaniData?.numeroEnvio || null;
-        const agrupadorAndreani = andreaniData?.agrupadorDeBultos || null;
-        const estadoAndreani = andreaniData?.estado || null;
+        let codigoEnvioAndreani = andreaniData?.numeroEnvio || null;
         
-        // Construir texto de transporte con código de Andreani si está disponible
+        // Si no está en el contexto, buscar en la base de datos (envios)
+        if (!codigoEnvioAndreani && venta.envio) {
+            codigoEnvioAndreani = venta.envio.cod_seguimiento || null;
+        } else if (!codigoEnvioAndreani) {
+            // Buscar en la tabla envios directamente
+            try {
+                const envio = await prisma.envios.findFirst({
+                    where: {
+                        id_venta: venta.id_venta,
+                        empresa_envio: {
+                            contains: 'andreani',
+                            mode: 'insensitive',
+                        },
+                    },
+                    orderBy: {
+                        fecha_envio: 'desc',
+                    },
+                });
+                codigoEnvioAndreani = envio?.cod_seguimiento || null;
+            } catch (error) {
+                console.warn(`⚠️ [ExcelHandler] Error al buscar envío de Andreani en BD:`, error);
+            }
+        }
+
+        // Obtener código de provincia de facturación (lookup en tabla provincia)
+        // TOMAR PROVINCIA DE LA VENTA (direcciones[0].provincia o cliente.provincia)
+        let codigoProvinciaFacturacion = '';
+        const provinciaVenta = direccionEnvio?.provincia || cliente?.provincia || '';
+        if (provinciaVenta) {
+            try {
+                const provincia = await prisma.provincia.findFirst({
+                    where: {
+                        nombre: {
+                            contains: provinciaVenta,
+                            mode: 'insensitive',
+                        },
+                        activo: true,
+                    },
+                });
+                codigoProvinciaFacturacion = provincia?.codi_provincia || '';
+            } catch (error) {
+                console.warn(`⚠️ [ExcelHandler] Error al buscar provincia: ${provinciaVenta}`, error);
+            }
+        }
+
+        // Obtener nombre de plataforma de pago (lookup o inferir)
+        let nombrePlataformaPago = '';
+        if (venta.metodo_pago === 'mercadopago') {
+            try {
+                const plataforma = await prisma.plataforma_pago.findFirst({
+                    where: {
+                        nombre: {
+                            contains: 'Mercado Pago',
+                            mode: 'insensitive',
+                        },
+                        activo: true,
+                    },
+                });
+                nombrePlataformaPago = plataforma?.nombre || 'Mercado Pago';
+            } catch (error) {
+                nombrePlataformaPago = 'Mercado Pago'; // Fallback
+            }
+        } else if (venta.metodo_pago === 'transferencia') {
+            nombrePlataformaPago = 'Transferencia';
+        }
+
+        // Construir texto de transporte con código de Andreani
         const construirTransporte = (): string => {
             if (codigoEnvioAndreani) {
-                return `Colecta de Mercado Envíos - Código: ${codigoEnvioAndreani}`;
+                return `ANDREANI: ${codigoEnvioAndreani}`;
             }
-            if (envio?.empresa_envio) {
-                return envio.empresa_envio;
-            }
-            return 'Colecta de Mercado Envíos';
+            return 'ANDREANI';
         };
 
-        // Calcular estado (columna AL)
-        const calcularEstado = (): string => {
-            if (venta.detalles && venta.detalles.length > 1) {
-                return '0'; // Si hay múltiples artículos, estado = 0
+        // Calcular estado (columna L): total final si es un solo producto, 0 si hay más productos
+        const calcularEstado = (index: number, total: number): string => {
+            if (total > 1) {
+                // Si hay múltiples artículos, todos son 0
+                return '0';
             }
-            // Si es un solo artículo, calcular: total_neto / cantidad_detalles
+            // Si es un solo artículo, estado = total final (total_neto)
+            const totalFinal = venta.total_neto ? Number(venta.total_neto) : 0;
+            return formatNumeroSinDecimales(totalFinal);
+        };
+
+        // Formatear dirección de facturación completa
+        // Formato esperado: "los tamariscos 2119, Bahía Blanca - C.P.: 8000, Buenos Aires"
+        const formatearDireccionFacturacion = (): string => {
+            const parts: string[] = [];
+            if (cliente?.direccion) {
+                let direccionCompleta = cliente.direccion;
+                if (cliente.altura) direccionCompleta += ` ${cliente.altura}`;
+                parts.push(direccionCompleta);
+            }
+            if (cliente?.ciudad) {
+                parts.push(cliente.ciudad);
+            }
+            if (cliente?.cod_postal) {
+                parts.push(`C.P.: ${cliente.cod_postal}`);
+            }
+            if (cliente?.provincia) {
+                parts.push(cliente.provincia);
+            }
+            // Formato: "direccion, ciudad - C.P.: cod_postal, provincia"
+            if (parts.length === 0) return '';
+            if (parts.length === 1) return parts[0];
+            // Formato: "direccion, ciudad - C.P.: cod_postal, provincia"
+            const direccionYCiudad = parts.slice(0, 2).join(', ');
+            const codPostalYProvincia = parts.slice(2).join(', ');
+            return codPostalYProvincia ? `${direccionYCiudad} - ${codPostalYProvincia}` : direccionYCiudad;
+        };
+
+        // Formatear dirección de envío completa
+        // Formato esperado: "los tamariscos 2119, Bahía Blanca - C.P.: 8000, Buenos Aires"
+        const formatearDireccionEnvio = (): string => {
+            // Si hay dirección formateada (de OpenCage), usarla directamente
+            if (direccionEnvio?.direccion_formateada) {
+                return direccionEnvio.direccion_formateada;
+            }
+            
+            const parts: string[] = [];
+            if (direccionEnvio?.direccion) {
+                let direccionCompleta = direccionEnvio.direccion;
+                if (direccionEnvio.altura) direccionCompleta += ` ${direccionEnvio.altura}`;
+                parts.push(direccionCompleta);
+            }
+            if (direccionEnvio?.ciudad) {
+                parts.push(direccionEnvio.ciudad);
+            }
+            if (direccionEnvio?.cod_postal) {
+                parts.push(`C.P.: ${direccionEnvio.cod_postal}`);
+            }
+            if (direccionEnvio?.provincia) {
+                parts.push(direccionEnvio.provincia);
+            }
+            // Formato: "direccion, ciudad - C.P.: cod_postal, provincia"
+            if (parts.length === 0) return '';
+            if (parts.length === 1) return parts[0];
+            const direccionYCiudad = parts.slice(0, 2).join(', ');
+            const codPostalYProvincia = parts.slice(2).join(', ');
+            return codPostalYProvincia ? `${direccionYCiudad} - ${codPostalYProvincia}` : direccionYCiudad;
+        };
+
+        // Obtener nombre completo del cliente
+        const nombreCompletoCliente = usuarioCliente
+            ? `${usuarioCliente.nombre || ''} ${usuarioCliente.apellido || ''}`.trim() || usuarioCliente.nombre || ''
+            : '';
+
+        // Obtener tipo y número de documento
+        const tipoYNumeroDoc = (() => {
+            if (usuarioCliente?.tipo_documento && usuarioCliente?.numero_documento) {
+                return `${usuarioCliente.tipo_documento} ${usuarioCliente.numero_documento}`;
+            }
+            if (usuarioCliente?.numero_documento) {
+                // Si solo hay número, intentar inferir el tipo
+                const numDoc = usuarioCliente.numero_documento;
+                if (numDoc.length <= 8) {
+                    return `DNI ${numDoc}`;
+                } else if (numDoc.length === 11) {
+                    return `CUIT ${numDoc}`;
+                }
+                return numDoc;
+            }
+            // Fallback: usar id_usuario si no hay documento
+            if (usuarioCliente?.id_usuario) {
+                return `DNI ${usuarioCliente.id_usuario}`;
+            }
+            return '';
+        })();
+
+        // Obtener número de documento solo
+        const numeroDocumentoSolo = usuarioCliente?.numero_documento || usuarioCliente?.id_usuario || '';
+
+        // Calcular comisiones
+        const calcularComisiones = (): string => {
+            if (pagoMP?.commission_amount) {
+                return formatNumeroSinDecimales(pagoMP.commission_amount);
+            }
+            // Calcular: total_con_iva - total_neto
+            const totalConIva = venta.total_con_iva ? Number(venta.total_con_iva) : 0;
             const totalNeto = venta.total_neto ? Number(venta.total_neto) : 0;
-            return formatEstado(totalNeto);
+            return formatNumeroSinDecimales(totalConIva - totalNeto);
         };
 
         // Una fila por cada detalle de la venta
-        for (const detalle of venta.detalles) {
+        const totalDetalles = venta.detalles.length;
+        for (let i = 0; i < totalDetalles; i++) {
+            const detalle = venta.detalles[i];
             const producto = detalle.producto;
 
             rows.push({
                 AA: venta.id_venta.toString(),
-                AB: formatFechaVenta(venta.fecha),
+                AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // Usar actualizado_en según mapeo
                 AF: (detalle.cantidad || 1).toString(),
-                AG: formatNumeroSinDecimales(detalle.sub_total || detalle.precio_unitario),
-                AL: calcularEstado(),
-                AN: producto?.cod_sku || producto?.codi_arti || '',
-                AR: formatNumeroSinDecimales(detalle.precio_unitario),
-                AS: null, // codigo lista de precios (TODO: buscar en tabla lista_precio)
-                AT: null, // Provincia de facturación (TODO: buscar código en tabla provincia)
-                AU: usuarioCliente
-                    ? `${usuarioCliente.nombre || ''} ${usuarioCliente.apellido || ''}`.trim() || usuarioCliente.nombre || ''
-                    : '',
-                AV: formatTipoDocumento(
-                    null, // tipo_documento no existe en IUsuarios
-                    usuarioCliente?.id_usuario || ''
-                ),
-                AW: formatDireccionFacturacion(
-                    cliente?.direccion,
-                    cliente?.ciudad,
-                    cliente?.cod_postal,
-                    cliente?.provincia
-                ),
-                AX: '05', // Código de condición fiscal (default: 05) - TODO: buscar en tabla situacion_fiscal
-                AY: usuarioCliente
-                    ? `${usuarioCliente.nombre || ''} ${usuarioCliente.apellido || ''}`.trim() || usuarioCliente.nombre || ''
-                    : '',
-                AZ: (usuarioCliente?.id_usuario || '').toString(), // dni no existe, usar id_usuario
-                BA: formatDireccionEnvio(
-                    direccionEnvio?.direccion_formateada,
-                    direccionEnvio?.direccion,
-                    null, // referencia no existe en IDireccion
-                    direccionEnvio?.cod_postal,
-                    direccionEnvio?.ciudad,
-                    direccionEnvio?.provincia
-                ),
-                BB: direccionEnvio?.ciudad || cliente?.ciudad || '',
-                BC: direccionEnvio?.provincia || cliente?.provincia || '',
-                BD: (direccionEnvio?.cod_postal || cliente?.cod_postal || '').toString(),
-                BE: direccionEnvio?.pais || 'Argentina',
-                BF: construirTransporte(), // Incluye código de envío de Andreani si está disponible
-                BG: venta.metodo_pago === 'mercadopago' ? 'Mercado Pago' : '',
-                BH: pagoMP?.payment_id || null,
-                BI: pagoMP?.status_mp ? mapMPStatusToSpanish(pagoMP.status_mp) : null,
-                BJ: pagoMP?.status_detail ? mapMPStatusDetailToSpanish(pagoMP.status_detail) : null,
-                BK: pagoMP?.payment_method_id ? mapPaymentMethodToSpanish(pagoMP.payment_method_id) : null,
+                AG: formatNumeroSinDecimales(detalle.sub_total || 0), // COLUMNA G: TOTAL = número entero sin coma
+                AL: calcularEstado(i, totalDetalles), // COLUMNA L: total final si es un solo producto, 0 si hay más
+                AN: producto?.codi_arti || '', // SKU: usar codi_arti
+                AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // COLUMNA R: número entero sin coma
+                AS: 'V', // Código lista de precios: "V" por ahora
+                AT: codigoProvinciaFacturacion, // COLUMNA T: código de provincia de la venta (lookup en tabla provincia)
+                AU: nombreCompletoCliente, // Nombre y apellido del cliente
+                AV: tipoYNumeroDoc, // COLUMNA V: Tipo y número de documento (usar numero_documento)
+                AW: formatearDireccionFacturacion(), // COLUMNA W: Dirección de facturación formateada
+                AX: '05', // COLUMNA X: "05" (con cero a la izquierda)
+                AY: nombreCompletoCliente, // Nombre cliente (repeat)
+                AZ: numeroDocumentoSolo, // COLUMNA Z: número documento solo (usar numero_documento, no id_usuario)
+                BA: formatearDireccionEnvio(), // COLUMNA AA: Domicilio envío formateado
+                BB: direccionEnvio?.ciudad || cliente?.ciudad || '', // Ciudad envío
+                BC: direccionEnvio?.provincia || cliente?.provincia || '', // Provincia envío
+                BD: (direccionEnvio?.cod_postal || cliente?.cod_postal || '').toString(), // Código postal envío
+                BE: direccionEnvio?.pais || 'ARGENTINA', // País
+                BF: construirTransporte(), // Transporte: "ANDREANI: cod_envio"
+                BG: nombrePlataformaPago, // Plataforma de pago
+                BH: pagoMP?.payment_id || null, // ID del pago
+                BI: pagoMP?.status_mp ? mapMPStatusToSpanish(pagoMP.status_mp) : null, // Estado del pago
+                BJ: pagoMP?.status_detail ? mapMPStatusDetailToSpanish(pagoMP.status_detail) : null, // Detalle del pago
+                BK: pagoMP?.payment_method_id ? mapPaymentMethodToSpanish(pagoMP.payment_method_id) : null, // Forma de pago
                 BL: pagoMP?.payment_type_id
                     ? mapPaymentTypeToSpanish(pagoMP.payment_type_id, pagoMP.card_info)
-                    : null,
-                BM: pagoMP?.date_approved ? formatFechaAprobacion(pagoMP.date_approved) : null,
-                BN: pagoMP?.total_paid_amount ? formatNumeroSinDecimales(pagoMP.total_paid_amount) : null,
-                BO: pagoMP?.net_received_amount
-                    ? formatNumeroSinDecimales(pagoMP.net_received_amount)
-                    : formatNumeroSinDecimales(venta.total_neto),
-                BP: pagoMP?.commission_amount ? formatNumeroSinDecimales(pagoMP.commission_amount) : '0',
-                BQ: pagoMP?.installments ? pagoMP.installments.toString() : null,
-                BR: pagoMP?.card_info?.last_four_digits || null,
-                BS: pagoMP?.card_info?.cardholder?.name || null,
+                    : null, // Tipo de pago
+                BM: pagoMP?.date_approved ? formatFechaVenta(pagoMP.date_approved) : null, // Fecha aprobación (mismo formato que columna B)
+                BN: pagoMP?.transaction_amount ? formatNumeroSinDecimales(pagoMP.transaction_amount) : null, // COLUMNA AN: usar transaction_amount
+                BO: pagoMP?.net_received_amount ? formatNumeroSinDecimales(pagoMP.net_received_amount) : null, // COLUMNA AO: usar net_received_amount
+                BP: pagoMP?.commission_amount ? formatNumeroSinDecimales(pagoMP.commission_amount) : '0', // COLUMNA AP: usar commission_amount
+                BQ: pagoMP?.installments ? pagoMP.installments.toString() : null, // Cantidad cuotas
+                BR: pagoMP?.card_info?.last_four_digits || null, // Número tarjeta (últimos 4 dígitos)
+                BS: pagoMP?.card_info?.cardholder?.name || nombreCompletoCliente || null, // Titular tarjeta o nombre cliente
             });
         }
 

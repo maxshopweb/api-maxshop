@@ -22,6 +22,8 @@ export type TipoDireccion = 'envio' | 'facturacion' | 'principal';
 
 export type WebhookStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
+export type EstadoFactura = 'pendiente' | 'procesando' | 'completado' | 'error';
+
 
 export interface INegocio {
     id_neg: number;
@@ -60,6 +62,8 @@ export interface IUsuarios {
     ultimo_login?: Date | null;
     login_ip?: string | null;
     nacimiento?: Date | null;
+    tipo_documento?: string | null;
+    numero_documento?: string | null;
     token?: string | null;
     token_expira?: Date | null;
     // Relaciones
@@ -645,3 +649,22 @@ export interface EventMap {
 
 /// Tipos de eventos disponibles
 export type EventType = keyof EventMap;
+
+// ============================================
+// INTERFACES DE FACTURAS PENDIENTES
+// ============================================
+
+export interface IVentaPendienteFactura {
+    id: bigint | number;
+    venta_id: number;
+    fecha_creacion: Date;
+    fecha_ultimo_intento?: Date | null;
+    intentos: number;
+    estado: EstadoFactura;
+    error_mensaje?: string | null;
+    factura_encontrada: boolean;
+    factura_nombre_archivo?: string | null;
+    procesado_en?: Date | null;
+    // Relaciones
+    venta?: IVenta;
+}

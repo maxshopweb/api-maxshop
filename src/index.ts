@@ -68,6 +68,11 @@ if (process.env.VERCEL !== '1') {
             const { handlerExecutorService } = require('./services/handlers/handler-executor.service');
             handlerExecutorService.initialize();
 
+            // Inicializar worker de sincronización de facturas
+            const { facturaSyncWorker } = require('./services/factura-sync-worker.service');
+            facturaSyncWorker.start();
+            console.log('✅ [Server] Worker de sincronización de facturas iniciado');
+
             httpServer.listen(PORT);
         } catch (error) {
             console.error('❌ Error al iniciar el servidor:', error);
@@ -82,6 +87,10 @@ if (process.env.VERCEL !== '1') {
         // Cerrar servicio de retry de webhooks
         const { failedWebhookRetryService } = require('./services/failed-webhook-retry.service');
         failedWebhookRetryService.stop();
+        
+        // Cerrar worker de sincronización de facturas
+        const { facturaSyncWorker } = require('./services/factura-sync-worker.service');
+        facturaSyncWorker.stop();
         
         // Cerrar Event Bus (cierra conexiones Redis)
         const { eventBus } = require('./infrastructure/event-bus/event-bus');

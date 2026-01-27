@@ -16,7 +16,7 @@ router.get('/contenido-crear', productosController.getContenidoCrearProducto.bin
 router.get('/destacados', productosController.getDestacados.bind(productosController));
 router.get('/stock-bajo', productosController.getStockBajo.bind(productosController));
 router.get('/con-imagenes', productosController.getProductosConImagenes.bind(productosController));
-router.get('/tienda', productosController.getProductosTienda.bind(productosController)); // Endpoint para tienda (client/user): marca 051 con imágenes
+router.get('/tienda', productosController.getProductosTienda.bind(productosController)); // Endpoint para tienda (client/user): marca INGCO (004) con imágenes
 
 // Rutas CRUD generales
 router.get('/', productosController.getAll.bind(productosController));

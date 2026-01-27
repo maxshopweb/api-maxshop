@@ -380,6 +380,8 @@ model usuarios {
   es_anonimo          Boolean?    @default(false)
   activo              Boolean?    @default(true)
   email_no_verificado Boolean?    @default(false)
+  tipo_documento      String?     @db.VarChar(10)   // DNI, CUIT, etc.
+  numero_documento    String?     @db.VarChar(20)   // Número de documento
   admin               admin?
   auditoria           auditoria[]
   cliente             cliente?
@@ -390,6 +392,7 @@ model usuarios {
   @@index([email], map: "idx_usuarios_email")
   @@index([id_usuario], map: "idx_usuarios_id_usuario")
   @@index([username], map: "idx_usuarios_username")
+  @@index([numero_documento], map: "idx_usuarios_numero_documento")
 }
 
 model venta {
@@ -416,6 +419,7 @@ model venta {
   venta_detalle         venta_detalle[]
   mercado_pago_payments mercado_pago_payments[]
   direcciones           direcciones[]
+  ventas_pendientes_factura ventas_pendientes_factura?
 
   @@index([id_cliente], map: "idx_venta_cliente")
   @@index([fecha], map: "idx_venta_fecha")
@@ -517,4 +521,24 @@ model event_logs {
   @@index([event_type], map: "idx_event_logs_type")
   @@index([created_at], map: "idx_event_logs_date")
   @@map("event_logs")
+}
+
+model ventas_pendientes_factura {
+  id                    BigInt    @id @default(autoincrement())
+  venta_id              Int       @unique
+  fecha_creacion         DateTime  @default(now()) @db.Timestamp(6)
+  fecha_ultimo_intento   DateTime? @db.Timestamp(6)
+  intentos              Int       @default(0)
+  estado                 String    @default("pendiente") @db.VarChar(50)
+  error_mensaje          String?   @db.Text
+  factura_encontrada     Boolean   @default(false)
+  factura_nombre_archivo String?   @db.VarChar(255)
+  procesado_en           DateTime? @db.Timestamp(6)
+  
+  venta                  venta     @relation(fields: [venta_id], references: [id_venta], onDelete: Cascade)
+  
+  @@index([estado], map: "idx_pendientes_factura_estado")
+  @@index([fecha_creacion], map: "idx_pendientes_factura_fecha")
+  @@index([venta_id], map: "idx_pendientes_factura_venta")
+  @@map("ventas_pendientes_factura")
 }

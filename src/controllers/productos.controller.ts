@@ -391,10 +391,10 @@ export class ProductosController {
         }
     }
 
-    // Endpoint específico para tienda (client/user): solo marca 051 con imágenes
+    // Endpoint específico para tienda (client/user): solo marca INGCO (004) con imágenes
     async getProductosTienda(req: Request, res: Response): Promise<void> {
         try {
-            // Parsear filtros opcionales (marca 051 e imagen son fijos)
+            // Parsear filtros opcionales (marca 004 INGCO e imagen son fijos)
             const id_cat = req.query.id_cat as string | undefined;
             const codi_grupo = req.query.codi_grupo as string | undefined;
 

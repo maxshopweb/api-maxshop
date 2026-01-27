@@ -13,6 +13,7 @@ import locationRoutes from './location.routes';
 import webhookRoutes from './webhook.routes';
 import dbfConverterRoutes from './dbf-converter.routes';
 import sincronizacionRoutes from './sincronizacion.routes';
+import facturasRoutes from './facturas.routes';
 
 const apiRoutes = Router();
 
@@ -30,6 +31,7 @@ apiRoutes.use('/location', locationRoutes);
 apiRoutes.use('/webhooks', webhookRoutes);
 apiRoutes.use('/dbf-converter', dbfConverterRoutes);
 apiRoutes.use('/sincronizacion', sincronizacionRoutes);
+apiRoutes.use('/facturas', facturasRoutes);
 
 
 export default apiRoutes;   

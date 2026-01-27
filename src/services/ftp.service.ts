@@ -198,6 +198,46 @@ export class FTPService {
       throw new Error(`Error al subir Excel: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
+  /**
+   * Lista archivos en un directorio remoto
+   */
+  async listFiles(remotePath: string): Promise<FileInfo[]> {
+    try {
+      await this.client.cd(remotePath);
+      const files = await this.client.list();
+      
+      // Filtrar solo archivos (no directorios)
+      const fileList = files.filter(file => file.isFile);
+      
+      console.log(`📁 [FTP] Encontrados ${fileList.length} archivo(s) en ${remotePath}`);
+      return fileList;
+    } catch (error) {
+      console.error(`❌ [FTP] Error al listar archivos en ${remotePath}:`, error);
+      throw new Error(`Error al listar archivos: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Borra un archivo del FTP
+   */
+  async deleteFile(remotePath: string): Promise<void> {
+    try {
+      const remoteDir = path.dirname(remotePath);
+      const remoteFileName = path.basename(remotePath);
+      
+      // Cambiar al directorio remoto
+      await this.client.cd(remoteDir);
+      
+      // Borrar el archivo
+      await this.client.remove(remoteFileName);
+      
+      console.log(`✅ [FTP] Archivo borrado: ${remotePath}`);
+    } catch (error) {
+      console.error(`❌ [FTP] Error al borrar archivo ${remotePath}:`, error);
+      throw new Error(`Error al borrar archivo: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }
 
 export default new FTPService();

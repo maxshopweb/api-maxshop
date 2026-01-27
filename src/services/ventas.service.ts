@@ -447,6 +447,9 @@ export class VentasService {
             observaciones?: string;
             costo_envio?: number; // Costo del envío calculado desde cotización
             id_direccion?: string; // ID de dirección guardada (opcional)
+            // Datos de documento del cliente
+            tipo_documento?: string; // DNI, CUIT, etc.
+            numero_documento?: string; // Número de documento
             // Datos de dirección para actualizar el cliente (si no se usa id_direccion)
             direccion?: {
                 direccion?: string;
@@ -565,6 +568,23 @@ export class VentasService {
                         await prisma.usuarios.update({
                             where: { id_usuario: idClienteFinal },
                             data: { telefono: data.direccion.telefono },
+                        });
+                    }
+                }
+
+                // Actualizar documento del usuario si se proporciona
+                if (data.numero_documento || data.tipo_documento) {
+                    const updateDocData: any = {};
+                    if (data.numero_documento) {
+                        updateDocData.numero_documento = data.numero_documento;
+                    }
+                    if (data.tipo_documento) {
+                        updateDocData.tipo_documento = data.tipo_documento;
+                    }
+                    if (Object.keys(updateDocData).length > 0) {
+                        await prisma.usuarios.update({
+                            where: { id_usuario: idClienteFinal },
+                            data: updateDocData,
                         });
                     }
                 }

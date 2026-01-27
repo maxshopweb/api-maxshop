@@ -10,6 +10,7 @@ import { SaleCreatedPayload } from '../../../domain/events/sale.events';
 import { TestHandler } from './test.handler';
 import { AndreaniHandler } from './andreani.handler';
 import { ExcelHandler } from './excel.handler';
+import { FacturaPendienteHandler } from './factura-pendiente.handler';
 // Futuros handlers (comentados hasta implementarlos):
 // import { AuditHandler } from './audit.handler';
 // import { FTPHandler } from './ftp.handler';
@@ -24,6 +25,7 @@ export const saleCreatedHandlers: IEventHandler<SaleCreatedPayload>[] = [
     new TestHandler(),              // Prioridad 1 - Handler de prueba
     new AndreaniHandler(),          // Prioridad 20 - Crear pre-envío en Andreani
     new ExcelHandler(),             // Prioridad 30 - Generar Excel y subir a FTP
+    new FacturaPendienteHandler(),  // Prioridad 40 - Marcar venta como pendiente de factura
     // Futuros handlers (agregar aquí cuando se implementen):
     // new AuditHandler(),      // Prioridad 10 - Registrar en event_logs
     // new EmailHandler(),      // Prioridad 50 - Notificar cliente

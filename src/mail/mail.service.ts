@@ -384,6 +384,54 @@ export class MailService {
             tags: ['carrito', 'abandonado', 'marketing'],
         });
     }
+
+    /**
+     * Envía un email con adjunto (PDF de factura)
+     */
+    async sendEmailWithAttachment(
+        to: string,
+        subject: string,
+        html: string,
+        attachmentPath: string,
+        attachmentName: string,
+        options?: {
+            name?: string;
+            cc?: MailRecipient[];
+            bcc?: MailRecipient[];
+            replyTo?: MailRecipient;
+            tags?: string[];
+        }
+    ): Promise<BrevoResponse> {
+        if (!brevoClient.isConfigured()) {
+            console.warn('⚠️ [MailService] Brevo no está configurado. Email no enviado.');
+            throw new Error('Brevo no está configurado');
+        }
+
+        // En desarrollo, opcionalmente redirigir todos los emails a un destinatario de prueba
+        const recipients = {
+            email: to,
+            name: options?.name || 'Cliente',
+        };
+
+        // Enviar email usando Brevo con adjunto
+        const response = await brevoClient.sendTransactionalEmailWithAttachment(
+            {
+                subject,
+                htmlContent: html,
+            },
+            recipients,
+            attachmentPath,
+            attachmentName,
+            {
+                cc: options?.cc,
+                bcc: options?.bcc,
+                replyTo: options?.replyTo,
+                tags: options?.tags || ['factura'],
+            }
+        );
+
+        return response;
+    }
 }
 
 // Instancia singleton del servicio

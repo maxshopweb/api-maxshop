@@ -779,7 +779,7 @@ export class ProductosService {
         return result;
     }
 
-    // Método específico para tienda (client/user): solo marca 051 con imágenes
+    // Método específico para tienda (client/user): solo marca INGCO (004) con imágenes
     async getProductosTienda(filters?: IProductoFilters): Promise<IPaginatedResponse<IProductos>> {
         // Generar clave de cache
         const cacheKey = `productos:tienda:${JSON.stringify(filters || {})}`;
@@ -808,8 +808,8 @@ export class ProductosService {
             estado: { not: 0 },
             // SIEMPRE solo productos publicados
             activo: "A",
-            // SIEMPRE marca 051 (INGCO)
-            codi_marca: "051",
+            // SIEMPRE marca 004 (INGCO)
+            codi_marca: "004",
             // SIEMPRE productos con imagen (no null y no vacío)
             AND: [
                 { img_principal: { not: null } },

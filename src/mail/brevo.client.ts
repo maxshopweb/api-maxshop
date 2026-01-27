@@ -140,6 +140,116 @@ export class BrevoClient {
     }
 
     /**
+     * Envía un email transaccional con adjuntos usando Brevo API
+     * Brevo requiere JSON con el contenido del archivo en base64
+     */
+    async sendTransactionalEmailWithAttachment(
+        template: MailTemplate,
+        recipients: MailRecipient | MailRecipient[],
+        attachmentPath: string,
+        attachmentName: string,
+        options?: {
+            cc?: MailRecipient[];
+            bcc?: MailRecipient[];
+            replyTo?: MailRecipient;
+            tags?: string[];
+            scheduledAt?: Date;
+            params?: Record<string, any>;
+        }
+    ): Promise<BrevoResponse> {
+        if (!this.apiKey) {
+            throw new Error('BREVO_API_KEY no configurada');
+        }
+
+        // Normalizar destinatarios a array
+        const toArray = Array.isArray(recipients) ? recipients : [recipients];
+
+        // Leer archivo como buffer y convertir a base64
+        const fs = require('fs');
+        if (!fs.existsSync(attachmentPath)) {
+            throw new Error(`Archivo adjunto no existe: ${attachmentPath}`);
+        }
+        const fileBuffer = fs.readFileSync(attachmentPath);
+        const fileBase64 = fileBuffer.toString('base64');
+
+        // Construir payload JSON (Brevo requiere JSON, no FormData)
+        const payload: any = {
+            sender: this.sender,
+            to: toArray.map((r) => ({
+                email: r.email,
+                name: r.name,
+            })),
+            subject: template.subject,
+            htmlContent: template.htmlContent,
+            attachment: [
+                {
+                    content: fileBase64,
+                    name: attachmentName,
+                },
+            ],
+        };
+
+        // Agregar campos opcionales
+        if (template.textContent) {
+            payload.textContent = template.textContent;
+        }
+        if (options?.cc) {
+            payload.cc = options.cc.map((r) => ({
+                email: r.email,
+                name: r.name,
+            }));
+        }
+        if (options?.bcc) {
+            payload.bcc = options.bcc.map((r) => ({
+                email: r.email,
+                name: r.name,
+            }));
+        }
+        if (options?.replyTo) {
+            payload.replyTo = {
+                email: options.replyTo.email,
+                name: options.replyTo.name,
+            };
+        }
+        if (options?.tags) {
+            payload.tags = options.tags;
+        }
+        if (options?.scheduledAt) {
+            payload.scheduledAt = options.scheduledAt.toISOString();
+        }
+        if (options?.params) {
+            payload.params = options.params;
+        }
+
+        try {
+            const response = await fetch(`${this.baseUrl}/smtp/email`, {
+                method: 'POST',
+                headers: {
+                    'api-key': this.apiKey,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(
+                    `Brevo API error: ${response.status} ${response.statusText}. ${JSON.stringify(errorData)}`
+                );
+            }
+
+            const data = await response.json() as { messageId?: string };
+
+            return {
+                messageId: data.messageId || 'unknown',
+            };
+        } catch (error) {
+            console.error('❌ [BrevoClient] Error al enviar email con adjunto:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Verifica si el cliente está configurado correctamente
      */
     isConfigured(): boolean {
