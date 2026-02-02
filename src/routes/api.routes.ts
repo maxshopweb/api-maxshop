@@ -14,11 +14,26 @@ import webhookRoutes from './webhook.routes';
 import dbfConverterRoutes from './dbf-converter.routes';
 import sincronizacionRoutes from './sincronizacion.routes';
 import facturasRoutes from './facturas.routes';
+import healthRoutes from './health.routes';
+import { publicRateLimiter, webhookRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const apiRoutes = Router();
 
+// Health check (sin rate limiting, debe ser rápido)
+apiRoutes.use('/health', healthRoutes);
+
+// Rate limiting global para todas las rutas API
+apiRoutes.use(publicRateLimiter);
+
+// Rutas públicas (sin autenticación)
 apiRoutes.use('/auth', authRoutes);
 apiRoutes.use('/productos', productosRoutes);
+apiRoutes.use('/location', locationRoutes);
+
+// Webhooks (rate limiting especial)
+apiRoutes.use('/webhooks', webhookRateLimiter, webhookRoutes);
+
+// Rutas que requieren autenticación (rate limiting aplicado por ruta específica)
 apiRoutes.use('/marcas', marcasRoutes);
 apiRoutes.use('/categorias', categoriasRoutes);
 apiRoutes.use('/grupos', gruposRoutes);
@@ -27,8 +42,6 @@ apiRoutes.use('/clientes', clientesRoutes);
 apiRoutes.use('/andreani', andreaniRoutes);
 apiRoutes.use('/admin/dashboard', dashboardRoutes);
 apiRoutes.use('/direcciones', direccionesRoutes);
-apiRoutes.use('/location', locationRoutes);
-apiRoutes.use('/webhooks', webhookRoutes);
 apiRoutes.use('/dbf-converter', dbfConverterRoutes);
 apiRoutes.use('/sincronizacion', sincronizacionRoutes);
 apiRoutes.use('/facturas', facturasRoutes);

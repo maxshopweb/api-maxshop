@@ -397,6 +397,7 @@ model usuarios {
 
 model venta {
   id_venta              Int                     @id @default(autoincrement())
+  cod_interno           String?                 @unique @db.VarChar(8)
   id_usuario            String?                 @db.VarChar(150)
   fecha                 DateTime?               @default(now()) @db.Timestamp(6)
   id_cliente            String?                 @db.VarChar(150)
@@ -424,6 +425,7 @@ model venta {
   @@index([id_cliente], map: "idx_venta_cliente")
   @@index([fecha], map: "idx_venta_fecha")
   @@index([estado_pago], map: "idx_venta_estado_pago")
+  @@index([cod_interno], map: "idx_venta_cod_interno")
 }
 
 model venta_detalle {

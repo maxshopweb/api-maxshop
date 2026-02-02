@@ -10,8 +10,11 @@ import {
 const router = Router();
 const dashboardController = new DashboardController();
 
+import { adminRateLimiter } from '../middlewares/rate-limit.middleware';
+
 // Todos los endpoints requieren autenticación y rol ADMIN
 const adminMiddleware = [
+  adminRateLimiter,
   verifyFirebaseToken,
   requireAuthenticatedUser,
   loadUserFromDatabase,

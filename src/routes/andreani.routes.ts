@@ -14,6 +14,7 @@
 import { Router } from 'express';
 import { AndreaniController } from '../controllers/andreani.controller';
 import { verifyFirebaseToken, requireAuthenticatedUser } from '../middlewares/auth.middleware';
+import { authenticatedRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = Router();
 const andreaniController = new AndreaniController();
@@ -34,6 +35,7 @@ router.post(
 // ============================================
 
 // Todas las demás rutas requieren autenticación de administrador
+router.use(authenticatedRateLimiter);
 router.use(verifyFirebaseToken);
 router.use(requireAuthenticatedUser);
 

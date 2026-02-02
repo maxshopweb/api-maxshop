@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { VentasController } from '../controllers/ventas.controller';
 import { verifyFirebaseToken, requireAuthenticatedUser, loadUserFromDatabase } from '../middlewares/auth.middleware';
+import { authenticatedRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = Router();
 const ventasController = new VentasController();
@@ -9,6 +10,7 @@ const ventasController = new VentasController();
 // Ruta para obtener pedidos del usuario autenticado (requiere autenticación)
 router.get(
     '/mis-pedidos',
+    authenticatedRateLimiter,
     verifyFirebaseToken,
     requireAuthenticatedUser,
     loadUserFromDatabase,
@@ -18,6 +20,7 @@ router.get(
 // Ruta específica para crear pedidos desde checkout (requiere autenticación)
 router.post(
     '/checkout',
+    authenticatedRateLimiter,
     verifyFirebaseToken,
     requireAuthenticatedUser,
     loadUserFromDatabase,
@@ -27,6 +30,7 @@ router.post(
 // Ruta para confirmar pago manual (requiere autenticación)
 router.post(
     '/:id/confirmar-pago',
+    authenticatedRateLimiter,
     verifyFirebaseToken,
     requireAuthenticatedUser,
     loadUserFromDatabase,

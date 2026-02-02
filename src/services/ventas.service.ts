@@ -353,53 +353,66 @@ export class VentasService {
             }
         }
 
-        // Crear venta
-        // Si hay idUsuario, usarlo; si no, usar id_cliente como id_usuario (para compatibilidad)
-        const venta = await prisma.venta.create({
-            data: {
-                id_usuario: idUsuario || idClienteFinal || null,
-                id_cliente: idClienteFinal || null,
-                fecha: new Date(),
-                total_sin_iva: totalSinIva,
-                total_con_iva: totalConIva,
-                descuento_total: descuentoTotal,
-                total_neto: totalNeto,
-                metodo_pago: data.metodo_pago,
-                estado_pago: 'pendiente',
-                estado_envio: 'pendiente',
-                tipo_venta: data.tipo_venta,
-                observaciones: data.observaciones || null,
-                venta_detalle: {
-                    create: data.detalles.map((detalle) => ({
-                        id_prod: detalle.id_prod,
-                        cantidad: detalle.cantidad,
-                        precio_unitario: detalle.precio_unitario,
-                        descuento_aplicado: detalle.descuento_aplicado || 0,
-                        sub_total: detalle.precio_unitario * detalle.cantidad - (detalle.descuento_aplicado || 0),
-                        evento_aplicado: detalle.evento_aplicado || null,
-                    })),
-                },
-            },
-            include: {
-                cliente: {
-                    include: {
-                        usuarios: true,
+        // Crear venta con cod_interno automático usando transacción
+        const venta = await prisma.$transaction(async (tx) => {
+            // 1. Crear la venta (sin cod_interno aún)
+            const ventaCreada = await tx.venta.create({
+                data: {
+                    id_usuario: idUsuario || idClienteFinal || null,
+                    id_cliente: idClienteFinal || null,
+                    fecha: new Date(),
+                    total_sin_iva: totalSinIva,
+                    total_con_iva: totalConIva,
+                    descuento_total: descuentoTotal,
+                    total_neto: totalNeto,
+                    metodo_pago: data.metodo_pago,
+                    estado_pago: 'pendiente',
+                    estado_envio: 'pendiente',
+                    tipo_venta: data.tipo_venta,
+                    observaciones: data.observaciones || null,
+                    venta_detalle: {
+                        create: data.detalles.map((detalle) => ({
+                            id_prod: detalle.id_prod,
+                            cantidad: detalle.cantidad,
+                            precio_unitario: detalle.precio_unitario,
+                            descuento_aplicado: detalle.descuento_aplicado || 0,
+                            sub_total: detalle.precio_unitario * detalle.cantidad - (detalle.descuento_aplicado || 0),
+                            evento_aplicado: detalle.evento_aplicado || null,
+                        })),
                     },
                 },
-                usuarios: true,
-                venta_detalle: {
-                    include: {
-                        productos: {
-                            include: {
-                                categoria: true,
-                                marca: true,
-                                grupo: true,
-                                iva: true,
+            });
+
+            // 2. Generar cod_interno basado en id_venta (8 dígitos con padding)
+            const codInterno = ventaCreada.id_venta.toString().padStart(8, '0');
+
+            // 3. Actualizar la venta con cod_interno
+            return await tx.venta.update({
+                where: { id_venta: ventaCreada.id_venta },
+                data: {
+                    cod_interno: codInterno,
+                },
+                include: {
+                    cliente: {
+                        include: {
+                            usuarios: true,
+                        },
+                    },
+                    usuarios: true,
+                    venta_detalle: {
+                        include: {
+                            productos: {
+                                include: {
+                                    categoria: true,
+                                    marca: true,
+                                    grupo: true,
+                                    iva: true,
+                                },
                             },
                         },
                     },
                 },
-            },
+            });
         });
 
         // Invalidar cache

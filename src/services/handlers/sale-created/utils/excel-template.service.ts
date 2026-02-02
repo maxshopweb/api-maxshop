@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export interface VentaExcelRow {
-  AA: string; // # de venta
+  AA: string; // # de venta (columna A en Excel)
   AB: string; // Fecha de venta
   AF: string; // Unidades
   AG: string; // Total
@@ -47,61 +47,14 @@ export class ExcelTemplateService {
   private readonly SHEET_NAME = 'Ventas AR';
 
   /**
-   * Crea un template Excel desde cero con las filas 1-3 (metadatos, títulos, headers)
+   * Crea un template Excel vacío (sin encabezados)
+   * Las filas 1, 2, 3 quedan vacías
+   * Los datos se escribirán desde la fila 4
    */
   createTemplate(): XLSX.WorkBook {
     const workbook = XLSX.utils.book_new();
+    // Crear una hoja completamente vacía
     const worksheet = XLSX.utils.aoa_to_sheet([]);
-
-    // Fila 1: Metadatos
-    worksheet['AL1'] = { t: 's', v: 'importante' };
-    worksheet['AS1'] = { t: 's', v: 'tabllist' };
-    worksheet['AX1'] = { t: 's', v: 'tablsifi' };
-    worksheet['BC1'] = { t: 's', v: 'tablpcia' };
-    worksheet['BG1'] = { t: 's', v: 'tablplat' };
-    worksheet['BK1'] = { t: 's', v: 'Tablfopa' };
-    worksheet['BM1'] = { t: 's', v: 'mismo formato que la columna 2' };
-
-    // Fila 2: Títulos de secciones
-    worksheet['AA2'] = { t: 's', v: 'Ventas' };
-    worksheet['AT2'] = { t: 's', v: 'Facturación al comprador' };
-    worksheet['AY2'] = { t: 's', v: 'Compradores' };
-
-    // Fila 3: Headers con números
-    worksheet['AA3'] = { t: 's', v: '# de venta    1' };
-    worksheet['AB3'] = { t: 's', v: 'Fecha de venta 2' };
-    worksheet['AF3'] = { t: 's', v: 'Unidades 6' };
-    worksheet['AG3'] = { t: 's', v: 'Total 7 ' };
-    worksheet['AL3'] = { t: 's', v: 'Estado  12   Si v iene en cero quiere decir que el pedido tiene más de 1 artículo' };
-    worksheet['AN3'] = { t: 's', v: 'SKU 14' };
-    worksheet['AR3'] = { t: 's', v: 'Precio unitario (ARS) 18' };
-    worksheet['AS3'] = { t: 's', v: 'codigo lista de precios    19    ' };
-    worksheet['AT3'] = { t: 's', v: 'Provincia de facturación 20  Tablpcia' };
-    worksheet['AU3'] = { t: 's', v: 'Datos personales o de empresa 21' };
-    worksheet['AV3'] = { t: 's', v: 'Tipo y número de documento 22' };
-    worksheet['AW3'] = { t: 's', v: 'Dirección  23' };
-    worksheet['AX3'] = { t: 's', v: 'Condición fiscal 24' };
-    worksheet['AY3'] = { t: 's', v: 'Comprador 25' };
-    worksheet['AZ3'] = { t: 's', v: 'DNI 26' };
-    worksheet['BA3'] = { t: 's', v: 'Domicilio Envio 27' };
-    worksheet['BB3'] = { t: 's', v: 'Ciudad 28' };
-    worksheet['BC3'] = { t: 's', v: 'Provincia Envio   29    ' };
-    worksheet['BD3'] = { t: 's', v: 'Código postal Envio 30' };
-    worksheet['BE3'] = { t: 's', v: 'País' };
-    worksheet['BF3'] = { t: 's', v: 'Transporte   32 Tabltran' };
-    worksheet['BG3'] = { t: 's', v: 'Identificación de Plataforma de Pago 33' };
-    worksheet['BH3'] = { t: 's', v: 'id de Pago  34' };
-    worksheet['BI3'] = { t: 's', v: 'Estado del pago 35' };
-    worksheet['BJ3'] = { t: 's', v: 'Detalle del estado 36' };
-    worksheet['BK3'] = { t: 's', v: 'Forma de Pago  37' };
-    worksheet['BL3'] = { t: 's', v: 'Tipo de pago 38' };
-    worksheet['BM3'] = { t: 's', v: 'Fecha Aprobacion mismo formato que la columna 2    ' };
-    worksheet['BN3'] = { t: 's', v: 'Total Pagado  40' };
-    worksheet['BO3'] = { t: 's', v: 'Total Neto 41' };
-    worksheet['BP3'] = { t: 's', v: 'Comisiones 42' };
-    worksheet['BQ3'] = { t: 's', v: 'Cantidad Cuotas 43' };
-    worksheet['BR3'] = { t: 's', v: 'Numero Tarjeta 44' };
-    worksheet['BS3'] = { t: 's', v: 'Titular Tarjeta 45' };
 
     XLSX.utils.book_append_sheet(workbook, worksheet, this.SHEET_NAME);
     return workbook;
@@ -124,6 +77,7 @@ export class ExcelTemplateService {
 
   /**
    * Encuentra la última fila con datos (después de la fila 3 de headers)
+   * IMPORTANTE: Ignora cualquier dato antes de la fila 4 y busca desde la fila 4 en adelante
    */
   findLastDataRow(workbook: XLSX.WorkBook): number {
     try {
@@ -136,9 +90,10 @@ export class ExcelTemplateService {
       const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
       
       // La fila 3 es la de headers (índice 2), empezar desde fila 4 (índice 3)
-      let lastRow = 3; // Fila de headers
+      let lastRow = 3; // Fila de headers (mínimo permitido)
       
-      // Iterar desde fila 4 hacia abajo
+      // CRÍTICO: Ignorar cualquier dato antes de la fila 4
+      // Iterar SOLO desde fila 4 (índice 3) hacia abajo
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
         // Si la columna AA (índice 0) tiene valor, es una fila con datos
@@ -150,7 +105,9 @@ export class ExcelTemplateService {
         }
       }
       
-      return lastRow;
+      // Asegurar que nunca retornemos menos de 3 (fila de headers)
+      // Esto garantiza que startRow será al menos 4
+      return Math.max(lastRow, 3);
     } catch (error) {
       console.error('❌ [ExcelTemplate] Error al encontrar última fila:', error);
       return 3; // En caso de error, retornar fila de headers

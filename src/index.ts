@@ -3,11 +3,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import apiRoutes from './routes/api.routes';
 import redisClient from './config/redis.config';
+import { sanitizeBody, validatePayloadSize } from './middlewares/validation.middleware';
 
 import { websocketServer } from './infrastructure/websocket/websocket.server';
 
@@ -24,21 +26,91 @@ export const prisma = new PrismaClient();
 
 const app: Application = express();
 
-app.use(helmet());
-app.use(cors({
-    origin: [
-        process.env.FRONTEND_URL || 'http://localhost:5173',
-        'http://localhost:3000',
-        'http://192.168.0.13:3000'
-    ],
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+// ============================================
+// SEGURIDAD: Helmet avanzado
+// ============================================
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "https:", "http:"], // Permitir imágenes de cualquier origen
+            scriptSrc: ["'self'"],
+            connectSrc: ["'self'", process.env.FRONTEND_URL || 'http://localhost:3000'],
+        },
+    },
+    hsts: {
+        maxAge: 31536000, // 1 año
+        includeSubDomains: true,
+        preload: true,
+    },
+    xFrameOptions: { action: 'deny' },
+    xContentTypeOptions: true,
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
-app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// ============================================
+// CORS
+// ============================================
+const allowedOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://vertimar.online',
+    'https://www.vertimar.online',
+];
+
+// En desarrollo, permitir localhost
+if (process.env.NODE_ENV === 'development') {
+    allowedOrigins.push('http://localhost:3000', 'http://192.168.0.13:3000');
+}
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Permitir requests sin origin (mobile apps, Postman, etc.)
+        if (!origin) {
+            return callback(null, true);
+        }
+        
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.warn(`⚠️ [CORS] Origen no permitido: ${origin}`);
+            callback(new Error('No permitido por CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    maxAge: 86400, // 24 horas
+}));
+
+// ============================================
+// COMPRESIÓN
+// ============================================
+app.use(compression({
+    filter: (req, res) => {
+        // Comprimir todo excepto si el cliente no lo soporta
+        if (req.headers['x-no-compression']) {
+            return false;
+        }
+        return compression.filter(req, res);
+    },
+    level: 6, // Balance entre compresión y velocidad
+}));
+
+// ============================================
+// PARSING Y VALIDACIÓN
+// ============================================
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(express.json({ limit: '10mb' })); // Límite de 10MB para JSON
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+
+// Sanitización automática de body
+app.use(sanitizeBody);
+
+// Validar tamaño de payload
+app.use(validatePayloadSize(10 * 1024 * 1024)); // 10MB máximo
 
 app.use('/api', apiRoutes);
 

@@ -6,11 +6,12 @@ import {
     loadUserFromDatabase 
 } from '../middlewares/auth.middleware';
 import { cacheMiddleware } from '../middlewares/cache.middleware';
+import { authenticatedRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = Router();
 
 // Middleware de autenticación para todas las rutas
-router.use(verifyFirebaseToken, requireAuthenticatedUser, loadUserFromDatabase);
+router.use(authenticatedRateLimiter, verifyFirebaseToken, requireAuthenticatedUser, loadUserFromDatabase);
 
 // Rutas
 router.get('/', cacheMiddleware(1800), clientesController.getAll.bind(clientesController));

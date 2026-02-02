@@ -1,22 +1,33 @@
 /**
  * Rutas para gestión de facturas
+ * 
+ * TODAS las rutas requieren autenticación de administrador
  */
 
 import { Router } from 'express';
 import facturasController from '../controllers/facturas.controller';
+import { verifyFirebaseToken, loadUserFromDatabase, requireRole } from '../middlewares/auth.middleware';
+import { adminRateLimiter, syncRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const facturasRoutes = Router();
 
-// Sincronización manual
-facturasRoutes.post('/sync', facturasController.syncFacturas.bind(facturasController));
+// Middleware de autenticación para todas las rutas de facturas
+const adminAuth = [
+    verifyFirebaseToken,
+    loadUserFromDatabase,
+    requireRole('ADMIN'),
+];
 
-// Consulta de ventas pendientes
-facturasRoutes.get('/pendientes', facturasController.getVentasPendientes.bind(facturasController));
+// Sincronización manual (rate limiting especial + auth admin)
+facturasRoutes.post('/sync', adminAuth, syncRateLimiter, facturasController.syncFacturas.bind(facturasController));
 
-// Estadísticas
-facturasRoutes.get('/estadisticas', facturasController.getEstadisticas.bind(facturasController));
+// Consulta de ventas pendientes (auth admin)
+facturasRoutes.get('/pendientes', adminAuth, adminRateLimiter, facturasController.getVentasPendientes.bind(facturasController));
 
-// Debug (diagnóstico)
-facturasRoutes.get('/debug', facturasController.debugFacturas.bind(facturasController));
+// Estadísticas (auth admin)
+facturasRoutes.get('/estadisticas', adminAuth, adminRateLimiter, facturasController.getEstadisticas.bind(facturasController));
+
+// Debug (diagnóstico) - Solo admin
+facturasRoutes.get('/debug', adminAuth, adminRateLimiter, facturasController.debugFacturas.bind(facturasController));
 
 export default facturasRoutes;

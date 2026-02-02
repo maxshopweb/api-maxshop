@@ -78,7 +78,8 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                     await ftpService.downloadExcel(this.REMOTE_PATH, localPath);
                     workbook = excelTemplateService.readExcel(localPath);
                     const lastRow = excelTemplateService.findLastDataRow(workbook);
-                    startRow = lastRow + 1;
+                    // CRÍTICO: Asegurar que startRow sea al menos 4 (nunca escribir antes de la fila 4)
+                    startRow = Math.max(lastRow + 1, 4);
                     console.log(`📋 [ExcelHandler] Excel existente encontrado. Última fila: ${lastRow}, agregando desde fila: ${startRow}`);
                 } else {
                     // 5b. Crear template desde cero
@@ -279,19 +280,46 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
         const provinciaVenta = direccionEnvio?.provincia || cliente?.provincia || '';
         if (provinciaVenta) {
             try {
-                const provincia = await prisma.provincia.findFirst({
+                // Normalizar el nombre de la provincia (trim + uppercase) ya que en BD están en mayúsculas
+                const provinciaNormalizada = provinciaVenta.trim().toUpperCase();
+                
+                // Intentar primero con coincidencia exacta (case insensitive)
+                let provincia = await prisma.provincia.findFirst({
                     where: {
                         nombre: {
-                            contains: provinciaVenta,
+                            equals: provinciaNormalizada,
                             mode: 'insensitive',
                         },
                         activo: true,
                     },
                 });
+                
+                // Si no encuentra con equals, intentar con contains
+                if (!provincia) {
+                    provincia = await prisma.provincia.findFirst({
+                        where: {
+                            nombre: {
+                                contains: provinciaNormalizada,
+                                mode: 'insensitive',
+                            },
+                            activo: true,
+                        },
+                    });
+                }
+                
                 codigoProvinciaFacturacion = provincia?.codi_provincia || '';
+                
+                // Log para debug si no se encuentra
+                if (!codigoProvinciaFacturacion) {
+                    console.warn(`⚠️ [ExcelHandler] No se encontró código de provincia para: "${provinciaVenta}" (normalizado: "${provinciaNormalizada}")`);
+                } else {
+                    console.log(`✅ [ExcelHandler] Provincia encontrada: "${provinciaVenta}" -> código: "${codigoProvinciaFacturacion}"`);
+                }
             } catch (error) {
                 console.warn(`⚠️ [ExcelHandler] Error al buscar provincia: ${provinciaVenta}`, error);
             }
+        } else {
+            console.warn(`⚠️ [ExcelHandler] No se encontró provincia en dirección de envío ni en cliente para venta #${venta.id_venta}`);
         }
 
         // Obtener nombre de plataforma de pago (lookup o inferir)
@@ -324,14 +352,31 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
         };
 
         // Calcular estado (columna L): total final si es un solo producto, 0 si hay más productos
-        const calcularEstado = (index: number, total: number): string => {
+        const calcularEstado = (detalleActual: any, total: number): string => {
             if (total > 1) {
                 // Si hay múltiples artículos, todos son 0
                 return '0';
             }
-            // Si es un solo artículo, estado = total final (total_neto)
-            const totalFinal = venta.total_neto ? Number(venta.total_neto) : 0;
-            return formatNumeroSinDecimales(totalFinal);
+            // Si es un solo artículo, estado = sub_total del detalle (igual que columna G)
+            const subTotal = detalleActual.sub_total ? Number(detalleActual.sub_total) : 0;
+            return formatNumeroSinDecimales(subTotal);
+        };
+
+        // Formatear nombre de provincia: convertir guiones a espacios y capitalizar cada palabra
+        // Ejemplo: "buenos-aires" -> "Buenos Aires"
+        const formatearProvincia = (provincia: string | null | undefined): string => {
+            if (!provincia) return '';
+            // Reemplazar guiones por espacios, trim, y capitalizar cada palabra
+            return provincia
+                .replace(/-/g, ' ')  // Reemplazar guiones por espacios
+                .split(' ')
+                .map(palabra => {
+                    if (!palabra) return '';
+                    // Capitalizar: primera letra mayúscula, resto minúscula
+                    return palabra.charAt(0).toUpperCase() + palabra.slice(1).toLowerCase();
+                })
+                .join(' ')
+                .trim();
         };
 
         // Formatear dirección de facturación completa
@@ -350,7 +395,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 parts.push(`C.P.: ${cliente.cod_postal}`);
             }
             if (cliente?.provincia) {
-                parts.push(cliente.provincia);
+                parts.push(formatearProvincia(cliente.provincia));
             }
             // Formato: "direccion, ciudad - C.P.: cod_postal, provincia"
             if (parts.length === 0) return '';
@@ -364,28 +409,60 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
         // Formatear dirección de envío completa
         // Formato esperado: "los tamariscos 2119, Bahía Blanca - C.P.: 8000, Buenos Aires"
         const formatearDireccionEnvio = (): string => {
-            // Si hay dirección formateada (de OpenCage), usarla directamente
+            // Si hay dirección formateada (de OpenCage), formatearla también para corregir la provincia
             if (direccionEnvio?.direccion_formateada) {
-                return direccionEnvio.direccion_formateada;
+                // Extraer y formatear la provincia de la dirección formateada
+                const dirFormateada = direccionEnvio.direccion_formateada;
+                // Buscar la última parte después de la última coma (que debería ser la provincia)
+                const partes = dirFormateada.split(',');
+                if (partes.length > 0) {
+                    const ultimaParte = partes[partes.length - 1].trim();
+                    // Si la última parte parece ser una provincia (contiene guiones o está en minúsculas)
+                    if (ultimaParte.includes('-') || ultimaParte === ultimaParte.toLowerCase()) {
+                        const provinciaFormateada = formatearProvincia(ultimaParte);
+                        // Reemplazar la última parte con la provincia formateada
+                        partes[partes.length - 1] = provinciaFormateada;
+                        return partes.join(',');
+                    }
+                }
+                return dirFormateada;
             }
             
+            // Construir dirección desde direccionEnvio, con fallback a cliente si no hay datos
             const parts: string[] = [];
-            if (direccionEnvio?.direccion) {
-                let direccionCompleta = direccionEnvio.direccion;
-                if (direccionEnvio.altura) direccionCompleta += ` ${direccionEnvio.altura}`;
+            
+            // Dirección: usar direccionEnvio primero, luego cliente como fallback
+            const direccion = direccionEnvio?.direccion || cliente?.direccion;
+            const altura = direccionEnvio?.altura || cliente?.altura;
+            if (direccion) {
+                let direccionCompleta = direccion;
+                if (altura) direccionCompleta += ` ${altura}`;
                 parts.push(direccionCompleta);
             }
-            if (direccionEnvio?.ciudad) {
-                parts.push(direccionEnvio.ciudad);
+            
+            // Ciudad: usar direccionEnvio primero, luego cliente como fallback
+            const ciudad = direccionEnvio?.ciudad || cliente?.ciudad;
+            if (ciudad) {
+                parts.push(ciudad);
             }
-            if (direccionEnvio?.cod_postal) {
-                parts.push(`C.P.: ${direccionEnvio.cod_postal}`);
+            
+            // Código postal: usar direccionEnvio primero, luego cliente como fallback
+            const codPostal = direccionEnvio?.cod_postal || cliente?.cod_postal;
+            if (codPostal) {
+                parts.push(`C.P.: ${codPostal}`);
             }
-            if (direccionEnvio?.provincia) {
-                parts.push(direccionEnvio.provincia);
+            
+            // Provincia: usar direccionEnvio primero, luego cliente como fallback
+            const provincia = direccionEnvio?.provincia || cliente?.provincia;
+            if (provincia) {
+                parts.push(formatearProvincia(provincia));
             }
+            
             // Formato: "direccion, ciudad - C.P.: cod_postal, provincia"
-            if (parts.length === 0) return '';
+            if (parts.length === 0) {
+                console.warn(`⚠️ [ExcelHandler] No se encontró dirección de envío para venta #${venta.id_venta}`);
+                return '';
+            }
             if (parts.length === 1) return parts[0];
             const direccionYCiudad = parts.slice(0, 2).join(', ');
             const codPostalYProvincia = parts.slice(2).join(', ');
@@ -440,11 +517,11 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             const producto = detalle.producto;
 
             rows.push({
-                AA: venta.id_venta.toString(),
+                AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // COLUMNA A: # de venta (usar cod_interno, fallback a id_venta formateado)
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // Usar actualizado_en según mapeo
                 AF: (detalle.cantidad || 1).toString(),
                 AG: formatNumeroSinDecimales(detalle.sub_total || 0), // COLUMNA G: TOTAL = número entero sin coma
-                AL: calcularEstado(i, totalDetalles), // COLUMNA L: total final si es un solo producto, 0 si hay más
+                AL: calcularEstado(detalle, totalDetalles), // COLUMNA L: sub_total si es un solo producto (igual que columna G), 0 si hay más
                 AN: producto?.codi_arti || '', // SKU: usar codi_arti
                 AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // COLUMNA R: número entero sin coma
                 AS: 'V', // Código lista de precios: "V" por ahora
@@ -455,9 +532,9 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AX: '05', // COLUMNA X: "05" (con cero a la izquierda)
                 AY: nombreCompletoCliente, // Nombre cliente (repeat)
                 AZ: numeroDocumentoSolo, // COLUMNA Z: número documento solo (usar numero_documento, no id_usuario)
-                BA: formatearDireccionEnvio(), // COLUMNA AA: Domicilio envío formateado
+                BA: formatearDireccionEnvio(), // COLUMNA AA (Excel): Dirección de envío formateada
                 BB: direccionEnvio?.ciudad || cliente?.ciudad || '', // Ciudad envío
-                BC: direccionEnvio?.provincia || cliente?.provincia || '', // Provincia envío
+                BC: formatearProvincia(direccionEnvio?.provincia || cliente?.provincia), // Provincia envío (formateada: mayúsculas y espacios)
                 BD: (direccionEnvio?.cod_postal || cliente?.cod_postal || '').toString(), // Código postal envío
                 BE: direccionEnvio?.pais || 'ARGENTINA', // País
                 BF: construirTransporte(), // Transporte: "ANDREANI: cod_envio"

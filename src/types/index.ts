@@ -258,6 +258,7 @@ export interface IAuditoria {
 
 export interface IVenta {
     id_venta: number;
+    cod_interno?: string | null;
     id_usuario?: string | null;
     fecha?: Date | null;
     id_cliente?: string | null;

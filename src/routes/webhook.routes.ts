@@ -19,11 +19,12 @@ import { Router } from 'express';
 import { paymentWebhookController } from '../controllers/payment-webhook.controller';
 import { validateMercadoPagoSignature, validateWebhookTimestamp } from '../middlewares/webhook-signature.middleware';
 import { verifyFirebaseToken, loadUserFromDatabase, requireRole } from '../middlewares/auth.middleware';
+import { adminRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = Router();
 
 // Middleware de autenticación para rutas admin
-const adminAuth = [verifyFirebaseToken, loadUserFromDatabase, requireRole('ADMIN')];
+const adminAuth = [verifyFirebaseToken, loadUserFromDatabase, requireRole('ADMIN'), adminRateLimiter];
 
 // ============================================
 // ENDPOINTS PÚBLICOS (sin autenticación)
