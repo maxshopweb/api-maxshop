@@ -54,16 +54,24 @@ export interface SincronizacionResult {
   mensaje: string;
 }
 
+export interface StockData {
+  stock: number;      // ACTUSTOK (suma por depósito)
+  stock_min: number;  // MINISTOK (máx por producto si varios depósitos)
+}
+
 export interface ImportDependencies {
   categorias: Set<string>;
   marcas: Set<string>;
   grupos: Set<string>;
   impuestos: Map<string, number>;
-  precios: Map<string, { precioVenta: number | null; precioCosto: number | null }>;
-  stock: Map<string, number>; // Stock siempre es number (0 si no hay)
+  precios: Map<string, PrecioData>;
+  stock: Map<string, StockData>;
 }
 
 export interface PrecioData {
-  precioVenta: number | null;
-  precioCosto: number | null;
+  precioVenta: number | null;    // CODILIST = V
+  precioEspecial: number | null; // CODILIST = O
+  precioPvp: number | null;     // CODILIST = P
+  precioCampanya: number | null; // CODILIST = Q
+  precioCosto?: number | null;   // CODILIST = C (opcional)
 }

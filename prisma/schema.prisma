@@ -290,9 +290,11 @@ model productos {
   codi_marca            String?         @db.VarChar(3)
   codi_grupo            String?         @db.VarChar(4)
   codi_impuesto         String?         @db.VarChar(2)
-  precio                Decimal?        @db.Decimal(19, 6)
-  precio_sin_iva        Decimal?        @db.Decimal(19, 6)
-  iva_monto             Decimal?        @db.Decimal(19, 6)
+  precio_venta          Decimal?        @db.Decimal(19, 6)   // MAESPREC ACTUPREC CODILIST=V
+  precio_especial       Decimal?        @db.Decimal(19, 6)   // MAESPREC ACTUPREC CODILIST=O
+  precio_pvp            Decimal?        @db.Decimal(19, 6)   // MAESPREC ACTUPREC CODILIST=P
+  precio_campanya       Decimal?        @db.Decimal(19, 6)   // MAESPREC ACTUPREC CODILIST=Q
+  lista_precio_activa   String?         @db.VarChar(1)      // V|O|P|Q - lista en vivo
   unidad_medida         String?         @db.VarChar(3)
   unidades_por_producto Decimal?        @db.Decimal(5, 0)
   codi_barras           String?         @db.VarChar(22)
@@ -300,14 +302,7 @@ model productos {
   img_principal         String?         @db.VarChar(120)
   activo                String?         @db.VarChar(1)
   estado                Int?            @default(1)
-  id_interno            String?         @db.VarChar(100)
-  cod_sku               String?         @db.VarChar(100)
-  modelo                String?         @db.VarChar(100)
-  precio_mayorista      Decimal?        @db.Decimal(10, 2)
-  precio_minorista      Decimal?        @db.Decimal(10, 2)
-  precio_evento         Decimal?        @db.Decimal(10, 2)
   stock_min             Int?
-  stock_mayorista       Int?
   imagenes              Json?
   destacado             Boolean?        @default(false)
   financiacion          Boolean?        @default(false)

@@ -13,14 +13,42 @@ export class ProductosService {
     private TTL_DESTACADOS = 900;     // 15 minutos
     private TTL_CONTENIDO_CREAR = 7200; // 2 horas (marcas, categorías, etc)
 
-    // Función auxiliar para convertir nombre a mayúsculas
+    /**
+     * Obtiene el precio de la lista activa (sin IVA) según lista_precio_activa.
+     */
+    private getPrecioListaActiva(producto: any): number | null {
+        const lista = (producto.lista_precio_activa || 'V').toUpperCase();
+        const pv = producto.precio_venta != null ? Number(producto.precio_venta) : null;
+        const pe = producto.precio_especial != null ? Number(producto.precio_especial) : null;
+        const pp = producto.precio_pvp != null ? Number(producto.precio_pvp) : null;
+        const pc = producto.precio_campanya != null ? Number(producto.precio_campanya) : null;
+        if (lista === 'V') return pv;
+        if (lista === 'O') return pe;
+        if (lista === 'P') return pp;
+        if (lista === 'Q') return pc;
+        return pv ?? pe ?? pp ?? pc;
+    }
+
+    /**
+     * Calcula precio final con IVA para enviar al front.
+     * Precios en BD son sin IVA; se aplica porcentaje de tabla iva.
+     */
+    private calcularPrecioConIva(producto: any): number | null {
+        const precioSinIva = this.getPrecioListaActiva(producto);
+        if (precioSinIva === null || precioSinIva < 0) return null;
+        const iva = producto.iva;
+        const porcentaje = iva?.porcentaje != null ? Number(iva.porcentaje) : 0;
+        return precioSinIva * (1 + porcentaje / 100);
+    }
+
+    // Función auxiliar para convertir nombre a mayúsculas y añadir precio con IVA
     private normalizeProducto(producto: any): IProductos {
         const normalized: any = {
             ...producto,
-            nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre
+            nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
+            precio: this.calcularPrecioConIva(producto)
         };
         
-        // Normalizar nombres de relaciones si existen
         if (normalized.categoria && normalized.categoria.nombre) {
             normalized.categoria = {
                 ...normalized.categoria,
@@ -166,11 +194,26 @@ export class ProductosService {
             }
         }
 
-        // Filtro por rango de precio
+        // Filtro por rango de precio (por columna de lista activa; aproximación)
         if (precio_min !== undefined || precio_max !== undefined) {
-            whereClause.precio = {};
-            if (precio_min !== undefined) whereClause.precio.gte = precio_min;
-            if (precio_max !== undefined) whereClause.precio.lte = precio_max;
+            const gte = precio_min !== undefined ? precio_min : undefined;
+            const lte = precio_max !== undefined ? precio_max : undefined;
+            const cond = (col: string) => {
+                const c: any = {};
+                if (gte !== undefined) c.gte = gte;
+                if (lte !== undefined) c.lte = lte;
+                return Object.keys(c).length ? { [col]: c } : {};
+            };
+            const priceOr = [
+                { lista_precio_activa: 'V', ...cond('precio_venta') },
+                { lista_precio_activa: 'O', ...cond('precio_especial') },
+                { lista_precio_activa: 'P', ...cond('precio_pvp') },
+                { lista_precio_activa: 'Q', ...cond('precio_campanya') },
+                { lista_precio_activa: null, ...cond('precio_venta') }
+            ].filter((o: any) => Object.keys(o).length > 1);
+            if (priceOr.length > 0) {
+                whereClause.AND = [...(whereClause.AND || []), { OR: priceOr }];
+            }
         }
 
         // Filtro por stock bajo - se aplicará después de obtener los resultados
@@ -194,7 +237,6 @@ export class ProductosService {
                 { descripcion: { contains: busquedaTrimmed, mode: 'insensitive' } },
                 { codi_arti: { contains: busquedaTrimmed, mode: 'insensitive' } },
                 { codi_barras: { contains: busquedaTrimmed, mode: 'insensitive' } },
-                { cod_sku: { contains: busquedaTrimmed, mode: 'insensitive' } },
             ];
 
             // Si la búsqueda es un número, buscar también por ID exacto
@@ -239,11 +281,11 @@ export class ProductosService {
                 take: limit,
             }),
             prisma.productos.count({ where: whereClause }),
-            // Agregación para obtener precio min/max
+            // Agregación para rango de precios (sin IVA; aproximación por columnas)
             prisma.productos.aggregate({
                 where: whereClause,
-                _min: { precio: true },
-                _max: { precio: true }
+                _min: { precio_venta: true, precio_especial: true, precio_pvp: true, precio_campanya: true },
+                _max: { precio_venta: true, precio_especial: true, precio_pvp: true, precio_campanya: true }
             })
         ]);
 
@@ -267,13 +309,13 @@ export class ProductosService {
             totalPages: aplicarFiltroStockBajo
                 ? Math.ceil(productosFiltrados.length / limit)
                 : Math.ceil(total / limit),
-            // Agregar rango de precios
-            priceRange: priceStats._max.precio !== null && priceStats._min.precio !== null
-                ? {
-                    min: Number(priceStats._min.precio),
-                    max: Number(priceStats._max.precio)
-                }
-                : undefined
+            // Rango de precios (min/max entre las 4 listas; sin IVA, aproximado)
+            priceRange: (() => {
+                const mins = [priceStats._min.precio_venta, priceStats._min.precio_especial, priceStats._min.precio_pvp, priceStats._min.precio_campanya].filter(Boolean);
+                const maxs = [priceStats._max.precio_venta, priceStats._max.precio_especial, priceStats._max.precio_pvp, priceStats._max.precio_campanya].filter(Boolean);
+                if (mins.length === 0 || maxs.length === 0) return undefined;
+                return { min: Math.min(...mins.map(Number)), max: Math.max(...maxs.map(Number)) };
+            })()
         };
 
         // Guardar en cache
@@ -837,11 +879,25 @@ export class ProductosService {
             }
         }
 
-        if (precio_min !== undefined) {
-            whereClause.precio = { ...whereClause.precio, gte: precio_min };
-        }
-        if (precio_max !== undefined) {
-            whereClause.precio = { ...whereClause.precio, lte: precio_max };
+        if (precio_min !== undefined || precio_max !== undefined) {
+            const gte = precio_min !== undefined ? precio_min : undefined;
+            const lte = precio_max !== undefined ? precio_max : undefined;
+            const cond = (col: string) => {
+                const c: any = {};
+                if (gte !== undefined) c.gte = gte;
+                if (lte !== undefined) c.lte = lte;
+                return Object.keys(c).length ? { [col]: c } : {};
+            };
+            const priceOr = [
+                { lista_precio_activa: 'V', ...cond('precio_venta') },
+                { lista_precio_activa: 'O', ...cond('precio_especial') },
+                { lista_precio_activa: 'P', ...cond('precio_pvp') },
+                { lista_precio_activa: 'Q', ...cond('precio_campanya') },
+                { lista_precio_activa: null, ...cond('precio_venta') }
+            ].filter((o: any) => Object.keys(o).length > 1);
+            if (priceOr.length > 0) {
+                whereClause.AND = [...(whereClause.AND || []), { OR: priceOr }];
+            }
         }
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
@@ -865,14 +921,13 @@ export class ProductosService {
             take: limit
         });
 
-        // Normalizar productos
+        // Normalizar productos (añade precio con IVA)
         const productosNormalizados = this.normalizeProductos(productos);
 
-        // Calcular rango de precios
         const precioStats = await prisma.productos.aggregate({
             where: whereClause,
-            _min: { precio: true },
-            _max: { precio: true }
+            _min: { precio_venta: true, precio_especial: true, precio_pvp: true, precio_campanya: true },
+            _max: { precio_venta: true, precio_especial: true, precio_pvp: true, precio_campanya: true }
         });
 
         const result: IPaginatedResponse<IProductos> = {
@@ -881,10 +936,12 @@ export class ProductosService {
             page,
             limit,
             totalPages: Math.ceil(total / limit),
-            priceRange: precioStats._min.precio !== null && precioStats._max.precio !== null ? {
-                min: Number(precioStats._min.precio),
-                max: Number(precioStats._max.precio)
-            } : undefined
+            priceRange: (() => {
+                const mins = [precioStats._min.precio_venta, precioStats._min.precio_especial, precioStats._min.precio_pvp, precioStats._min.precio_campanya].filter(Boolean);
+                const maxs = [precioStats._max.precio_venta, precioStats._max.precio_especial, precioStats._max.precio_pvp, precioStats._max.precio_campanya].filter(Boolean);
+                if (mins.length === 0 || maxs.length === 0) return undefined;
+                return { min: Math.min(...mins.map(Number)), max: Math.max(...maxs.map(Number)) };
+            })()
         };
 
         // Guardar en cache

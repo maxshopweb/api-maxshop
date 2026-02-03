@@ -1,391 +1,671 @@
-# 📚 Documentación de API - MaxShop Backend
+# 📚 Documentación de API - MaxShop
 
-## Base URL
-```
-http://localhost:3000/api
-```
+**Base URL:** `http://localhost:3001/api` (desarrollo) | `https://api.vertimar.online/api` (producción)
 
----
-
-## 📦 PRODUCTOS
-
-### 1. Obtener todos los productos (con filtros)
-
-**Endpoint:** `GET /api/productos`
-
-**Descripción:** Obtiene una lista paginada de productos con filtros opcionales.
-
-**Query Parameters:**
-- `page` (number, opcional): Número de página (default: 1)
-- `limit` (number, opcional): Cantidad de productos por página (default: 100)
-- `order_by` (string, opcional): Campo para ordenar (`precio`, `nombre`, `creado_en`, `stock`) (default: `creado_en`)
-- `order` (string, opcional): Orden (`asc` o `desc`) (default: `desc`)
-- `estado` (number, opcional): Estado del producto (0=eliminado, 1=activo, 2=inactivo) (default: 1)
-- `busqueda` (string, opcional): Búsqueda por nombre, descripción, código de artículo, código de barras o SKU
-- `id_cat` (number | string, opcional): ID o código de categoría
-- `id_marca` (number | string, opcional): ID o código de marca
-- `codi_grupo` (string, opcional): Código de grupo
-- `codi_impuesto` (string | number, opcional): Código o ID de impuesto/IVA
-- `precio_min` (number, opcional): Precio mínimo
-- `precio_max` (number, opcional): Precio máximo
-- `destacado` (boolean, opcional): Filtrar por productos destacados
-- `financiacion` (boolean, opcional): Filtrar por productos con financiación
-- `stock_bajo` (boolean, opcional): Filtrar productos con stock bajo (stock <= stock_min)
-
-**Ejemplo de solicitud:**
-```http
-GET /api/productos?page=1&limit=50&id_cat=0001&precio_min=1000&precio_max=50000&order_by=precio&order=asc
-```
-
-**Respuesta exitosa (200):**
-```json
-{
-  "data": [
-    {
-      "id_prod": 1,
-      "codi_arti": "621450",
-      "nombre": "Producto Ejemplo",
-      "descripcion": "Descripción del producto",
-      "precio": 25000.00,
-      "precio_sin_iva": 21008.40,
-      "iva_monto": 3991.60,
-      "stock": 15,
-      "stock_min": 10,
-      "unidad_medida": "UN",
-      "unidades_por_producto": 1,
-      "codi_barras": "7791234567890",
-      "img_principal": "621450-01.png",
-      "activo": "A",
-      "estado": 1,
-      "destacado": true,
-      "financiacion": false,
-      "codi_categoria": "0001",
-      "codi_marca": "010",
-      "codi_grupo": "0005",
-      "codi_impuesto": "21",
-      "categoria": {
-        "id_cat": 1,
-        "codi_categoria": "0001",
-        "nombre": "Categoría Ejemplo",
-        "descripcion": "Descripción de categoría"
-      },
-      "marca": {
-        "id_marca": 1,
-        "codi_marca": "010",
-        "nombre": "Marca Ejemplo",
-        "descripcion": "Descripción de marca"
-      },
-      "grupo": {
-        "id_grupo": 1,
-        "codi_grupo": "0005",
-        "nombre": "Grupo Ejemplo",
-        "descripcion": "Descripción de grupo"
-      },
-      "iva": {
-        "id_iva": 1,
-        "codi_impuesto": "21",
-        "nombre": "IVA 21%",
-        "porcentaje": 21
-      }
-    }
-  ],
-  "total": 150,
-  "page": 1,
-  "limit": 50,
-  "totalPages": 3
-}
-```
+**Versión:** 1.0.0
 
 ---
 
-### 2. Obtener producto por ID
+## 📋 Tabla de Contenidos
 
-**Endpoint:** `GET /api/productos/:id`
+1. [Autenticación](#autenticación)
+2. [Health Check](#health-check)
+3. [Autenticación y Usuarios](#autenticación-y-usuarios)
+4. [Productos](#productos)
+5. [Categorías](#categorías)
+6. [Marcas](#marcas)
+7. [Grupos](#grupos)
+8. [Ventas](#ventas)
+9. [Clientes](#clientes)
+10. [Direcciones](#direcciones)
+11. [Ubicación (OpenCage)](#ubicación-opencage)
+12. [Andreani](#andreani)
+13. [Dashboard (Admin)](#dashboard-admin)
+14. [Facturas](#facturas)
+15. [Webhooks](#webhooks)
 
-**Descripción:** Obtiene un producto específico por su ID.
+---
 
-**Path Parameters:**
-- `id` (number, requerido): ID del producto
+## 🔐 Autenticación
 
-**Ejemplo de solicitud:**
+La mayoría de los endpoints requieren autenticación mediante **Firebase ID Token**.
+
+### Headers Requeridos
+
 ```http
-GET /api/productos/1
+Authorization: Bearer <firebase_id_token>
+Content-Type: application/json
 ```
 
-**Respuesta exitosa (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "id_prod": 1,
-    "codi_arti": "621450",
-    "nombre": "Producto Ejemplo",
-    "descripcion": "Descripción del producto",
-    "precio": 25000.00,
-    "precio_sin_iva": 21008.40,
-    "iva_monto": 3991.60,
-    "stock": 15,
-    "categoria": { ... },
-    "marca": { ... },
-    "grupo": { ... },
-    "iva": { ... }
-  }
-}
-```
+### Respuesta de Error (401)
 
-**Respuesta de error (404):**
 ```json
 {
   "success": false,
-  "error": "Producto no encontrado o inactivo"
+  "error": "Token de autorización no proporcionado."
 }
 ```
 
 ---
 
-### 3. Obtener producto por código (codi_arti)
+## Health Check
 
-**Endpoint:** `GET /api/productos/codigo/:codigo`
+### GET /api/health
 
-**Descripción:** Obtiene un producto específico por su código de artículo.
+Verifica el estado general del servidor.
 
-**Path Parameters:**
-- `codigo` (string, requerido): Código del producto (codi_arti)
+**Autenticación:** No requerida
 
-**Ejemplo de solicitud:**
-```http
-GET /api/productos/codigo/621450
-```
+**Respuesta Exitosa (200):**
 
-**Respuesta exitosa (200):**
 ```json
 {
   "success": true,
   "data": {
-    "id_prod": 1,
-    "codi_arti": "621450",
-    "nombre": "Producto Ejemplo",
-    ...
+    "status": "ok",
+    "timestamp": "2026-01-20T12:00:00.000Z",
+    "uptime": 3600,
+    "environment": "development",
+    "version": "1.0.0"
   }
 }
 ```
 
 ---
 
-### 4. Obtener productos con imágenes
+### GET /api/health/db
 
-**Endpoint:** `GET /api/productos/con-imagenes`
+Verifica el estado de PostgreSQL.
 
-**Descripción:** Obtiene solo los productos que tienen imágenes en la carpeta `resources/IMAGENES/img-art/`. Verifica si existe alguna imagen cuyo nombre comience con el `codi_arti` del producto.
+**Autenticación:** No requerida
 
-**Query Parameters:** (Mismos que el endpoint GET /api/productos)
+**Respuesta Exitosa (200):**
 
-**Ejemplo de solicitud:**
-```http
-GET /api/productos/con-imagenes?page=1&limit=50&id_cat=0001
-```
-
-**Respuesta exitosa (200):**
-```json
-{
-  "data": [
-    {
-      "id_prod": 1,
-      "codi_arti": "621450",
-      "nombre": "Producto Ejemplo",
-      ...
-    }
-  ],
-  "total": 45,
-  "page": 1,
-  "limit": 50,
-  "totalPages": 1
-}
-```
-
----
-
-### 5. Obtener productos destacados
-
-**Endpoint:** `GET /api/productos/destacados`
-
-**Descripción:** Obtiene productos destacados con stock disponible.
-
-**Query Parameters:**
-- `limit` (number, opcional): Cantidad de productos (default: 10)
-
-**Ejemplo de solicitud:**
-```http
-GET /api/productos/destacados?limit=20
-```
-
-**Respuesta exitosa (200):**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id_prod": 1,
-      "codi_arti": "621450",
-      "nombre": "Producto Destacado",
-      "destacado": true,
-      ...
-    }
-  ]
-}
-```
-
----
-
-### 6. Obtener productos con stock bajo
-
-**Endpoint:** `GET /api/productos/stock-bajo`
-
-**Descripción:** Obtiene productos donde el stock es menor o igual al stock mínimo.
-
-**Ejemplo de solicitud:**
-```http
-GET /api/productos/stock-bajo
-```
-
-**Respuesta exitosa (200):**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id_prod": 1,
-      "codi_arti": "621450",
-      "nombre": "Producto con Stock Bajo",
-      "stock": 5,
-      "stock_min": 10,
-      ...
-    }
-  ]
-}
-```
-
----
-
-### 7. Crear producto
-
-**Endpoint:** `POST /api/productos`
-
-**Descripción:** Crea un nuevo producto.
-
-**Body (JSON):**
-```json
-{
-  "codi_arti": "621450",
-  "nombre": "Nuevo Producto",
-  "descripcion": "Descripción del nuevo producto",
-  "precio": 25000.00,
-  "codi_categoria": "0001",
-  "codi_marca": "010",
-  "codi_grupo": "0005",
-  "codi_impuesto": "21",
-  "stock": 20,
-  "unidad_medida": "UN",
-  "unidades_por_producto": 1,
-  "codi_barras": "7791234567890",
-  "img_principal": "621450-01.png",
-  "destacado": false,
-  "precio_mayorista": 20000.00,
-  "precio_minorista": 25000.00
-}
-```
-
-**Campos requeridos:**
-- `codi_arti` (string): Código único del producto
-- `nombre` (string): Nombre del producto
-- `precio` (number): Precio del producto
-
-**Campos opcionales:**
-- `descripcion` (string)
-- `codi_categoria` (string): Código de categoría
-- `codi_marca` (string): Código de marca
-- `codi_grupo` (string): Código de grupo
-- `codi_impuesto` (string): Código de impuesto/IVA
-- `stock` (number)
-- `unidad_medida` (string)
-- `unidades_por_producto` (number)
-- `codi_barras` (string)
-- `img_principal` (string)
-- `destacado` (boolean)
-- `precio_mayorista` (number)
-- `precio_minorista` (number)
-
-**Ejemplo de solicitud:**
-```http
-POST /api/productos
-Content-Type: application/json
-
-{
-  "codi_arti": "621450",
-  "nombre": "Nuevo Producto",
-  "precio": 25000.00,
-  "codi_categoria": "0001",
-  "codi_marca": "010"
-}
-```
-
-**Respuesta exitosa (201):**
 ```json
 {
   "success": true,
   "data": {
-    "id_prod": 1,
-    "codi_arti": "621450",
-    "nombre": "Nuevo Producto",
-    ...
+    "status": "ok",
+    "responseTime": "15ms",
+    "timestamp": "2026-01-20T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+### GET /api/health/redis
+
+Verifica el estado de Redis.
+
+**Autenticación:** No requerida
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ok",
+    "responseTime": "2ms",
+    "timestamp": "2026-01-20T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+### GET /api/health/full
+
+Verifica el estado completo de todos los servicios.
+
+**Autenticación:** No requerida
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "checks": {
+      "api": { "status": "ok" },
+      "database": { "status": "ok", "responseTime": "15ms" },
+      "redis": { "status": "ok", "responseTime": "2ms" }
+    },
+    "timestamp": "2026-01-20T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+## Autenticación y Usuarios
+
+### POST /api/auth/login/token
+
+Inicia sesión con Firebase ID Token.
+
+**Autenticación:** No requerida (pero requiere token de Firebase)
+
+**Rate Limit:** 5 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "idToken": "firebase_id_token_here",
+  "data": {
+    "uid": "firebase_uid",
+    "email": "usuario@example.com",
+    "displayName": "Nombre Usuario"
+  }
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_id",
+      "nombre": "Nombre",
+      "apellido": "Apellido",
+      "email": "usuario@example.com",
+      "rol": "USER"
+    },
+    "token": "jwt_token_here"
+  }
+}
+```
+
+---
+
+### POST /api/auth/register
+
+Registra un nuevo usuario con Firebase.
+
+**Autenticación:** Requiere Firebase Token
+
+**Rate Limit:** 5 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "idToken": "firebase_id_token_here",
+  "data": {
+    "uid": "firebase_uid",
+    "email": "usuario@example.com",
+    "displayName": "Nombre Usuario"
+  }
+}
+```
+
+**Respuesta Exitosa (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_id",
+      "nombre": "Nombre",
+      "apellido": "Apellido",
+      "email": "usuario@example.com"
+    },
+    "created": true
+  },
+  "message": "Usuario registrado exitosamente"
+}
+```
+
+---
+
+### POST /api/auth/complete-profile
+
+Completa el perfil del usuario autenticado.
+
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "data": {
+    "nombre": "Nombre",
+    "apellido": "Apellido",
+    "telefono": "1234567890",
+    "nacimiento": "1990-01-01",
+    "tipo_documento": "DNI",
+    "numero_documento": "12345678"
+  }
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_id",
+    "nombre": "Nombre",
+    "apellido": "Apellido",
+    "telefono": "1234567890"
+  },
+  "message": "Perfil completado exitosamente"
+}
+```
+
+---
+
+### GET /api/auth/me
+
+Obtiene el usuario autenticado actual.
+
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_id",
+      "nombre": "Nombre",
+      "apellido": "Apellido",
+      "email": "usuario@example.com",
+      "rol": "USER"
+    },
+    "needsTokenRefresh": false
+  }
+}
+```
+
+---
+
+### POST /api/auth/check-email
+
+Verifica si un email existe en el sistema.
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 5 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "email": "usuario@example.com"
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "exists": true,
+    "canLoginAsGuest": false
+  }
+}
+```
+
+---
+
+### POST /api/auth/guest-register
+
+Registra un usuario invitado (guest).
+
+**Autenticación:** Requiere Firebase Token
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "idToken": "firebase_anonymous_token",
+  "data": {
+    "uid": "firebase_uid"
+  }
+}
+```
+
+**Respuesta Exitosa (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_id",
+      "rol": "GUEST"
+    },
+    "created": true
+  },
+  "message": "Usuario invitado registrado exitosamente"
+}
+```
+
+---
+
+### POST /api/auth/convert-guest
+
+Convierte un usuario invitado a usuario completo.
+
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "idToken": "firebase_id_token",
+  "data": {
+    "email": "usuario@example.com",
+    "nombre": "Nombre",
+    "apellido": "Apellido"
+  }
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_id",
+      "email": "usuario@example.com",
+      "rol": "USER"
+    }
+  },
+  "message": "Usuario convertido exitosamente"
+}
+```
+
+---
+
+## Productos
+
+### GET /api/productos
+
+Lista productos con filtros y paginación.
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 100 requests/minuto
+
+**Query Parameters:**
+
+| Parámetro | Tipo | Descripción | Ejemplo |
+|-----------|------|-------------|---------|
+| `page` | number | Página (default: 1) | `1` |
+| `limit` | number | Items por página (default: 100, max: 100) | `25` |
+| `busqueda` | string | Búsqueda por nombre/código | `"martillo"` |
+| `id_cat` | number/string | ID o código de categoría | `1` o `"CAT001"` |
+| `id_marca` | number/string | ID o código de marca | `4` |
+| `codi_grupo` | string | Código de grupo | `"GRP001"` |
+| `codi_impuesto` | number/string | Código de impuesto | `1` |
+| `precio_min` | number | Precio mínimo | `1000` |
+| `precio_max` | number | Precio máximo | `50000` |
+| `destacado` | boolean | Solo destacados | `true` |
+| `financiacion` | boolean | Solo con financiación | `true` |
+| `stock_bajo` | boolean | Solo stock bajo | `true` |
+| `activo` | string | Estado: "A" (activo) o "I" (inactivo) | `"A"` |
+| `order_by` | string | Campo de ordenamiento | `"precio"` |
+| `order` | string | Dirección: "asc" o "desc" | `"desc"` |
+
+**Ejemplo de Request:**
+
+```
+GET /api/productos?page=1&limit=25&busqueda=martillo&precio_min=1000&destacado=true
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "productos": [
+      {
+        "id_producto": 1,
+        "codi_arti": "MART001",
+        "nombre": "Martillo Profesional",
+        "descripcion": "Martillo de acero...",
+        "precio": 15000,
+        "precio_anterior": 18000,
+        "stock": 50,
+        "stock_minimo": 10,
+        "imagen_principal": "https://...",
+        "imagenes": ["https://..."],
+        "marca": {
+          "id_marca": 4,
+          "nombre": "INGCO"
+        },
+        "categoria": {
+          "id_cat": 1,
+          "nombre": "Herramientas"
+        },
+        "destacado": true,
+        "activo": "A"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 25,
+      "total": 150,
+      "totalPages": 6
+    }
+  }
+}
+```
+
+---
+
+### GET /api/productos/:id
+
+Obtiene un producto por ID.
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 100 requests/minuto
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_producto": 1,
+    "codi_arti": "MART001",
+    "nombre": "Martillo Profesional",
+    "descripcion": "Martillo de acero...",
+    "precio": 15000,
+    "stock": 50,
+    "marca": {
+      "id_marca": 4,
+      "nombre": "INGCO"
+    },
+    "categoria": {
+      "id_cat": 1,
+      "nombre": "Herramientas"
+    }
+  }
+}
+```
+
+---
+
+### GET /api/productos/codigo/:codigo
+
+Obtiene un producto por código de artículo.
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 100 requests/minuto
+
+**Ejemplo:**
+
+```
+GET /api/productos/codigo/MART001
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_producto": 1,
+    "codi_arti": "MART001",
+    "nombre": "Martillo Profesional",
+    "precio": 15000
+  }
+}
+```
+
+---
+
+### GET /api/productos/destacados
+
+Obtiene productos destacados.
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 100 requests/minuto
+
+**Query Parameters:**
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `limit` | number | Cantidad de productos (default: 10) |
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id_producto": 1,
+      "nombre": "Martillo Profesional",
+      "precio": 15000,
+      "imagen_principal": "https://..."
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/productos/tienda
+
+Obtiene productos para la tienda (marca INGCO con imágenes).
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 100 requests/minuto
+
+**Query Parameters:** Mismos que `GET /api/productos`
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "productos": [...],
+    "pagination": {...}
+  }
+}
+```
+
+---
+
+### POST /api/productos
+
+Crea un nuevo producto.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "codi_arti": "PROD001",
+  "nombre": "Nuevo Producto",
+  "descripcion": "Descripción del producto",
+  "precio": 10000,
+  "precio_anterior": 12000,
+  "stock": 100,
+  "stock_minimo": 10,
+  "id_marca": 4,
+  "id_cat": 1,
+  "codi_grupo": "GRP001",
+  "codi_impuesto": 1,
+  "destacado": false,
+  "activo": "A"
+}
+```
+
+**Respuesta Exitosa (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_producto": 123,
+    "codi_arti": "PROD001",
+    "nombre": "Nuevo Producto"
   },
   "message": "Producto creado exitosamente"
 }
 ```
 
-**Respuesta de error (400):**
-```json
-{
-  "success": false,
-  "error": "La marca especificada (código: 010) no existe"
-}
-```
-
 ---
 
-### 8. Actualizar producto
+### PUT /api/productos/:id
 
-**Endpoint:** `PUT /api/productos/:id`
+Actualiza un producto existente.
 
-**Descripción:** Actualiza un producto existente.
+**Autenticación:** Requerida (Admin)
 
-**Path Parameters:**
-- `id` (number, requerido): ID del producto
+**Rate Limit:** 200 requests/minuto
 
-**Body (JSON):** (Mismos campos que crear producto, todos opcionales)
+**Request Body:** (Campos opcionales, solo enviar los que se quieren actualizar)
 
-**Ejemplo de solicitud:**
-```http
-PUT /api/productos/1
-Content-Type: application/json
-
+```json
 {
   "nombre": "Producto Actualizado",
-  "precio": 30000.00,
-  "stock": 25
+  "precio": 12000,
+  "stock": 80
 }
 ```
 
-**Respuesta exitosa (200):**
+**Respuesta Exitosa (200):**
+
 ```json
 {
   "success": true,
   "data": {
-    "id_prod": 1,
-    "nombre": "Producto Actualizado",
-    "precio": 30000.00,
-    "stock": 25,
-    ...
+    "id_producto": 123,
+    "nombre": "Producto Actualizado"
   },
   "message": "Producto actualizado exitosamente"
 }
@@ -393,21 +673,70 @@ Content-Type: application/json
 
 ---
 
-### 9. Eliminar producto (soft delete)
+### PATCH /api/productos/:id/stock
 
-**Endpoint:** `DELETE /api/productos/:id`
+Actualiza el stock de un producto.
 
-**Descripción:** Realiza un soft delete del producto (cambia estado a 0).
+**Autenticación:** Requerida (Admin)
 
-**Path Parameters:**
-- `id` (number, requerido): ID del producto
+**Rate Limit:** 200 requests/minuto
 
-**Ejemplo de solicitud:**
-```http
-DELETE /api/productos/1
+**Request Body:**
+
+```json
+{
+  "stock": 150
+}
 ```
 
-**Respuesta exitosa (200):**
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_producto": 123,
+    "stock": 150
+  },
+  "message": "Stock actualizado exitosamente"
+}
+```
+
+---
+
+### PATCH /api/productos/:id/destacado
+
+Alterna el estado destacado de un producto.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_producto": 123,
+    "destacado": true
+  },
+  "message": "Estado destacado actualizado"
+}
+```
+
+---
+
+### DELETE /api/productos/:id
+
+Elimina (soft delete) un producto.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
 ```json
 {
   "success": true,
@@ -417,166 +746,27 @@ DELETE /api/productos/1
 
 ---
 
-### 10. Actualizar stock
+## Categorías
 
-**Endpoint:** `PATCH /api/productos/:id/stock`
+### GET /api/categorias
 
-**Descripción:** Actualiza el stock de un producto (suma o resta cantidad).
+Lista todas las categorías.
 
-**Path Parameters:**
-- `id` (number, requerido): ID del producto
+**Autenticación:** Requerida
 
-**Body (JSON):**
-```json
-{
-  "cantidad": 10
-}
-```
+**Rate Limit:** 200 requests/minuto
 
-**Nota:** Si `cantidad` es positivo, suma al stock. Si es negativo, resta del stock.
+**Respuesta Exitosa (200):**
 
-**Ejemplo de solicitud:**
-```http
-PATCH /api/productos/1/stock
-Content-Type: application/json
-
-{
-  "cantidad": -5
-}
-```
-
-**Respuesta exitosa (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "id_prod": 1,
-    "stock": 10,
-    ...
-  },
-  "message": "Stock actualizado exitosamente"
-}
-```
-
-**Respuesta de error (400):**
-```json
-{
-  "success": false,
-  "error": "Stock insuficiente. Stock actual: 5, intentando reducir: 10"
-}
-```
-
----
-
-### 11. Toggle destacado
-
-**Endpoint:** `PATCH /api/productos/:id/destacado`
-
-**Descripción:** Cambia el estado destacado de un producto (true ↔ false).
-
-**Path Parameters:**
-- `id` (number, requerido): ID del producto
-
-**Ejemplo de solicitud:**
-```http
-PATCH /api/productos/1/destacado
-```
-
-**Respuesta exitosa (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "id_prod": 1,
-    "destacado": true,
-    ...
-  },
-  "message": "Producto marcado como destacado"
-}
-```
-
----
-
-### 12. Obtener contenido para crear producto
-
-**Endpoint:** `GET /api/productos/contenido-crear`
-
-**Descripción:** Obtiene todas las opciones disponibles para crear un producto (marcas, categorías, grupos, IVAs).
-
-**Ejemplo de solicitud:**
-```http
-GET /api/productos/contenido-crear
-```
-
-**Respuesta exitosa (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "marcas": [
-      {
-        "id_marca": 1,
-        "codi_marca": "010",
-        "nombre": "Marca Ejemplo",
-        "descripcion": "Descripción de marca"
-      }
-    ],
-    "categorias": [
-      {
-        "id_cat": 1,
-        "codi_categoria": "0001",
-        "nombre": "Categoría Ejemplo",
-        "descripcion": "Descripción de categoría"
-      }
-    ],
-    "grupos": [
-      {
-        "id_grupo": 1,
-        "codi_grupo": "0005",
-        "nombre": "Grupo Ejemplo",
-        "descripcion": "Descripción de grupo"
-      }
-    ],
-    "ivas": [
-      {
-        "id_iva": 1,
-        "codi_impuesto": "21",
-        "nombre": "IVA 21%",
-        "porcentaje": 21
-      }
-    ]
-  }
-}
-```
-
----
-
-## 📁 CATEGORÍAS
-
-### 1. Obtener todas las categorías
-
-**Endpoint:** `GET /api/categorias`
-
-**Descripción:** Obtiene todas las categorías.
-
-**Ejemplo de solicitud:**
-```http
-GET /api/categorias
-```
-
-**Respuesta exitosa (200):**
 ```json
 {
   "success": true,
   "data": [
     {
       "id_cat": 1,
-      "codi_categoria": "0001",
-      "nombre": "Categoría Ejemplo",
-      "descripcion": "Descripción de categoría",
-      "activo": true,
-      "creado_en": "2024-01-01T00:00:00.000Z",
-      "actualizado_en": "2024-01-01T00:00:00.000Z"
+      "codi_cat": "CAT001",
+      "nombre": "Herramientas",
+      "descripcion": "Categoría de herramientas"
     }
   ]
 }
@@ -584,97 +774,56 @@ GET /api/categorias
 
 ---
 
-### 2. Obtener categoría por ID
+### GET /api/categorias/:id
 
-**Endpoint:** `GET /api/categorias/:id`
+Obtiene una categoría por ID.
 
-**Path Parameters:**
-- `id` (number, requerido): ID de la categoría
+**Autenticación:** Requerida
 
-**Ejemplo de solicitud:**
-```http
-GET /api/categorias/1
-```
+**Rate Limit:** 200 requests/minuto
 
-**Respuesta exitosa (200):**
+**Respuesta Exitosa (200):**
+
 ```json
 {
   "success": true,
   "data": {
     "id_cat": 1,
-    "codi_categoria": "0001",
-    "nombre": "Categoría Ejemplo",
-    ...
+    "codi_cat": "CAT001",
+    "nombre": "Herramientas"
   }
 }
 ```
 
 ---
 
-### 3. Obtener categoría por código
+### POST /api/categorias
 
-**Endpoint:** `GET /api/categorias/codigo/:codigo`
+Crea una nueva categoría.
 
-**Path Parameters:**
-- `codigo` (string, requerido): Código de la categoría (codi_categoria)
+**Autenticación:** Requerida (Admin)
 
-**Ejemplo de solicitud:**
-```http
-GET /api/categorias/codigo/0001
-```
+**Rate Limit:** 200 requests/minuto
 
-**Respuesta exitosa (200):**
+**Request Body:**
+
 ```json
 {
-  "success": true,
-  "data": {
-    "id_cat": 1,
-    "codi_categoria": "0001",
-    "nombre": "Categoría Ejemplo",
-    ...
-  }
-}
-```
-
----
-
-### 4. Crear categoría
-
-**Endpoint:** `POST /api/categorias`
-
-**Body (JSON):**
-```json
-{
-  "codi_categoria": "0001",
+  "codi_cat": "CAT002",
   "nombre": "Nueva Categoría",
-  "descripcion": "Descripción de la categoría"
+  "descripcion": "Descripción"
 }
 ```
 
-**Campos requeridos:**
-- `codi_categoria` (string): Código único de la categoría
-- `nombre` (string): Nombre de la categoría
+**Respuesta Exitosa (201):**
 
-**Ejemplo de solicitud:**
-```http
-POST /api/categorias
-Content-Type: application/json
-
-{
-  "codi_categoria": "0001",
-  "nombre": "Nueva Categoría"
-}
-```
-
-**Respuesta exitosa (201):**
 ```json
 {
   "success": true,
   "data": {
-    "id_cat": 1,
-    "codi_categoria": "0001",
-    "nombre": "Nueva Categoría",
-    ...
+    "id_cat": 2,
+    "codi_cat": "CAT002",
+    "nombre": "Nueva Categoría"
   },
   "message": "Categoría creada exitosamente"
 }
@@ -682,100 +831,87 @@ Content-Type: application/json
 
 ---
 
-### 5. Actualizar categoría
+## Marcas
 
-**Endpoint:** `PUT /api/categorias/:id`
+### GET /api/marcas
 
-**Path Parameters:**
-- `id` (number, requerido): ID de la categoría
+Lista todas las marcas.
 
-**Body (JSON):**
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
 ```json
 {
-  "nombre": "Categoría Actualizada",
-  "descripcion": "Nueva descripción"
+  "success": true,
+  "data": [
+    {
+      "id_marca": 4,
+      "codi_marca": "004",
+      "nombre": "INGCO",
+      "descripcion": "Marca de herramientas"
+    }
+  ]
 }
 ```
 
-**Ejemplo de solicitud:**
-```http
-PUT /api/categorias/1
-Content-Type: application/json
+---
 
+### POST /api/marcas
+
+Crea una nueva marca.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
 {
-  "nombre": "Categoría Actualizada"
+  "codi_marca": "005",
+  "nombre": "Nueva Marca",
+  "descripcion": "Descripción"
 }
 ```
 
-**Respuesta exitosa (200):**
+**Respuesta Exitosa (201):**
+
 ```json
 {
   "success": true,
   "data": {
-    "id_cat": 1,
-    "nombre": "Categoría Actualizada",
-    ...
+    "id_marca": 5,
+    "codi_marca": "005",
+    "nombre": "Nueva Marca"
   },
-  "message": "Categoría actualizada exitosamente"
+  "message": "Marca creada exitosamente"
 }
 ```
 
 ---
 
-### 6. Eliminar categoría
+## Grupos
 
-**Endpoint:** `DELETE /api/categorias/:id`
+### GET /api/grupos
 
-**Path Parameters:**
-- `id` (number, requerido): ID de la categoría
+Lista todos los grupos.
 
-**Ejemplo de solicitud:**
-```http
-DELETE /api/categorias/1
-```
+**Autenticación:** Requerida
 
-**Respuesta exitosa (200):**
-```json
-{
-  "success": true,
-  "message": "Categoría eliminada exitosamente"
-}
-```
+**Rate Limit:** 200 requests/minuto
 
-**Respuesta de error (400):**
-```json
-{
-  "success": false,
-  "error": "No se puede eliminar la categoría porque tiene 5 producto(s) asociado(s)"
-}
-```
+**Respuesta Exitosa (200):**
 
----
-
-## 🏷️ MARCAS
-
-### 1. Obtener todas las marcas
-
-**Endpoint:** `GET /api/marcas`
-
-**Ejemplo de solicitud:**
-```http
-GET /api/marcas
-```
-
-**Respuesta exitosa (200):**
 ```json
 {
   "success": true,
   "data": [
     {
-      "id_marca": 1,
-      "codi_marca": "010",
-      "nombre": "Marca Ejemplo",
-      "descripcion": "Descripción de marca",
-      "activo": true,
-      "creado_en": "2024-01-01T00:00:00.000Z",
-      "actualizado_en": "2024-01-01T00:00:00.000Z"
+      "codi_grupo": "GRP001",
+      "nombre": "Grupo 1"
     }
   ]
 }
@@ -783,122 +919,268 @@ GET /api/marcas
 
 ---
 
-### 2. Obtener marca por ID
+## Ventas
 
-**Endpoint:** `GET /api/marcas/:id`
+### GET /api/ventas
 
-**Path Parameters:**
-- `id` (number, requerido): ID de la marca
+Lista ventas con filtros y paginación.
 
-**Ejemplo de solicitud:**
-```http
-GET /api/marcas/1
-```
+**Autenticación:** Requerida
 
----
+**Rate Limit:** 200 requests/minuto
 
-### 3. Obtener marca por código
+**Query Parameters:**
 
-**Endpoint:** `GET /api/marcas/codigo/:codigo`
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `page` | number | Página (default: 1) |
+| `limit` | number | Items por página (default: 25) |
+| `busqueda` | string | Búsqueda |
+| `id_cliente` | string | ID de cliente |
+| `id_usuario` | string | ID de usuario |
+| `fecha_desde` | string | Fecha desde (YYYY-MM-DD) |
+| `fecha_hasta` | string | Fecha hasta (YYYY-MM-DD) |
+| `estado_pago` | string | Estado: "pendiente", "aprobado", "rechazado", "facturado" |
+| `estado_envio` | string | Estado: "pendiente", "enviado", "entregado" |
+| `metodo_pago` | string | Método: "mercadopago", "transferencia" |
+| `total_min` | number | Total mínimo |
+| `total_max` | number | Total máximo |
 
-**Path Parameters:**
-- `codigo` (string, requerido): Código de la marca (codi_marca)
+**Respuesta Exitosa (200):**
 
-**Ejemplo de solicitud:**
-```http
-GET /api/marcas/codigo/010
-```
-
----
-
-### 4. Crear marca
-
-**Endpoint:** `POST /api/marcas`
-
-**Body (JSON):**
 ```json
 {
-  "codi_marca": "010",
-  "nombre": "Nueva Marca",
-  "descripcion": "Descripción de la marca"
-}
-```
-
-**Campos requeridos:**
-- `codi_marca` (string): Código único de la marca
-- `nombre` (string): Nombre de la marca
-
-**Ejemplo de solicitud:**
-```http
-POST /api/marcas
-Content-Type: application/json
-
-{
-  "codi_marca": "010",
-  "nombre": "Nueva Marca"
+  "success": true,
+  "data": {
+    "ventas": [
+      {
+        "id_venta": 1,
+        "cod_interno": "00000001",
+        "total_neto": 15000,
+        "total_general": 18150,
+        "estado_pago": "aprobado",
+        "estado_envio": "pendiente",
+        "metodo_pago": "mercadopago",
+        "fecha": "2026-01-20T12:00:00.000Z",
+        "cliente": {
+          "nombre": "Juan",
+          "apellido": "Pérez",
+          "email": "juan@example.com"
+        },
+        "detalles": [
+          {
+            "id_detalle": 1,
+            "producto": {
+              "nombre": "Martillo",
+              "precio_unitario": 15000
+            },
+            "cantidad": 1,
+            "sub_total": 15000
+          }
+        ]
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 25,
+      "total": 100,
+      "totalPages": 4
+    }
+  }
 }
 ```
 
 ---
 
-### 5. Actualizar marca
+### GET /api/ventas/mis-pedidos
 
-**Endpoint:** `PUT /api/marcas/:id`
+Obtiene las ventas del usuario autenticado.
 
-**Path Parameters:**
-- `id` (number, requerido): ID de la marca
+**Autenticación:** Requerida
 
-**Body (JSON):**
+**Rate Limit:** 200 requests/minuto
+
+**Query Parameters:** Mismos que `GET /api/ventas`
+
+**Respuesta Exitosa (200):**
+
 ```json
 {
-  "nombre": "Marca Actualizada",
-  "descripcion": "Nueva descripción"
+  "success": true,
+  "data": {
+    "ventas": [...],
+    "pagination": {...}
+  }
 }
 ```
 
 ---
 
-### 6. Eliminar marca
+### GET /api/ventas/:id
 
-**Endpoint:** `DELETE /api/marcas/:id`
+Obtiene una venta por ID.
 
-**Path Parameters:**
-- `id` (number, requerido): ID de la marca
+**Autenticación:** Requerida
 
-**Respuesta de error (400):**
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
 ```json
 {
-  "success": false,
-  "error": "No se puede eliminar la marca porque tiene 10 producto(s) asociado(s)"
+  "success": true,
+  "data": {
+    "id_venta": 1,
+    "cod_interno": "00000001",
+    "total_neto": 15000,
+    "estado_pago": "aprobado",
+    "cliente": {...},
+    "detalles": [...],
+    "envio": {
+      "cod_envio": "360000102051709",
+      "estado": "Pendiente"
+    }
+  }
 }
 ```
 
 ---
 
-## 📦 GRUPOS
+### POST /api/ventas/checkout
 
-### 1. Obtener todos los grupos
+Crea una venta desde el checkout.
 
-**Endpoint:** `GET /api/grupos`
+**Autenticación:** Requerida
 
-**Ejemplo de solicitud:**
-```http
-GET /api/grupos
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "direccion_envio": {
+    "direccion": "Calle Falsa 123",
+    "ciudad": "Buenos Aires",
+    "provincia": "Buenos Aires",
+    "cod_postal": "1000",
+    "pais": "ARGENTINA",
+    "direccion_formateada": "Calle Falsa 123, Buenos Aires - C.P.: 1000, Buenos Aires"
+  },
+  "detalles": [
+    {
+      "id_producto": 1,
+      "cantidad": 2,
+      "precio_unitario": 15000
+    }
+  ],
+  "tipo_documento": "DNI",
+  "numero_documento": "12345678",
+  "metodo_pago": "mercadopago"
+}
 ```
 
-**Respuesta exitosa (200):**
+**Respuesta Exitosa (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_venta": 1,
+    "cod_interno": "00000001",
+    "preference_id": "mercadopago_preference_id",
+    "init_point": "https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=...",
+    "total_neto": 30000
+  },
+  "message": "Venta creada exitosamente"
+}
+```
+
+---
+
+### PATCH /api/ventas/:id/estado-pago
+
+Actualiza el estado de pago de una venta.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "estado_pago": "aprobado"
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_venta": 1,
+    "estado_pago": "aprobado"
+  },
+  "message": "Estado de pago actualizado exitosamente"
+}
+```
+
+---
+
+### PATCH /api/ventas/:id/estado-envio
+
+Actualiza el estado de envío de una venta.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "estado_envio": "enviado"
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id_venta": 1,
+    "estado_envio": "enviado"
+  },
+  "message": "Estado de envío actualizado exitosamente"
+}
+```
+
+---
+
+## Clientes
+
+### GET /api/clientes
+
+Lista todos los clientes.
+
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
 ```json
 {
   "success": true,
   "data": [
     {
-      "id_grupo": 1,
-      "codi_grupo": "0005",
-      "nombre": "Grupo Ejemplo",
-      "descripcion": "Descripción de grupo",
-      "activo": true,
-      "creado_en": "2024-01-01T00:00:00.000Z",
-      "actualizado_en": "2024-01-01T00:00:00.000Z"
+      "id_usuario": "user_id",
+      "nombre": "Juan",
+      "apellido": "Pérez",
+      "email": "juan@example.com",
+      "telefono": "1234567890"
     }
   ]
 }
@@ -906,185 +1188,600 @@ GET /api/grupos
 
 ---
 
-### 2. Obtener grupo por ID
+### GET /api/clientes/:id
 
-**Endpoint:** `GET /api/grupos/:id`
+Obtiene un cliente por ID.
 
-**Path Parameters:**
-- `id` (number, requerido): ID del grupo
+**Autenticación:** Requerida
 
-**Ejemplo de solicitud:**
-```http
-GET /api/grupos/1
-```
+**Rate Limit:** 200 requests/minuto
 
----
+**Respuesta Exitosa (200):**
 
-### 3. Obtener grupo por código
-
-**Endpoint:** `GET /api/grupos/codigo/:codigo`
-
-**Path Parameters:**
-- `codigo` (string, requerido): Código del grupo (codi_grupo)
-
-**Ejemplo de solicitud:**
-```http
-GET /api/grupos/codigo/0005
-```
-
----
-
-### 4. Crear grupo
-
-**Endpoint:** `POST /api/grupos`
-
-**Body (JSON):**
 ```json
 {
-  "codi_grupo": "0005",
-  "nombre": "Nuevo Grupo",
-  "descripcion": "Descripción del grupo"
-}
-```
-
-**Campos requeridos:**
-- `codi_grupo` (string): Código único del grupo
-- `nombre` (string): Nombre del grupo
-
-**Ejemplo de solicitud:**
-```http
-POST /api/grupos
-Content-Type: application/json
-
-{
-  "codi_grupo": "0005",
-  "nombre": "Nuevo Grupo"
+  "success": true,
+  "data": {
+    "id_usuario": "user_id",
+    "nombre": "Juan",
+    "apellido": "Pérez",
+    "email": "juan@example.com",
+    "ventas": [...]
+  }
 }
 ```
 
 ---
 
-### 5. Actualizar grupo
+## Direcciones
 
-**Endpoint:** `PUT /api/grupos/:id`
+### GET /api/direcciones
 
-**Path Parameters:**
-- `id` (number, requerido): ID del grupo
+Obtiene las direcciones del usuario autenticado.
 
-**Body (JSON):**
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
 ```json
 {
-  "nombre": "Grupo Actualizado",
-  "descripcion": "Nueva descripción"
+  "success": true,
+  "data": [
+    {
+      "id_direccion": 1,
+      "direccion": "Calle Falsa 123",
+      "ciudad": "Buenos Aires",
+      "provincia": "Buenos Aires",
+      "cod_postal": "1000",
+      "pais": "ARGENTINA",
+      "direccion_formateada": "Calle Falsa 123, Buenos Aires - C.P.: 1000, Buenos Aires"
+    }
+  ]
 }
 ```
 
 ---
 
-### 6. Eliminar grupo
+### POST /api/direcciones
 
-**Endpoint:** `DELETE /api/grupos/:id`
+Crea una nueva dirección.
 
-**Path Parameters:**
-- `id` (number, requerido): ID del grupo
+**Autenticación:** Requerida
 
-**Respuesta de error (400):**
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
 ```json
 {
-  "success": false,
-  "error": "No se puede eliminar el grupo porque tiene 8 producto(s) asociado(s)"
+  "direccion": "Calle Falsa 123",
+  "ciudad": "Buenos Aires",
+  "provincia": "Buenos Aires",
+  "cod_postal": "1000",
+  "pais": "ARGENTINA",
+  "direccion_formateada": "Calle Falsa 123, Buenos Aires - C.P.: 1000, Buenos Aires"
+}
+```
+
+**Respuesta Exitosa (201):**
+
+```json
+{
+  "success": true,
+  "message": "Dirección creada exitosamente"
 }
 ```
 
 ---
 
-## 🔍 FILTROS Y BÚSQUEDAS
+### PUT /api/direcciones/:id
 
-### Ejemplos de uso de filtros en productos
+Actualiza una dirección.
 
-**Filtrar por categoría:**
-```http
-GET /api/productos?id_cat=0001
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:** (Campos opcionales)
+
+```json
+{
+  "direccion": "Calle Nueva 456",
+  "ciudad": "Córdoba"
+}
 ```
 
-**Filtrar por marca:**
-```http
-GET /api/productos?id_marca=010
-```
+**Respuesta Exitosa (200):**
 
-**Filtrar por grupo:**
-```http
-GET /api/productos?codi_grupo=0005
-```
-
-**Filtrar por IVA:**
-```http
-GET /api/productos?codi_impuesto=21
-```
-
-**Filtrar por rango de precio:**
-```http
-GET /api/productos?precio_min=1000&precio_max=50000
-```
-
-**Filtrar por múltiples criterios:**
-```http
-GET /api/productos?id_cat=0001&id_marca=010&precio_min=1000&precio_max=50000&order_by=precio&order=asc
-```
-
-**Buscar por texto:**
-```http
-GET /api/productos?busqueda=taladro
-```
-
-**Filtrar productos destacados:**
-```http
-GET /api/productos?destacado=true
-```
-
-**Filtrar productos con stock bajo:**
-```http
-GET /api/productos?stock_bajo=true
-```
-
-**Filtrar productos con imágenes:**
-```http
-GET /api/productos/con-imagenes?page=1&limit=50
+```json
+{
+  "success": true,
+  "data": {
+    "id_direccion": 1,
+    "direccion": "Calle Nueva 456"
+  },
+  "message": "Dirección actualizada exitosamente"
+}
 ```
 
 ---
 
-## ⚠️ CÓDIGOS DE ESTADO HTTP
+### DELETE /api/direcciones/:id
 
-- `200` - OK: Solicitud exitosa
-- `201` - Created: Recurso creado exitosamente
-- `400` - Bad Request: Error en la solicitud (datos inválidos)
-- `404` - Not Found: Recurso no encontrado
-- `500` - Internal Server Error: Error del servidor
+Elimina una dirección.
 
----
+**Autenticación:** Requerida
 
-## 📝 NOTAS IMPORTANTES
+**Rate Limit:** 200 requests/minuto
 
-1. **Relaciones por códigos CSV**: Las relaciones entre productos y categorías/marcas/grupos/IVAs se realizan usando los códigos del CSV (`codi_categoria`, `codi_marca`, `codi_grupo`, `codi_impuesto`), no por IDs autoincrementales.
+**Respuesta Exitosa (200):**
 
-2. **Filtros flexibles**: Los filtros `id_cat` e `id_marca` aceptan tanto números (ID) como strings (código CSV). El sistema detecta automáticamente el tipo.
-
-3. **Límite por defecto**: El endpoint `GET /api/productos` tiene un límite por defecto de 100 productos.
-
-4. **Productos con imágenes**: El endpoint `/api/productos/con-imagenes` verifica si existe alguna imagen en `src/resources/IMAGENES/img-art/` cuyo nombre comience con el `codi_arti` del producto.
-
-5. **Soft Delete**: La eliminación de productos es un soft delete (cambia `estado` a 0), no elimina físicamente el registro.
-
-6. **Stock**: El stock se maneja como `Decimal` en la base de datos, pero se convierte a `number` en las respuestas JSON.
-
-7. **Paginación**: Todos los endpoints de listado soportan paginación con `page` y `limit`.
+```json
+{
+  "success": true,
+  "message": "Dirección eliminada exitosamente"
+}
+```
 
 ---
 
-## 🔗 ESTRUCTURA DE RESPUESTAS
+## Ubicación (OpenCage)
 
-### Respuesta exitosa estándar:
+### GET /api/location/search
+
+Busca direcciones mediante OpenCage.
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 100 requests/minuto
+
+**Query Parameters:**
+
+| Parámetro | Tipo | Descripción | Requerido |
+|-----------|------|-------------|-----------|
+| `q` | string | Término de búsqueda (mínimo 3 caracteres) | Sí |
+| `limit` | number | Cantidad de resultados (1-10, default: 5) | No |
+| `country` | string | Código de país (default: "ar") | No |
+
+**Ejemplo:**
+
+```
+GET /api/location/search?q=Catamarca+955+Cordoba&limit=5&country=ar
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "formatted": "Catamarca 955, Córdoba, Argentina",
+      "components": {
+        "road": "Catamarca",
+        "house_number": "955",
+        "city": "Córdoba",
+        "state": "Córdoba",
+        "postcode": "5000",
+        "country": "Argentina"
+      },
+      "geometry": {
+        "lat": -31.4201,
+        "lng": -64.1888
+      }
+    }
+  ]
+}
+```
+
+---
+
+### POST /api/location/reverse
+
+Geocodificación inversa (coordenadas → dirección).
+
+**Autenticación:** No requerida
+
+**Rate Limit:** 100 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "lat": -31.4201,
+  "lng": -64.1888,
+  "country": "ar"
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "formatted": "Catamarca 955, Córdoba, Argentina",
+    "components": {
+      "road": "Catamarca",
+      "house_number": "955",
+      "city": "Córdoba",
+      "state": "Córdoba",
+      "postcode": "5000"
+    }
+  }
+}
+```
+
+---
+
+## Andreani
+
+### POST /api/andreani/envios/cotizar
+
+Cotiza un envío con Andreani.
+
+**Autenticación:** Requerida
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "codigoPostalOrigen": "1000",
+  "codigoPostalDestino": "5000",
+  "volumen": 1000,
+  "peso": 2.5
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "tarifa": 1500,
+    "tiempoEstimado": "3-5 días hábiles"
+  }
+}
+```
+
+---
+
+### POST /api/andreani/pre-envios
+
+Crea un pre-envío para una venta confirmada.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Request Body:**
+
+```json
+{
+  "id_venta": 1,
+  "datosEnvio": {
+    "codigoPostalOrigen": "1000",
+    "codigoPostalDestino": "5000"
+  }
+}
+```
+
+**Respuesta Exitosa (201):**
+
+```json
+{
+  "success": true,
+  "message": "Pre-envío creado exitosamente"
+}
+```
+
+---
+
+### GET /api/andreani/pre-envios/:numeroDeEnvio
+
+Consulta un pre-envío por número de envío.
+
+**Autenticación:** Requerida (Admin)
+
+**Rate Limit:** 200 requests/minuto
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "numeroDeEnvio": "360000102051709",
+    "agrupador": "API0000000483410",
+    "estado": "Pendiente",
+    "fechaCreacion": "2026-01-20T12:00:00-03:00"
+  }
+}
+```
+
+---
+
+## Dashboard (Admin)
+
+Todos los endpoints del dashboard requieren autenticación y rol **ADMIN**.
+
+**Rate Limit:** 50 requests/minuto
+
+### GET /api/admin/dashboard/kpis
+
+Obtiene KPIs principales.
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "ventasTotales": 150000,
+    "ventasMes": 50000,
+    "clientesActivos": 120,
+    "productosVendidos": 450
+  }
+}
+```
+
+---
+
+### GET /api/admin/dashboard/sales-over-time
+
+Obtiene ventas en el tiempo.
+
+**Query Parameters:**
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `period` | string | "day", "week", "month" (default: "month") |
+| `startDate` | string | Fecha inicio (YYYY-MM-DD) |
+| `endDate` | string | Fecha fin (YYYY-MM-DD) |
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2026-01-01",
+      "ventas": 50000,
+      "cantidad": 25
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/admin/dashboard/order-status
+
+Obtiene estado de órdenes.
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "pendientes": 10,
+    "aprobadas": 50,
+    "enviadas": 30,
+    "entregadas": 100
+  }
+}
+```
+
+---
+
+### GET /api/admin/dashboard/top-products
+
+Obtiene productos más vendidos.
+
+**Query Parameters:**
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `limit` | number | Cantidad (default: 10) |
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id_producto": 1,
+      "nombre": "Martillo",
+      "cantidadVendida": 150,
+      "totalVendido": 2250000
+    }
+  ]
+}
+```
+
+---
+
+## Facturas
+
+Todos los endpoints de facturas requieren autenticación y rol **ADMIN**.
+
+**Rate Limit:** 
+- `/sync`: 5 requests/minuto
+- Otros: 50 requests/minuto
+
+### POST /api/facturas/sync
+
+Sincroniza facturas pendientes manualmente.
+
+**Autenticación:** Requerida (Admin)
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "procesadas": 5,
+    "noEncontradas": 2,
+    "errores": 0
+  },
+  "message": "Sincronización completada"
+}
+```
+
+---
+
+### GET /api/facturas/pendientes
+
+Lista ventas pendientes de factura.
+
+**Autenticación:** Requerida (Admin)
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "venta_id": 1,
+      "estado": "pendiente",
+      "fecha_creacion": "2026-01-20T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/facturas/estadisticas
+
+Obtiene estadísticas de facturas.
+
+**Autenticación:** Requerida (Admin)
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "pendientes": 10,
+    "procesando": 2,
+    "completados": 150,
+    "errores": 1
+  }
+}
+```
+
+---
+
+## Webhooks
+
+### POST /api/webhooks/mercadopago
+
+Recibe webhooks de Mercado Pago.
+
+**Autenticación:** No requerida (validación de firma de MP)
+
+**Rate Limit:** 10 requests/minuto
+
+**Headers Requeridos:**
+
+```http
+x-signature: <hmac_signature>
+x-request-id: <request_id>
+```
+
+**Query Parameters:**
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `id` | string | ID del recurso (payment o merchant_order) |
+| `topic` | string | Tipo: "payment" o "merchant_order" |
+| `type` | string | Tipo de evento (para payment) |
+
+**Request Body:** (Enviado por Mercado Pago)
+
+```json
+{
+  "action": "payment.created",
+  "api_version": "v1",
+  "data": {
+    "id": "123456789"
+  },
+  "date_created": "2026-01-20T12:00:00.000Z",
+  "id": 1,
+  "live_mode": false,
+  "type": "payment",
+  "user_id": "user_id"
+}
+```
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "message": "Webhook procesado"
+}
+```
+
+---
+
+### GET /api/webhooks/mercadopago/health
+
+Health check del servicio de webhooks.
+
+**Autenticación:** No requerida
+
+**Respuesta Exitosa (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ok",
+    "timestamp": "2026-01-20T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+## Códigos de Estado HTTP
+
+| Código | Descripción |
+|--------|-------------|
+| `200` | OK - Request exitoso |
+| `201` | Created - Recurso creado exitosamente |
+| `400` | Bad Request - Error en los datos enviados |
+| `401` | Unauthorized - Token inválido o no proporcionado |
+| `403` | Forbidden - No tienes permisos |
+| `404` | Not Found - Recurso no encontrado |
+| `409` | Conflict - Conflicto (ej: recurso ya existe) |
+| `413` | Payload Too Large - Payload excede el límite (10MB) |
+| `429` | Too Many Requests - Rate limit excedido |
+| `500` | Internal Server Error - Error del servidor |
+| `503` | Service Unavailable - Servicio no disponible |
+
+---
+
+## Formato de Respuesta Estándar
+
+Todas las respuestas siguen este formato:
+
+### Respuesta Exitosa
+
 ```json
 {
   "success": true,
@@ -1093,26 +1790,137 @@ GET /api/productos/con-imagenes?page=1&limit=50
 }
 ```
 
-### Respuesta de error:
+### Respuesta con Paginación
+
 ```json
 {
-  "success": false,
-  "error": "Mensaje de error"
+  "success": true,
+  "data": {
+    "items": [...],
+    "pagination": {
+      "page": 1,
+      "limit": 25,
+      "total": 100,
+      "totalPages": 4
+    }
+  }
 }
 ```
 
-### Respuesta paginada:
+### Respuesta de Error
+
 ```json
 {
-  "data": [ ... ],
-  "total": 150,
-  "page": 1,
-  "limit": 50,
-  "totalPages": 3
+  "success": false,
+  "error": "Mensaje de error descriptivo"
+}
+```
+
+### Respuesta de Error con Detalles (Validación)
+
+```json
+{
+  "success": false,
+  "error": "Error de validación",
+  "details": [
+    {
+      "field": "email",
+      "message": "Email inválido"
+    }
+  ]
 }
 ```
 
 ---
 
-**Última actualización:** 2024-11-20
+## Rate Limiting
 
+El sistema implementa rate limiting para proteger la API:
+
+| Tipo de Endpoint | Límite |
+|------------------|--------|
+| Públicos (productos, location) | 100 req/min |
+| Autenticados | 200 req/min |
+| Autenticación (login/register) | 5 req/min |
+| Webhooks | 10 req/min |
+| Admin | 50 req/min |
+| Sincronización | 5 req/min |
+
+**Headers de Respuesta:**
+
+```http
+RateLimit-Limit: 100
+RateLimit-Remaining: 95
+RateLimit-Reset: 1642680000
+```
+
+Si se excede el límite, recibirás:
+
+```json
+{
+  "success": false,
+  "error": "Demasiadas solicitudes. Por favor, intenta nuevamente en un momento."
+}
+```
+
+---
+
+## Notas Importantes
+
+1. **Autenticación:** La mayoría de endpoints requieren el header `Authorization: Bearer <token>`
+2. **Content-Type:** Todos los requests con body deben usar `Content-Type: application/json`
+3. **Fechas:** Se usan en formato ISO 8601: `YYYY-MM-DDTHH:mm:ss.sssZ`
+4. **IDs:** Los IDs numéricos son enteros positivos
+5. **Paginación:** Por defecto, `page=1` y `limit` varía según el endpoint
+6. **Filtros:** Los filtros de búsqueda son case-insensitive
+7. **Soft Delete:** Los productos eliminados se marcan como inactivos, no se borran físicamente
+
+---
+
+## Ejemplos de Uso
+
+### Ejemplo: Crear una venta desde checkout
+
+```bash
+curl -X POST http://localhost:3001/api/ventas/checkout \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "direccion_envio": {
+      "direccion": "Calle Falsa 123",
+      "ciudad": "Buenos Aires",
+      "provincia": "Buenos Aires",
+      "cod_postal": "1000",
+      "pais": "ARGENTINA",
+      "direccion_formateada": "Calle Falsa 123, Buenos Aires - C.P.: 1000, Buenos Aires"
+    },
+    "detalles": [
+      {
+        "id_producto": 1,
+        "cantidad": 2,
+        "precio_unitario": 15000
+      }
+    ],
+    "tipo_documento": "DNI",
+    "numero_documento": "12345678",
+    "metodo_pago": "mercadopago"
+  }'
+```
+
+### Ejemplo: Buscar productos
+
+```bash
+curl "http://localhost:3001/api/productos?page=1&limit=25&busqueda=martillo&precio_min=1000&destacado=true"
+```
+
+### Ejemplo: Buscar direcciones
+
+```bash
+curl "http://localhost:3001/api/location/search?q=Catamarca+955+Cordoba&limit=5&country=ar"
+```
+
+---
+
+**Última actualización:** 2026-01-20
+
+**Versión de API:** 1.0.0

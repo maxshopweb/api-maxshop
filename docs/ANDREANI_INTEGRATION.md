@@ -5,7 +5,7 @@ Esta documentación describe la integración completa con la API de Andreani par
 ## 📋 Índice
 
 - [Configuración](#configuración)
-- [Arquitectura](#arquitectura)
+- [Arquitectura](#arquitectura) (incluye Handlers del Event Bus SALE_CREATED)
 - [Conceptos](#conceptos)
 - [Pre-envíos](#pre-envíos)
 - [Envíos Reales](#envíos-reales)
@@ -73,6 +73,15 @@ src/
 2. **Si no existe**: Se autentica contra Andreani usando Basic Auth
 3. **Token guardado**: El token se guarda en la BD para uso futuro
 4. **Token expirado**: Si una request devuelve 401/403, se renueva automáticamente y se reintenta
+
+### Handlers del Event Bus (SALE_CREATED)
+
+Cuando se confirma una venta se emite el evento `SALE_CREATED`. Dos handlers usan Andreani:
+
+1. **AndreaniHandler** (prioridad 20): Crea el pre-envío en Andreani para la venta (envío a domicilio o sucursal; retiro en tienda se omite).
+2. **EtiquetasAndreaniHandler** (prioridad 25): Tras el pre-envío exitoso, descarga las etiquetas desde los links en la respuesta de Andreani y las sube al FTP en `/Tekno/Andreani/{codigoSeguimiento}/etiqueta_N.pdf` (o `.png`). Si hay varios bultos, sube una etiqueta por bulto; los errores por bulto no detienen el flujo ni a los demás handlers.
+
+El servicio `andreani.api.service` expone `getBinary(endpoint)` para descargar binarios (etiquetas) con el mismo token y retry que el resto de la API.
 
 ## 📚 Conceptos
 

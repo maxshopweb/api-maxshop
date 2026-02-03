@@ -7,3 +7,6 @@ dist/
 
 /generated/prisma
 
+data/
+
+.DS_Store

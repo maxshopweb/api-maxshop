@@ -322,34 +322,20 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             console.warn(`⚠️ [ExcelHandler] No se encontró provincia en dirección de envío ni en cliente para venta #${venta.id_venta}`);
         }
 
-        // Obtener nombre de plataforma de pago (lookup o inferir)
-        let nombrePlataformaPago = '';
-        if (venta.metodo_pago === 'mercadopago') {
-            try {
-                const plataforma = await prisma.plataforma_pago.findFirst({
-                    where: {
-                        nombre: {
-                            contains: 'Mercado Pago',
-                            mode: 'insensitive',
-                        },
-                        activo: true,
-                    },
-                });
-                nombrePlataformaPago = plataforma?.nombre || 'Mercado Pago';
-            } catch (error) {
-                nombrePlataformaPago = 'Mercado Pago'; // Fallback
-            }
-        } else if (venta.metodo_pago === 'transferencia') {
-            nombrePlataformaPago = 'Transferencia';
-        }
+        // Código de plataforma de pago para Excel: "MP" o "TRANS"
+        const codigoPlataformaPago = (() => {
+            const metodo = (venta.metodo_pago || '').toLowerCase();
+            if (metodo.includes('mercado') || metodo === 'mercadopago') return 'MP';
+            if (metodo.includes('transferencia') || metodo === 'transferencia') return 'TRANS';
+            return metodo || '';
+        })();
 
-        // Construir texto de transporte con código de Andreani
-        const construirTransporte = (): string => {
-            if (codigoEnvioAndreani) {
-                return `ANDREANI: ${codigoEnvioAndreani}`;
-            }
-            return 'ANDREANI';
-        };
+        // Transporte: valor fijo "ANDREANI" para columna AF
+        const construirTransporte = (): string => 'ANDREANI';
+
+        // Sucursales Andreani desde contexto (respuesta del pre-envío)
+        const sucursalDistribucionAndreani = andreaniData?.respuestaCompleta?.sucursalDeDistribucion?.descripcion ?? '';
+        const sucursalRendicionAndreani = andreaniData?.respuestaCompleta?.sucursalDeRendicion?.descripcion ?? '';
 
         // Calcular estado (columna L): total final si es un solo producto, 0 si hay más productos
         const calcularEstado = (detalleActual: any, total: number): string => {
@@ -522,14 +508,14 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AF: (detalle.cantidad || 1).toString(),
                 AG: formatNumeroSinDecimales(detalle.sub_total || 0), // COLUMNA G: TOTAL = número entero sin coma
                 AL: calcularEstado(detalle, totalDetalles), // COLUMNA L: sub_total si es un solo producto (igual que columna G), 0 si hay más
-                AN: producto?.codi_arti || '', // SKU: usar codi_arti
+                AN: producto?.codi_barras || '', // COLUMNA N: código de barras del producto
                 AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // COLUMNA R: número entero sin coma
-                AS: 'V', // Código lista de precios: "V" por ahora
+                AS: producto?.lista_precio_activa ?? 'V', // COLUMNA S: lista de precio activa del producto
                 AT: codigoProvinciaFacturacion, // COLUMNA T: código de provincia de la venta (lookup en tabla provincia)
                 AU: nombreCompletoCliente, // Nombre y apellido del cliente
                 AV: tipoYNumeroDoc, // COLUMNA V: Tipo y número de documento (usar numero_documento)
                 AW: formatearDireccionFacturacion(), // COLUMNA W: Dirección de facturación formateada
-                AX: '05', // COLUMNA X: "05" (con cero a la izquierda)
+                AX: 'CF', // COLUMNA X: Condición fiscal fija "CF"
                 AY: nombreCompletoCliente, // Nombre cliente (repeat)
                 AZ: numeroDocumentoSolo, // COLUMNA Z: número documento solo (usar numero_documento, no id_usuario)
                 BA: formatearDireccionEnvio(), // COLUMNA AA (Excel): Dirección de envío formateada
@@ -537,8 +523,8 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 BC: formatearProvincia(direccionEnvio?.provincia || cliente?.provincia), // Provincia envío (formateada: mayúsculas y espacios)
                 BD: (direccionEnvio?.cod_postal || cliente?.cod_postal || '').toString(), // Código postal envío
                 BE: direccionEnvio?.pais || 'ARGENTINA', // País
-                BF: construirTransporte(), // Transporte: "ANDREANI: cod_envio"
-                BG: nombrePlataformaPago, // Plataforma de pago
+                BF: construirTransporte(), // COLUMNA AF: Transporte fijo "ANDREANI"
+                BG: codigoPlataformaPago, // COLUMNA AG: "MP" o "TRANS" según método de pago
                 BH: pagoMP?.payment_id || null, // ID del pago
                 BI: pagoMP?.status_mp ? mapMPStatusToSpanish(pagoMP.status_mp) : null, // Estado del pago
                 BJ: pagoMP?.status_detail ? mapMPStatusDetailToSpanish(pagoMP.status_detail) : null, // Detalle del pago
@@ -547,12 +533,15 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                     ? mapPaymentTypeToSpanish(pagoMP.payment_type_id, pagoMP.card_info)
                     : null, // Tipo de pago
                 BM: pagoMP?.date_approved ? formatFechaVenta(pagoMP.date_approved) : null, // Fecha aprobación (mismo formato que columna B)
-                BN: pagoMP?.transaction_amount ? formatNumeroSinDecimales(pagoMP.transaction_amount) : null, // COLUMNA AN: usar transaction_amount
-                BO: pagoMP?.net_received_amount ? formatNumeroSinDecimales(pagoMP.net_received_amount) : null, // COLUMNA AO: usar net_received_amount
+                BN: formatNumeroSinDecimales(venta.total_con_iva ?? 0), // COLUMNA AN: total con IVA de la venta
+                BO: formatNumeroSinDecimales(venta.total_neto ?? 0), // COLUMNA AO: total neto de la venta
                 BP: pagoMP?.commission_amount ? formatNumeroSinDecimales(pagoMP.commission_amount) : '0', // COLUMNA AP: usar commission_amount
                 BQ: pagoMP?.installments ? pagoMP.installments.toString() : null, // Cantidad cuotas
                 BR: pagoMP?.card_info?.last_four_digits || null, // Número tarjeta (últimos 4 dígitos)
                 BS: pagoMP?.card_info?.cardholder?.name || nombreCompletoCliente || null, // Titular tarjeta o nombre cliente
+                BT: codigoEnvioAndreani ?? null, // COLUMNA AT Excel: código de envío Andreani
+                BU: sucursalDistribucionAndreani || null, // COLUMNA AU Excel: sucursal de distribución Andreani
+                BV: sucursalRendicionAndreani || null, // COLUMNA AV Excel: sucursal de rendición Andreani
             });
         }
 

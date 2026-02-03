@@ -8,35 +8,31 @@ export interface IProductos {
     codi_marca?: string | null;
     codi_grupo?: string | null;
     codi_impuesto?: string | null;
-    id_interno?: string | null;
-    cod_sku?: string | null;
     nombre?: string | null;
     descripcion?: string | null;
-    modelo?: string | null;
-    precio_mayorista?: number | null;
-    precio_minorista?: number | null;
-    precio_evento?: number | null;
+    precio_venta?: number | null;
+    precio_especial?: number | null;
+    precio_pvp?: number | null;
+    precio_campanya?: number | null;
+    lista_precio_activa?: string | null; // V|O|P|Q
+    /** Precio final con IVA aplicado (calculado en backend para el front) */
     precio?: number | null;
-    precio_sin_iva?: number | null;
-    iva_monto?: number | null;
     stock?: number | null;
     stock_min?: number | null;
-    stock_mayorista?: number | null;
     unidad_medida?: string | null;
     unidades_por_producto?: number | null;
     codi_barras?: string | null;
     img_principal?: string | null;
-    imagenes?: string[] | null; // JSONB
+    imagenes?: string[] | null;
     destacado?: boolean | null;
     financiacion?: boolean | null;
     activo?: string | null;
     creado_en?: Date | null;
     actualizado_en?: Date | null;
     estado?: EstadoGeneral | null;
-    // Relaciones
     categoria?: ICategoria | null;
     marca?: IMarca | null;
-    grupo?: any | null; // IGrupo
+    grupo?: any | null;
     iva?: IIva | null;
 }
 
@@ -76,18 +72,18 @@ export interface ICreateProductoDTO {
     codi_impuesto?: string;
     nombre: string;
     descripcion?: string;
-    precio: number;
-    precio_mayorista?: number;
-    precio_minorista?: number;
+    precio_venta?: number | null;
+    precio_especial?: number | null;
+    precio_pvp?: number | null;
+    precio_campanya?: number | null;
+    lista_precio_activa?: string | null; // V|O|P|Q
     stock?: number;
     unidad_medida?: string;
     unidades_por_producto?: number;
     codi_barras?: string;
-    cod_sku?: string;
     img_principal?: string;
     imagenes?: string[];
     destacado?: boolean;
-    // Campos legacy para compatibilidad
     id_cat?: number;
     id_subcat?: number;
     id_marca?: number;

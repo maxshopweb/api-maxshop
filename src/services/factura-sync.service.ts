@@ -3,8 +3,8 @@
  * 
  * Responsabilidades:
  * - Obtener ventas pendientes de factura desde la BD
- * - Conectar al FTP y listar facturas en /Tekno/Facturas
- * - Buscar facturas que coincidan con IDs de venta
+ * - Conectar al FTP y listar facturas en Tekno/Facturas
+ * - Buscar facturas por cod_interno (formato: F4-0004-{cod_interno}.pdf)
  * - Descargar facturas encontradas
  * - Enviar emails (factura + tracking)
  * - Borrar facturas del FTP
@@ -81,9 +81,10 @@ export class FacturaSyncService {
                 for (const ventaPendiente of ventasPendientes) {
                     try {
                         const ventaId = ventaPendiente.venta_id;
+                        const codInterno = ventaPendiente.venta?.cod_interno ?? null;
 
-                        // Buscar factura que coincida con el ID de venta
-                        const facturaEncontrada = this.buscarFacturaPorVenta(ventaId, facturasFTP);
+                        // Buscar factura que coincida con cod_interno (formato F4-0004-{cod_interno})
+                        const facturaEncontrada = this.buscarFacturaPorVenta(ventaId, codInterno, facturasFTP);
 
                         if (facturaEncontrada) {
                             // Procesar factura encontrada
@@ -197,24 +198,21 @@ export class FacturaSyncService {
     }
 
     /**
-     * Busca una factura que coincida con el ID de venta
+     * Busca una factura que coincida con cod_interno de la venta.
+     * Formato esperado en FTP (Tekno/Facturas): F4-0004-{cod_interno}.pdf
+     * Si cod_interno es null, usa id_venta formateado a 8 dígitos como fallback.
      */
-    private buscarFacturaPorVenta(idVenta: number, archivosFTP: FileInfo[]): FileInfo | null {
-        const idVentaStr = idVenta.toString();
-        const idVentaPadded = idVentaStr.padStart(8, '0'); // "00000037"
-        const idVentaPaddedShort = idVentaStr.padStart(4, '0'); // "0037"
+    private buscarFacturaPorVenta(
+        idVenta: number,
+        codInterno: string | null,
+        archivosFTP: FileInfo[]
+    ): FileInfo | null {
+        const codigo = codInterno ?? idVenta.toString().padStart(8, '0');
+        const nombreEsperado = `F4-0004-${codigo}`;
 
         return archivosFTP.find((archivo) => {
-            const nombre = archivo.name.toLowerCase();
-            // Buscar en múltiples formatos
-            return (
-                nombre.includes(idVentaStr) ||
-                nombre.includes(idVentaPadded) ||
-                nombre.includes(idVentaPaddedShort) ||
-                nombre.includes(`venta_${idVentaStr}`) ||
-                nombre.includes(`factura_${idVentaStr}`) ||
-                nombre.includes(`pedido_${idVentaStr}`)
-            );
+            const nombreSinExt = archivo.name.replace(/\.pdf$/i, '');
+            return nombreSinExt === nombreEsperado;
         }) || null;
     }
 

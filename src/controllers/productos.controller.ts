@@ -124,11 +124,16 @@ export class ProductosController {
         try {
             const data: ICreateProductoDTO = req.body;
 
-            // Validaciones básicas
-            if (!data.nombre || !data.precio) {
+            // Compatibilidad: si envían "precio" lo mapeamos a precio_venta
+            if ((data as any).precio != null) {
+                data.precio_venta = (data as any).precio;
+            }
+
+            const tienePrecio = data.precio_venta != null || data.precio_especial != null || data.precio_pvp != null || data.precio_campanya != null;
+            if (!data.nombre || !tienePrecio) {
                 res.status(400).json({
                     success: false,
-                    error: 'Nombre y precio son requeridos'
+                    error: 'Nombre y al menos un precio (precio_venta, precio_especial, precio_pvp o precio_campanya) son requeridos'
                 });
                 return;
             }

@@ -145,6 +145,11 @@ if (process.env.VERCEL !== '1') {
             facturaSyncWorker.start();
             console.log('✅ [Server] Worker de sincronización de facturas iniciado');
 
+            // Inicializar worker de sincronización de catálogo (FTP → CSV → BD): al arranque + cada 20 min
+            const { catalogoSyncWorker } = require('./services/catalogo-sync-worker.service');
+            catalogoSyncWorker.start();
+            console.log('✅ [Server] Worker de sincronización de catálogo iniciado (arranque + cada 20 min)');
+
             httpServer.listen(PORT);
         } catch (error) {
             console.error('❌ Error al iniciar el servidor:', error);
@@ -163,7 +168,10 @@ if (process.env.VERCEL !== '1') {
         // Cerrar worker de sincronización de facturas
         const { facturaSyncWorker } = require('./services/factura-sync-worker.service');
         facturaSyncWorker.stop();
-        
+
+        const { catalogoSyncWorker } = require('./services/catalogo-sync-worker.service');
+        catalogoSyncWorker.stop();
+
         // Cerrar Event Bus (cierra conexiones Redis)
         const { eventBus } = require('./infrastructure/event-bus/event-bus');
         await eventBus.close();

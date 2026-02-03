@@ -1,37 +1,51 @@
 # 📥 Sincronización de Bases de Datos desde FTP
 
-Este sistema permite descargar automáticamente archivos .DBF desde el FTP del cliente, convertirlos a CSV y guardarlos en `backend/data/csv/`.
+Este sistema permite descargar automáticamente archivos .DBF desde el FTP del cliente, convertirlos a CSV, importarlos a la BD y mantener el catálogo actualizado.
 
 ## 🚀 Uso
 
-### Opción 1: Script desde línea de comandos
+### Opción 1: Worker automático (recomendado)
+
+Al levantar el servidor (`npm run dev` o `npm start`), el **catalogo-sync-worker** (`src/services/catalogo-sync-worker.service.ts`):
+- Ejecuta una sincronización completa **15 segundos** después del arranque.
+- Luego repite la sincronización **cada 20 minutos** (cron).
+- Si una ejecución sigue en curso, se omite la siguiente hasta que termine.
+
+### Opción 2: Endpoints API (sincronización)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/sincronizacion/completa` | FTP → DBF → CSV → BD (completo). Body opcional: `{ "force": boolean }`. |
+| POST | `/api/sincronizacion/actualizar-catalogo` | Mismo flujo que `completa`. |
+| POST | `/api/sincronizacion/importar` | Solo importa CSV a BD (CSV en `backend/data/csv`). Body opcional: `{ "csvDir": string }`. |
+| GET | `/api/sincronizacion/estado` | Estado de la última sincronización. |
+
+Ejemplo:
+```bash
+POST http://localhost:3000/api/sincronizacion/completa
+GET  http://localhost:3000/api/sincronizacion/estado
+```
+
+### Opción 3: Script desde línea de comandos
 
 ```bash
 cd backend
 npm run sincronizar-bases
 ```
 
-### Opción 2: Endpoint API (Sincronización completa)
+### Opción 4: Conversión DBF manual (dbf-converter)
 
 ```bash
-POST http://localhost:3001/api/dbf-converter/sincronizar
+POST http://localhost:3000/api/dbf-converter/sincronizar
 ```
-
-Este endpoint:
-1. Se conecta al FTP
-2. Descarga todos los archivos .DBF de `/Tekno/Bases`
-3. Los convierte a CSV
-4. Los guarda en `backend/data/csv/`
-
-### Opción 3: Endpoint API (Conversión manual de un archivo)
+Descarga .DBF de `/Tekno/Bases`, convierte a CSV y guarda en `backend/data/csv/` (no importa a BD).
 
 ```bash
-POST http://localhost:3001/api/dbf-converter/convert
+POST http://localhost:3000/api/dbf-converter/convert
 Content-Type: multipart/form-data
 Body: { dbfFile: <archivo.dbf> }
 ```
-
-Este endpoint permite subir un archivo .DBF local y convertirlo a CSV para ajustar el formato si es necesario.
+Sube un .DBF local y lo convierte a CSV.
 
 ## 📋 Configuración
 

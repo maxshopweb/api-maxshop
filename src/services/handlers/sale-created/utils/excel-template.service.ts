@@ -41,6 +41,9 @@ export interface VentaExcelRow {
   BQ: string | null; // Cantidad Cuotas
   BR: string | null; // Numero Tarjeta
   BS: string | null; // Titular Tarjeta
+  BT: string | null; // Código envío ANDREANI (columna AT en Excel)
+  BU: string | null; // Sucursal distribución ANDREANI (columna AU)
+  BV: string | null; // Sucursal rendición ANDREANI (columna AV)
 }
 
 export class ExcelTemplateService {
@@ -124,7 +127,7 @@ export class ExcelTemplateService {
         throw new Error(`Hoja "${this.SHEET_NAME}" no existe en el Excel`);
       }
 
-      // Mapeo de columnas a índices
+      // Mapeo: clave en código (AA=Excel A, BA=Excel AA) → índice 0-based. Columnas hasta AV (índice 47).
       const columnMap: Record<string, number> = {
         'AA': 0, 'AB': 1, 'AC': 2, 'AD': 3, 'AE': 4, 'AF': 5, 'AG': 6,
         'AH': 7, 'AI': 8, 'AJ': 9, 'AK': 10, 'AL': 11, 'AM': 12, 'AN': 13,
@@ -132,7 +135,7 @@ export class ExcelTemplateService {
         'AV': 21, 'AW': 22, 'AX': 23, 'AY': 24, 'AZ': 25, 'BA': 26, 'BB': 27,
         'BC': 28, 'BD': 29, 'BE': 30, 'BF': 31, 'BG': 32, 'BH': 33, 'BI': 34,
         'BJ': 35, 'BK': 36, 'BL': 37, 'BM': 38, 'BN': 39, 'BO': 40, 'BP': 41,
-        'BQ': 42, 'BR': 43, 'BS': 44
+        'BQ': 42, 'BR': 43, 'BS': 44, 'BT': 45, 'BU': 46, 'BV': 47
       };
 
       let currentRow = startRow;
@@ -151,10 +154,10 @@ export class ExcelTemplateService {
         currentRow++;
       }
 
-      // Actualizar el rango de la hoja
+      // Actualizar el rango de la hoja (columnas A hasta AV = índice 47)
       worksheet['!ref'] = XLSX.utils.encode_range({
         s: { r: 0, c: 0 },
-        e: { r: currentRow - 1, c: 44 }
+        e: { r: currentRow - 1, c: 47 }
       });
 
       console.log(`✅ [ExcelTemplate] Agregadas ${ventaRows.length} fila(s) desde la fila ${startRow}`);

@@ -3,8 +3,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ftpConfig } from '../config/ftp.config';
 
+/**
+ * Mutex para serializar acceso al FTP: FacturaSyncWorker y CatalogoSyncWorker
+ * comparten el mismo cliente y basic-ftp no permite operaciones concurrentes.
+ */
+type ReleaseFn = () => void;
+
 export class FTPService {
   private client: Client;
+  private lock: Promise<void> = Promise.resolve();
+  private releaseLock: ReleaseFn | null = null;
 
   constructor() {
     this.client = new Client();
@@ -12,9 +20,17 @@ export class FTPService {
   }
 
   /**
-   * Conecta al servidor FTP
+   * Conecta al servidor FTP.
+   * Si otro worker está usando el FTP, espera a que termine antes de conectar.
    */
   async connect(): Promise<void> {
+    const prevLock = this.lock;
+    let release: ReleaseFn;
+    this.lock = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prevLock;
+
     try {
       await this.client.access({
         host: ftpConfig.host,
@@ -23,15 +39,17 @@ export class FTPService {
         port: ftpConfig.port,
         secure: ftpConfig.secure,
       });
+      this.releaseLock = release!;
       console.log('✅ Conectado al servidor FTP');
     } catch (error) {
+      release!();
       console.error('❌ Error al conectar al FTP:', error);
       throw new Error(`Error de conexión FTP: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /**
-   * Desconecta del servidor FTP
+   * Desconecta del servidor FTP y libera el lock para el siguiente worker.
    */
   async disconnect(): Promise<void> {
     try {
@@ -39,6 +57,13 @@ export class FTPService {
       console.log('✅ Desconectado del servidor FTP');
     } catch (error) {
       console.error('⚠️  Error al desconectar del FTP:', error);
+    } finally {
+      this.client = new Client();
+      this.client.ftp.verbose = false;
+      if (this.releaseLock) {
+        this.releaseLock();
+        this.releaseLock = null;
+      }
     }
   }
 
@@ -196,6 +221,42 @@ export class FTPService {
     } catch (error) {
       console.error(`❌ [FTP] Error al subir Excel ${remotePath}:`, error);
       throw new Error(`Error al subir Excel: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Sube un archivo cualquiera al FTP (crea directorios remotos si no existen).
+   * Útil para etiquetas, imágenes, etc.
+   */
+  async uploadFile(localPath: string, remotePath: string): Promise<void> {
+    try {
+      if (!fs.existsSync(localPath)) {
+        throw new Error(`Archivo local no existe: ${localPath}`);
+      }
+
+      const remoteDir = path.dirname(remotePath);
+      const remoteFileName = path.basename(remotePath);
+
+      try {
+        await this.client.cd(remoteDir);
+      } catch {
+        const dirs = remoteDir.split('/').filter(d => d);
+        let currentPath = '';
+        for (const dir of dirs) {
+          currentPath += `/${dir}`;
+          try {
+            await this.client.cd(currentPath);
+          } catch {
+            await this.client.ensureDir(currentPath);
+          }
+        }
+      }
+
+      await this.client.uploadFrom(localPath, remoteFileName);
+      console.log(`✅ [FTP] Subido archivo: ${localPath} → ${remotePath}`);
+    } catch (error) {
+      console.error(`❌ [FTP] Error al subir archivo ${remotePath}:`, error);
+      throw new Error(`Error al subir archivo: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

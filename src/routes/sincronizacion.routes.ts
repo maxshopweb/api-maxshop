@@ -8,13 +8,18 @@ const router = Router();
 /**
  * POST /api/sincronizacion/completa
  * Sincronización completa: Descarga FTP → Convierte DBF → Importa CSV → BD
- * 
+ *
  * Body: (opcional)
- * {
- *   force?: boolean  // Forzar ejecución aunque haya errores
- * }
+ * { force?: boolean }
  */
 router.post('/completa', sincronizacionController.sincronizarCompleto.bind(sincronizacionController));
+
+/**
+ * POST /api/sincronizacion/actualizar-catalogo
+ * Actualiza todo el catálogo desde el FTP (mismo flujo que /completa).
+ * Uso: manual desde admin o llamado por cron cada X minutos.
+ */
+router.post('/actualizar-catalogo', sincronizacionController.sincronizarCompleto.bind(sincronizacionController));
 
 /**
  * POST /api/sincronizacion/importar

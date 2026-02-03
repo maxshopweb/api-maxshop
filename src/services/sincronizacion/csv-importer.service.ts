@@ -6,7 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ImportResult, ImportSummary, ImportDependencies, PrecioData } from '../../types/sincronizacion.types';
+import { ImportResult, ImportSummary, ImportDependencies, PrecioData, StockData } from '../../types/sincronizacion.types';
 
 const prisma = new PrismaClient();
 
@@ -897,18 +897,38 @@ export class CSVImporterService {
           preciosCero++;
         }
 
-        const actual = preciosMap.get(codiarti) || { precioVenta: null, precioCosto: null };
+        const actual = preciosMap.get(codiarti) || {
+          precioVenta: null,
+          precioEspecial: null,
+          precioPvp: null,
+          precioCampanya: null,
+          precioCosto: null,
+        };
 
         if (codilist === 'V') {
-          // Precio de venta (aceptar 0 como valor válido)
           if (actual.precioVenta === null || precio > actual.precioVenta) {
-            actual.precioVenta = precio; // Puede ser 0
+            actual.precioVenta = precio;
+            preciosCargados++;
+          }
+        } else if (codilist === 'O') {
+          if (actual.precioEspecial === null || precio > actual.precioEspecial) {
+            actual.precioEspecial = precio;
+            preciosCargados++;
+          }
+        } else if (codilist === 'P') {
+          if (actual.precioPvp === null || precio > actual.precioPvp) {
+            actual.precioPvp = precio;
+            preciosCargados++;
+          }
+        } else if (codilist === 'Q') {
+          if (actual.precioCampanya === null || precio > actual.precioCampanya) {
+            actual.precioCampanya = precio;
             preciosCargados++;
           }
         } else if (codilist === 'C') {
-          // Precio de costo (aceptar 0 como valor válido)
-          if (actual.precioCosto === null || precio > actual.precioCosto) {
-            actual.precioCosto = precio; // Puede ser 0
+          const costoActual = actual.precioCosto ?? null;
+          if (costoActual === null || precio > costoActual) {
+            actual.precioCosto = precio;
             preciosCargados++;
           }
         }
@@ -930,10 +950,11 @@ export class CSVImporterService {
   }
 
   /**
-   * Carga stock desde MAESSTOK.csv (en memoria)
+   * Carga stock y stock_min desde MAESSTOK.csv (en memoria).
+   * ACTUSTOK = stock actual (se suma por depósito), MINISTOK = stock mínimo (se toma el máx por producto).
    */
-  cargarStock(csvPath: string): Map<string, number> {
-    const stockMap = new Map<string, number>();
+  cargarStock(csvPath: string): Map<string, StockData> {
+    const stockMap = new Map<string, StockData>();
 
     try {
       const contenido = fs.readFileSync(csvPath, 'utf-8');
@@ -946,28 +967,31 @@ export class CSVImporterService {
 
       for (let i = 1; i < registros.length; i++) {
         const row = registros[i];
-        if (!row || row.length < 5) continue;
+        if (!row || row.length < 6) continue;
 
-        const codiarti = this.limpiarCampo(row[1]).trim(); // GRARARTI (en realidad es CODIARTI)
-        const stock = this.parsearNumero(row[4]); // ACTUSTOK
+        const codiarti = this.limpiarCampo(row[1]).trim(); // GRARARTI (CODIARTI)
+        const actustok = this.parsearNumero(row[4]); // ACTUSTOK
+        const ministok = this.parsearNumero(row[5]); // MINISTOK
 
         if (!codiarti || codiarti === '') {
           stockIgnorado++;
           continue;
         }
 
-        // Guardar primeros códigos para debug
         if (primerosCodigos.length < 10) {
           primerosCodigos.push(codiarti);
         }
 
-        // Si stock es null, usar 0 (no null)
-        const stockValor = stock === null ? 0 : stock;
+        const stockValor = actustok === null ? 0 : actustok;
+        const stockMinValor = ministok === null ? 0 : ministok;
 
-        // Sumar stock de todos los depósitos
-        const stockActual = stockMap.get(codiarti) || 0;
-        const stockTotal = stockActual + stockValor;
-        stockMap.set(codiarti, stockTotal);
+        const actual = stockMap.get(codiarti) || { stock: 0, stock_min: 0 };
+        actual.stock += stockValor;
+        // Por producto: quedarnos con el mayor MINISTOK si hay varios depósitos
+        if (stockMinValor > actual.stock_min) {
+          actual.stock_min = stockMinValor;
+        }
+        stockMap.set(codiarti, actual);
 
         if (stockValor === 0) {
           stockCero++;
@@ -976,7 +1000,7 @@ export class CSVImporterService {
         }
       }
 
-      console.log(`📦 Stock cargado: ${stockMap.size} productos únicos`);
+      console.log(`📦 Stock cargado: ${stockMap.size} productos únicos (ACTUSTOK + MINISTOK)`);
       console.log(`   - Registros con stock > 0: ${stockCargado}`);
       console.log(`   - Registros con stock = 0: ${stockCero}`);
       console.log(`   - Registros ignorados (sin código): ${stockIgnorado}`);
@@ -1020,7 +1044,8 @@ export class CSVImporterService {
   private calcularScoreCompletitud(producto: any): number {
     let score = 0;
     if (producto.nombre && producto.nombre.trim()) score += 100;
-    if (producto.precio && producto.precio > 0) score += 50;
+    const precioActivo = producto.precio_venta ?? producto.precio_especial ?? producto.precio_pvp ?? producto.precio_campanya;
+    if (precioActivo !== null && precioActivo > 0) score += 50;
     if (producto.codi_grupo && producto.codi_grupo.trim()) score += 20;
     if (producto.codi_categoria && producto.codi_categoria.trim()) score += 20;
     if (producto.codi_marca && producto.codi_marca.trim()) score += 20;
@@ -1162,40 +1187,27 @@ export class CSVImporterService {
           }
           const codi_impuesto = codiimpu;
 
-          // Obtener precios (usar codiarti limpio)
+          // Obtener precios por lista (codiarti limpio)
           const codiartiLimpio = codiarti.trim();
           const precios = dependencias.precios.get(codiartiLimpio);
-          // Precio puede ser null (no encontrado) o number (incluyendo 0)
-          const precioVenta = precios?.precioVenta ?? null;
-          
-          // Debug: contar productos con/sin precio (solo primeros 100)
-          if (rowNum <= 100) {
-            if (precioVenta === null) {
-              console.log(`⚠️ Producto ${codiartiLimpio} NO tiene precio en mapa`);
-            } else if (precioVenta === 0) {
-              console.log(`ℹ️ Producto ${codiartiLimpio} tiene precio 0`);
-            }
+          const precio_venta = precios?.precioVenta ?? null;
+          const precio_especial = precios?.precioEspecial ?? null;
+          const precio_pvp = precios?.precioPvp ?? null;
+          const precio_campanya = precios?.precioCampanya ?? null;
+
+          if (rowNum <= 100 && !precio_venta && !precio_especial && !precio_pvp && !precio_campanya) {
+            console.log(`⚠️ Producto ${codiartiLimpio} NO tiene precios en mapa`);
           }
 
-          // Calcular IVA (solo si hay precio y es > 0)
-          let precioSinIva = null;
-          let ivaMonto = null;
-          if (precioVenta !== null && precioVenta > 0 && codiimpu) {
-            const porcentaje = dependencias.impuestos.get(codiimpu);
-            if (porcentaje !== undefined && porcentaje > 0) {
-              precioSinIva = precioVenta / (1 + porcentaje / 100);
-              ivaMonto = precioVenta - precioSinIva;
-            }
-          }
+          // Lista activa solo para productos nuevos (create); en update no se sobrescribe (cron no pisa elección manual)
+          const lista_precio_activa = 'V';
 
-          // Obtener stock (siempre number, 0 si no existe)
-          const stock = dependencias.stock.get(codiartiLimpio) ?? 0;
+          const stockData = dependencias.stock.get(codiartiLimpio);
+          const stock = stockData?.stock ?? 0;
+          const stock_min = stockData?.stock_min != null ? Math.round(stockData.stock_min) : null;
 
-          // Validar y truncar codi_arti
           const codi_arti_truncado = codiarti.substring(0, 10);
 
-          // Asegurar que precio sea null si no se encontró, o el valor (incluyendo 0)
-          // Asegurar que stock sea siempre number (0 si no existe)
           const producto = {
             codi_arti: codi_arti_truncado,
             nombre: nombre,
@@ -1203,13 +1215,16 @@ export class CSVImporterService {
             codi_categoria,
             codi_marca,
             codi_impuesto,
-            precio: precioVenta, // null si no encontrado, o number (puede ser 0)
-            precio_sin_iva: precioSinIva, // null si no hay precio o no se calculó IVA
-            iva_monto: ivaMonto, // null si no hay precio o no se calculó IVA
+            precio_venta,
+            precio_especial,
+            precio_pvp,
+            precio_campanya,
+            lista_precio_activa,
             unidad_medida: unmearti,
             unidades_por_producto: unenarti,
             codi_barras: partarti,
-            stock: stock, // Siempre number (0 si no existe en CSV)
+            stock,
+            stock_min,
             img_principal: imagarti,
             activo: actiarti,
             estado: actiarti === 'A' ? 1 : 0,
@@ -1266,13 +1281,16 @@ export class CSVImporterService {
             codi_categoria: producto.codi_categoria,
             codi_marca: producto.codi_marca,
             codi_impuesto: producto.codi_impuesto,
-            precio: producto.precio,
-            precio_sin_iva: producto.precio_sin_iva,
-            iva_monto: producto.iva_monto,
+            precio_venta: producto.precio_venta,
+            precio_especial: producto.precio_especial,
+            precio_pvp: producto.precio_pvp,
+            precio_campanya: producto.precio_campanya,
+            // No actualizar lista_precio_activa: el usuario puede haberla cambiado manualmente; el cron no la pisa
             unidad_medida: producto.unidad_medida,
             unidades_por_producto: producto.unidades_por_producto,
             codi_barras: producto.codi_barras,
             stock: producto.stock,
+            stock_min: producto.stock_min,
             img_principal: producto.img_principal,
             activo: producto.activo,
             estado: producto.estado,
@@ -1393,10 +1411,10 @@ export class CSVImporterService {
       
       // Estadísticas finales de productos
       const productosConPrecio = productosResult.registrosProcesados > 0 
-        ? await prisma.productos.count({ where: { precio: { not: null } } })
+        ? await prisma.productos.count({ where: { precio_venta: { not: null } } })
         : 0;
       const productosConPrecioCero = productosResult.registrosProcesados > 0
-        ? await prisma.productos.count({ where: { precio: 0 } })
+        ? await prisma.productos.count({ where: { precio_venta: 0 } })
         : 0;
       const productosConStock = productosResult.registrosProcesados > 0
         ? await prisma.productos.count({ where: { stock: { gt: 0 } } })

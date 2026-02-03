@@ -188,6 +188,60 @@ export class AndreaniApiService {
     ): Promise<IApiResult<T>> {
         return this.request<T>(endpoint, { method: 'PUT', body, headers });
     }
+
+    /**
+     * GET binario: para etiquetas PDF o imagen. Devuelve el cuerpo como Buffer y el Content-Type.
+     * No parsea JSON ni text; usa arrayBuffer() para no corromper binarios.
+     */
+    async getBinary(endpoint: string): Promise<IApiResult<{ buffer: Buffer; contentType: string }>> {
+        try {
+            let token = await andreaniAuthService.getToken();
+            const url = `${andreaniConfig.baseUrl}${endpoint}`;
+            const requestHeaders: Record<string, string> = {
+                'x-authorization-token': token,
+            };
+
+            let response = await this.fetchWithTimeout(url, {
+                method: 'GET',
+                headers: requestHeaders,
+            });
+
+            if ((response.status === 401 || response.status === 403)) {
+                token = await andreaniAuthService.renewToken();
+                requestHeaders['x-authorization-token'] = token;
+                response = await this.fetchWithTimeout(url, {
+                    method: 'GET',
+                    headers: requestHeaders,
+                });
+            }
+
+            const contentType = response.headers.get('content-type') || 'application/octet-stream';
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
+            if (!response.ok) {
+                return {
+                    success: false,
+                    error: `Error ${response.status}: ${response.statusText}`,
+                    statusCode: response.status,
+                    data: { buffer, contentType },
+                };
+            }
+
+            return {
+                success: true,
+                data: { buffer, contentType },
+                statusCode: response.status,
+            };
+        } catch (error: any) {
+            console.error(`❌ [Andreani] Error en getBinary a ${endpoint}:`, error.message);
+            return {
+                success: false,
+                error: error.message || 'Error desconocido',
+                statusCode: 500,
+            };
+        }
+    }
 }
 
 // Exportar instancia singleton

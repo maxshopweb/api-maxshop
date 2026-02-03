@@ -17,19 +17,12 @@
 La tabla `productos` incluye:
 - `codi_arti` (CODIARTI) - Código único del producto
 - `nombre` (DESCARTI)
-- `id_grupo` - Relación con grupo por CODIGRAR
-- `id_cat` - Relación con categoria por CODICATE
-- `id_marca` - Relación con marca por CODIMARC
-- `id_iva` - Relación con iva por CODIIMPU
-- `precio` - Precio de venta
-- `precio_sin_iva` - Calculado
-- `iva_monto` - Calculado
-- `unidad_medida` (UNMEARTI)
-- `unidades_por_producto` (UNENARTI)
-- `codi_barras` (PARTARTI)
-- `stock` - Stock actual desde MAESSTOK
-- `img_principal` (IMAGARTI)
-- `activo` (ACTIARTI)
+- Relaciones por código: `codi_categoria`, `codi_marca`, `codi_grupo`, `codi_impuesto`
+- **Listas de precio:** `precio_venta` (V), `precio_especial` (O), `precio_pvp` (P), `precio_campanya` (Q), `lista_precio_activa` (V|O|P|Q)
+- `unidad_medida` (UNMEARTI), `unidades_por_producto` (UNENARTI)
+- `codi_barras` (PARTARTI), `stock` (desde MAESSTOK), `img_principal` (IMAGARTI), `activo` (ACTIARTI)
+
+Ver `docs/PRISMA_SCHEMA.md` para la migración de listas de precio.
 
 ## Pasos para Importar
 
@@ -94,7 +87,7 @@ const productos = await prisma.productos.findMany({
   where: {
     codi_grupo: '0001',      // Filtrar por código de grupo
     codi_categoria: '0002',   // Filtrar por código de categoría
-    precio: { gt: 0 },
+    precio_venta: { gt: 0 },
     stock: { gt: 0 },
   },
   include: {
