@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { direccionesService, ICreateDireccionDTO, IUpdateDireccionDTO } from '../services/direcciones.service';
 import { IApiResponse } from '../types';
 
@@ -65,7 +66,7 @@ export class DireccionesController {
     async update(req: Request, res: Response): Promise<void> {
         try {
             const idUsuario = req.authenticatedUser?.id;
-            const idDireccion = req.params.id;
+            const idDireccion = asSingleString(req.params.id);
             const data: IUpdateDireccionDTO = req.body;
 
             if (!idUsuario) {
@@ -97,7 +98,7 @@ export class DireccionesController {
     async delete(req: Request, res: Response): Promise<void> {
         try {
             const idUsuario = req.authenticatedUser?.id;
-            const idDireccion = req.params.id;
+            const idDireccion = asSingleString(req.params.id);
 
             if (!idUsuario) {
                 res.status(401).json({
@@ -127,7 +128,7 @@ export class DireccionesController {
     async setPrincipal(req: Request, res: Response): Promise<void> {
         try {
             const idUsuario = req.authenticatedUser?.id;
-            const idDireccion = req.params.id;
+            const idDireccion = asSingleString(req.params.id);
 
             if (!idUsuario) {
                 res.status(401).json({

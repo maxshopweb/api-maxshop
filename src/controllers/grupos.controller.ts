@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { GruposService, ICreateGrupoDTO, IUpdateGrupoDTO } from '../services/grupos.service';
 import { IApiResponse } from '../types';
 
@@ -27,7 +28,7 @@ export class GruposController {
 
     async getById(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -64,7 +65,7 @@ export class GruposController {
 
     async getByCodigo(req: Request, res: Response): Promise<void> {
         try {
-            const codi_grupo = req.params.codigo;
+            const codi_grupo = asSingleString(req.params.codigo);
 
             if (!codi_grupo) {
                 res.status(400).json({
@@ -141,7 +142,7 @@ export class GruposController {
 
     async update(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const data: IUpdateGrupoDTO = req.body;
 
             if (isNaN(id)) {
@@ -182,7 +183,7 @@ export class GruposController {
 
     async delete(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({

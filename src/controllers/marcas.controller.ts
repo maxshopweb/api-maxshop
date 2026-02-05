@@ -1,5 +1,6 @@
 // src/controllers/marcas.controller.ts
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { MarcasService } from '../services/marcas.service';
 import { ICreateMarcaDTO, IUpdateMarcaDTO } from '../types/index';
 import { IApiResponse } from '../types';
@@ -29,7 +30,7 @@ export class MarcasController {
 
     async getById(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -66,7 +67,7 @@ export class MarcasController {
 
     async getByCodigo(req: Request, res: Response): Promise<void> {
         try {
-            const codi_marca = req.params.codigo;
+            const codi_marca = asSingleString(req.params.codigo);
 
             if (!codi_marca) {
                 res.status(400).json({
@@ -133,7 +134,7 @@ export class MarcasController {
 
     async update(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const data: IUpdateMarcaDTO = req.body;
 
             if (isNaN(id)) {
@@ -174,7 +175,7 @@ export class MarcasController {
 
     async delete(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({

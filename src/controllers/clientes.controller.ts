@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { clientesService } from '../services/clientes.service';
 import { IClienteFilters, EstadoGeneral } from '../types';
 
@@ -33,7 +34,7 @@ export class ClientesController {
 
     async getById(req: Request, res: Response) {
         try {
-            const { id } = req.params;
+            const id = asSingleString(req.params.id);
             const cliente = await clientesService.getById(id);
             res.json({
                 success: true,
@@ -50,7 +51,7 @@ export class ClientesController {
 
     async getStats(req: Request, res: Response) {
         try {
-            const { id } = req.params;
+            const id = asSingleString(req.params.id);
             const stats = await clientesService.getStats(id);
             res.json({
                 success: true,
@@ -67,7 +68,7 @@ export class ClientesController {
 
     async getVentas(req: Request, res: Response) {
         try {
-            const { id } = req.params;
+            const id = asSingleString(req.params.id);
             const filters: IClienteFilters = {
                 page: req.query.page ? Number(req.query.page) : undefined,
                 limit: req.query.limit ? Number(req.query.limit) : undefined,

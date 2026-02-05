@@ -1,3 +1,12 @@
+/**
+ * Normaliza req.params / req.query (string | string[]) a un único string.
+ * Express tipa params/query como string | string[]; usar este helper evita TS2345.
+ */
+export const asSingleString = (value: string | string[] | undefined): string => {
+  if (value === undefined) return '';
+  return Array.isArray(value) ? (value[0] ?? '') : value;
+};
+
 export const sanitizeString = (value?: string | null): string | null => {
   if (!value) {
     return null;

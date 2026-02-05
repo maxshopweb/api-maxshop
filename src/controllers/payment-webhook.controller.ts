@@ -20,6 +20,7 @@
  */
 
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { paymentWebhookService } from '../services/payment-webhook.service';
 import { failedWebhookRetryService } from '../services/failed-webhook-retry.service';
 import { IMercadoPagoWebhookEvent } from '../types';
@@ -148,7 +149,7 @@ class PaymentWebhookController {
      */
     async processManualPayment(req: Request, res: Response): Promise<void> {
         try {
-            const { paymentId } = req.params;
+            const paymentId = asSingleString(req.params.paymentId);
 
             if (!paymentId) {
                 res.status(400).json({
@@ -252,7 +253,7 @@ class PaymentWebhookController {
      */
     async retryWebhook(req: Request, res: Response): Promise<void> {
         try {
-            const { webhookId } = req.params;
+            const webhookId = asSingleString(req.params.webhookId);
 
             if (!webhookId) {
                 res.status(400).json({
@@ -288,7 +289,7 @@ class PaymentWebhookController {
      */
     async resetWebhook(req: Request, res: Response): Promise<void> {
         try {
-            const { webhookId } = req.params;
+            const webhookId = asSingleString(req.params.webhookId);
 
             if (!webhookId) {
                 res.status(400).json({

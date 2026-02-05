@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { VentasService } from '../services/ventas.service';
 import { paymentProcessingService } from '../services/payment-processing.service';
 import { IApiResponse } from '../types';
@@ -40,7 +41,7 @@ export class VentasController {
 
     async getById(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -99,7 +100,7 @@ export class VentasController {
 
     async update(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const data: IUpdateVentaDTO = req.body;
 
             if (isNaN(id)) {
@@ -130,7 +131,7 @@ export class VentasController {
 
     async delete(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -159,7 +160,7 @@ export class VentasController {
 
     async updateEstadoPago(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const { estado_pago } = req.body;
 
             if (isNaN(id)) {
@@ -190,7 +191,7 @@ export class VentasController {
 
     async updateEstadoEnvio(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const { estado_envio } = req.body;
 
             if (isNaN(id)) {
@@ -342,7 +343,7 @@ export class VentasController {
      */
     async confirmarPago(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const { notas } = req.body; // Notas opcionales del admin
 
             if (isNaN(id)) {

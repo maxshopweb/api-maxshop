@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { ProductosService } from '../services/productos.service';
 import { IApiResponse } from '../types';
 import { IProductoFilters, ICreateProductoDTO, IUpdateProductoDTO } from '../types/product.type';
@@ -48,7 +49,7 @@ export class ProductosController {
 
     async getById(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -85,7 +86,7 @@ export class ProductosController {
 
     async getByCodigo(req: Request, res: Response): Promise<void> {
         try {
-            const codi_arti = req.params.codigo;
+            const codi_arti = asSingleString(req.params.codigo);
 
             if (!codi_arti) {
                 res.status(400).json({
@@ -158,7 +159,7 @@ export class ProductosController {
 
     async update(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const data: IUpdateProductoDTO = req.body;
 
             if (isNaN(id)) {
@@ -199,7 +200,7 @@ export class ProductosController {
 
     async delete(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -277,7 +278,7 @@ export class ProductosController {
 
     async updateStock(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const { cantidad } = req.body;
 
             if (isNaN(id) || cantidad === undefined) {
@@ -327,7 +328,7 @@ export class ProductosController {
 
     async toggleDestacado(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({

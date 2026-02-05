@@ -9,6 +9,7 @@
  */
 
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { andreaniPreEnvioService } from '../services/andreani/andreani.preenvio.service';
 import { andreaniEnvioService } from '../services/andreani/andreani.envio.service';
 import { andreaniEnviosService } from '../services/andreani/andreani.envios.service';
@@ -73,7 +74,7 @@ export class AndreaniController {
      */
     async consultarPreEnvio(req: Request, res: Response): Promise<void> {
         try {
-            const { numeroDeEnvio } = req.params;
+            const numeroDeEnvio = asSingleString(req.params.numeroDeEnvio);
 
             if (!numeroDeEnvio) {
                 res.status(400).json({
@@ -113,7 +114,7 @@ export class AndreaniController {
      */
     async consultarEstadoEnvio(req: Request, res: Response): Promise<void> {
         try {
-            const { numeroAndreani } = req.params;
+            const numeroAndreani = asSingleString(req.params.numeroAndreani);
 
             if (!numeroAndreani) {
                 res.status(400).json({
@@ -152,7 +153,7 @@ export class AndreaniController {
      */
     async obtenerEtiqueta(req: Request, res: Response): Promise<void> {
         try {
-            const { agrupadorDeBultos } = req.params;
+            const agrupadorDeBultos = asSingleString(req.params.agrupadorDeBultos);
             const { bulto } = req.query;
 
             if (!agrupadorDeBultos) {
@@ -163,7 +164,7 @@ export class AndreaniController {
                 return;
             }
 
-            const bultoNumero = bulto ? parseInt(bulto as string) : undefined;
+            const bultoNumero = bulto !== undefined && bulto !== null ? parseInt(asSingleString(bulto as string | string[])) : undefined;
             const etiqueta = await andreaniEnvioService.obtenerEtiqueta(
                 agrupadorDeBultos,
                 bultoNumero
@@ -193,7 +194,7 @@ export class AndreaniController {
      */
     async consultarTrazasEnvio(req: Request, res: Response): Promise<void> {
         try {
-            const { numeroAndreani } = req.params;
+            const numeroAndreani = asSingleString(req.params.numeroAndreani);
 
             if (!numeroAndreani) {
                 res.status(400).json({

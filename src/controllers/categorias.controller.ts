@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { asSingleString } from '../utils/validation.utils';
 import { CategoriasService } from '../services/categorias.service';
 import { 
     ICreateCategoriaDTO, 
@@ -37,7 +38,7 @@ export class CategoriasController {
 
     async getCategoriaById(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -74,7 +75,7 @@ export class CategoriasController {
 
     async getCategoriaByCodigo(req: Request, res: Response): Promise<void> {
         try {
-            const codi_categoria = req.params.codigo;
+            const codi_categoria = asSingleString(req.params.codigo);
 
             if (!codi_categoria) {
                 res.status(400).json({
@@ -141,7 +142,7 @@ export class CategoriasController {
 
     async updateCategoria(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
             const data: IUpdateCategoriaDTO = req.body;
 
             if (isNaN(id)) {
@@ -182,7 +183,7 @@ export class CategoriasController {
 
     async deleteCategoria(req: Request, res: Response): Promise<void> {
         try {
-            const id = parseInt(req.params.id);
+            const id = parseInt(asSingleString(req.params.id));
 
             if (isNaN(id)) {
                 res.status(400).json({
