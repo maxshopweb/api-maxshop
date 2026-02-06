@@ -67,7 +67,7 @@ export class DireccionesService {
             ],
         });
 
-        const formatted: IDireccionLocal[] = direcciones.map((d) => ({
+        const formatted: IDireccionLocal[] = direcciones.map((d: any) => ({
             id_direccion: d.id_direccion,
             id_usuario: d.id_usuario,
             id_venta: d.id_venta,

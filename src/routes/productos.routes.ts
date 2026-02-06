@@ -16,7 +16,7 @@ router.get('/contenido-crear', productosController.getContenidoCrearProducto.bin
 router.get('/destacados', productosController.getDestacados.bind(productosController));
 router.get('/stock-bajo', productosController.getStockBajo.bind(productosController));
 router.get('/con-imagenes', productosController.getProductosConImagenes.bind(productosController));
-router.get('/tienda', productosController.getProductosTienda.bind(productosController)); // Endpoint para tienda (client/user): marca INGCO (004) con imágenes
+router.get('/tienda', productosController.getProductosTienda.bind(productosController)); // Tienda: solo activos + publicados; filtros opcionales
 
 // Rutas CRUD generales
 router.get('/', productosController.getAll.bind(productosController));
@@ -55,10 +55,19 @@ router.patch('/:id/stock',
     productosController.updateStock.bind(productosController)
 );
 
-// PATCH /api/products/:id/destacado
+// PATCH /api/productos/:id/destacado
 router.patch('/:id/destacado', 
     validarProductoActivo,
     productosController.toggleDestacado.bind(productosController)
+);
+
+// PATCH /api/productos/bulk/publicado (debe ir antes de /:id)
+router.patch('/bulk/publicado', productosController.bulkSetPublicado.bind(productosController));
+
+// PATCH /api/productos/:id/publicado
+router.patch('/:id/publicado', 
+    validarProductoActivo,
+    productosController.togglePublicado.bind(productosController)
 );
 
 //! AGREGAR PRODUCTOS EN OFERTA

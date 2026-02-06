@@ -63,6 +63,22 @@ export class GruposController {
         }
     }
 
+    async getSiguienteCodigo(req: Request, res: Response): Promise<void> {
+        try {
+            const codigo = await gruposService.getSiguienteCodigo();
+            res.json({
+                success: true,
+                data: { codigo }
+            });
+        } catch (error) {
+            console.error('Error en getSiguienteCodigo:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener siguiente código'
+            });
+        }
+    }
+
     async getByCodigo(req: Request, res: Response): Promise<void> {
         try {
             const codi_grupo = asSingleString(req.params.codigo);

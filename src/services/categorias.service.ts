@@ -17,7 +17,7 @@ export class CategoriasService {
                 nombre: 'asc'
             }
         });
-        return categorias.map(cat => ({
+        return categorias.map((cat: ICategoria) => ({
             ...cat,
             nombre: cat.nombre ? cat.nombre.toUpperCase() : cat.nombre
         })) as ICategoria[];
@@ -95,5 +95,15 @@ export class CategoriasService {
             where: { id_cat: id }
         });
         return count > 0;
+    }
+
+    /** Devuelve el siguiente código disponible (último id + 1, formateado a 4 dígitos). */
+    async getSiguienteCodigo(): Promise<string> {
+        const ultima = await prisma.categoria.findFirst({
+            orderBy: { id_cat: 'desc' },
+            select: { codi_categoria: true }
+        });
+        const num = ultima ? (parseInt(ultima.codi_categoria, 10) || 0) + 1 : 1;
+        return num.toString().padStart(4, '0');
     }
 }

@@ -1,5 +1,13 @@
-import { EstadoGeneral, IIva, IMarca } from ".";
+import { EstadoGeneral, IIva, IListaPrecio, IMarca, ISituacionFiscal } from ".";
 import { ICategoria } from "./categoria.type";
+
+/** Info de la lista activa solo para UI (oferta/campaña). Nombre de lista no se expone. */
+export interface IListaActivaInfo {
+    codi_lista: string;
+    tipo_lista: string | null;
+    es_oferta?: boolean;
+    es_campanya?: boolean;
+}
 
 export interface IProductos {
     id_prod: number;
@@ -15,6 +23,8 @@ export interface IProductos {
     precio_pvp?: number | null;
     precio_campanya?: number | null;
     lista_precio_activa?: string | null; // V|O|P|Q
+    /** Lista activa resuelta (nombre, tipo) para que el front distinga oferta/campaña/normal */
+    lista_activa?: IListaActivaInfo | null;
     /** Precio final con IVA aplicado (calculado en backend para el front) */
     precio?: number | null;
     stock?: number | null;
@@ -25,6 +35,7 @@ export interface IProductos {
     img_principal?: string | null;
     imagenes?: string[] | null;
     destacado?: boolean | null;
+    publicado?: boolean | null;
     financiacion?: boolean | null;
     activo?: string | null;
     creado_en?: Date | null;
@@ -41,6 +52,8 @@ export interface ICrearProductoContenido {
     categorias: ICategoria[];
     grupos: any[]; // IGrupo[]
     ivas: IIva[];
+    listasPrecio: IListaPrecio[];
+    situacionesFiscales: ISituacionFiscal[];
 }
 
 export interface IProductoFilters {
@@ -57,6 +70,7 @@ export interface IProductoFilters {
     busqueda?: string;
     estado?: EstadoGeneral; // Solo para admin: 1 = activo, 2 = inactivo (NUNCA 0 = eliminado)
     activo?: string; // Filtro por publicar/despublicar: "A" = publicado, "I" = despublicado
+    publicado?: boolean; // Filtro admin: solo publicados / no publicados en tienda
     page?: number;
     limit?: number;
     order_by?: 'precio' | 'nombre' | 'creado_en' | 'stock';
@@ -78,19 +92,34 @@ export interface ICreateProductoDTO {
     precio_campanya?: number | null;
     lista_precio_activa?: string | null; // V|O|P|Q
     stock?: number;
+    stock_min?: number | null;
     unidad_medida?: string;
     unidades_por_producto?: number;
     codi_barras?: string;
     img_principal?: string;
-    imagenes?: string[];
+    imagenes?: string[] | null;
     destacado?: boolean;
+    financiacion?: boolean;
     id_cat?: number;
     id_subcat?: number;
     id_marca?: number;
     id_iva?: number;
+    cod_sku?: string;
+    id_interno?: string;
+    modelo?: string;
+    precio_mayorista?: number | null;
+    precio_minorista?: number | null;
+    precio_evento?: number | null;
+    stock_mayorista?: number | null;
 }
 
 // Para actualizar producto
 export interface IUpdateProductoDTO extends Partial<ICreateProductoDTO> {
     estado?: EstadoGeneral;
+    publicado?: boolean;
+}
+
+/** Respuesta de operación bulk de publicado */
+export interface IBulkPublicadoResult {
+    count: number;
 }

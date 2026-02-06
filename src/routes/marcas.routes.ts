@@ -5,6 +5,7 @@ const router = Router();
 const marcasController = new MarcasController();
 
 router.get('/', marcasController.getAll.bind(marcasController));
+router.get('/siguiente-codigo', marcasController.getSiguienteCodigo.bind(marcasController));
 router.get('/codigo/:codigo', marcasController.getByCodigo.bind(marcasController));
 router.get('/:id', marcasController.getById.bind(marcasController));
 router.post('/', marcasController.create.bind(marcasController));

@@ -54,6 +54,14 @@ export class HandlerExecutorService {
                 return;
             }
 
+            // SALE_CREATED no se registra aquí: se dispara desde PaymentProcessingService
+            // vía runHandlersAndEmit() para poder esperar a que Andreani cree el envío
+            // antes de enviar el email de confirmación (con número de seguimiento).
+            if (eventType === 'SALE_CREATED') {
+                console.log(`✅ [HandlerExecutor] Evento '${eventType}' se ejecuta vía runHandlersAndEmit (no listener)`);
+                return;
+            }
+
             // Suscribirse al evento en el Event Bus
             eventBus.on(eventType, async (payload) => {
                 await this.executeHandlers(eventType, payload);
@@ -64,6 +72,19 @@ export class HandlerExecutorService {
 
         this.initialized = true;
         console.log(`✅ [HandlerExecutor] Inicializado - ${eventTypes.length} tipo(s) de evento, ${Object.values(handlersRegistry).flat().length} handler(s) total`);
+    }
+
+    /**
+     * Ejecuta los handlers de un evento y luego emite al Event Bus.
+     * Usado por PaymentProcessingService para SALE_CREATED: así se espera a que
+     * Andreani cree el pre-envío antes de enviar el email con número de seguimiento.
+     *
+     * @param eventType - Tipo de evento (ej: 'SALE_CREATED')
+     * @param payload - Payload del evento
+     */
+    async runHandlersAndEmit(eventType: string, payload: any): Promise<void> {
+        await this.executeHandlers(eventType, payload);
+        await eventBus.emit(eventType, payload);
     }
 
     /**

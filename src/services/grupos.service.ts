@@ -30,7 +30,7 @@ export class GruposService {
                 nombre: 'asc'
             }
         });
-        return grupos.map(grupo => ({
+        return grupos.map((grupo: IGrupo) => ({
             ...grupo,
             nombre: grupo.nombre ? grupo.nombre.toUpperCase() : grupo.nombre
         })) as IGrupo[];
@@ -131,6 +131,16 @@ export class GruposService {
             where: { codi_grupo }
         });
         return count > 0;
+    }
+
+    /** Devuelve el siguiente código disponible (último id + 1, formateado a 4 dígitos). */
+    async getSiguienteCodigo(): Promise<string> {
+        const ultimo = await prisma.grupo.findFirst({
+            orderBy: { id_grupo: 'desc' },
+            select: { codi_grupo: true }
+        });
+        const num = ultimo ? (parseInt(ultimo.codi_grupo, 10) || 0) + 1 : 1;
+        return num.toString().padStart(4, '0');
     }
 }
 

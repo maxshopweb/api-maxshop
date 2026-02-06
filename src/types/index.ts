@@ -190,6 +190,27 @@ export interface IIva {
     actualizado_en?: Date | null;
 }
 
+export interface IListaPrecio {
+    id_lista: number;
+    codi_lista: string;
+    nombre?: string | null;
+    tipo_lista?: string | null;
+    venta_lista?: string | null;
+    activo?: boolean | null;
+    creado_en?: Date | null;
+    actualizado_en?: Date | null;
+}
+
+export interface ISituacionFiscal {
+    id_sifi: number;
+    codi_sifi: string;
+    nombre?: string | null;
+    codi_impuesto?: string | null;
+    activo?: boolean | null;
+    creado_en?: Date | null;
+    actualizado_en?: Date | null;
+}
+
 export interface IMarca {
     id_marca: number;
     codi_marca: string;

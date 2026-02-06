@@ -1,7 +1,9 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
-import { IIva, IPaginatedResponse, IMarca } from '../types';
+import { IIva, IListaPrecio, IPaginatedResponse, IMarca, ISituacionFiscal } from '../types';
+import { IGrupo } from './grupos.service';
 import { ICategoria, ISubcategoria } from '../types/categoria.type';
-import { ICrearProductoContenido, ICreateProductoDTO, IProductoFilters, IProductos, IUpdateProductoDTO } from '../types/product.type';
+import { ICrearProductoContenido, ICreateProductoDTO, IProductoFilters, IProductos, IUpdateProductoDTO, IBulkPublicadoResult, IListaActivaInfo } from '../types/product.type';
 import fs from 'fs';
 import path from 'path';
 import cacheService from './cache.service';
@@ -41,14 +43,46 @@ export class ProductosService {
         return precioSinIva * (1 + porcentaje / 100);
     }
 
-    // Función auxiliar para convertir nombre a mayúsculas y añadir precio con IVA
-    private normalizeProducto(producto: any): IProductos {
+    /** Map codi_lista -> lista para enriquecer producto con lista_activa (sin N+1) */
+    private async getListasMap(): Promise<Map<string, IListaPrecio>> {
+        const listas = await prisma.lista_precio.findMany({
+            where: { activo: true },
+            orderBy: { codi_lista: 'asc' }
+        });
+        const map = new Map<string, IListaPrecio>();
+        for (const l of listas) {
+            const codi = (l.codi_lista || '').toUpperCase();
+            if (codi) map.set(codi, l as IListaPrecio);
+        }
+        return map;
+    }
+
+    /** Solo flags para UI (oferta/campaña). No exponer nombre ni datos internos de lista. */
+    private buildListaActivaInfo(lista: IListaPrecio | undefined): IListaActivaInfo | null {
+        if (!lista) return null;
+        const codi = (lista.codi_lista || '').toUpperCase();
+        const tipo = (lista.tipo_lista || '').toUpperCase();
+        return {
+            codi_lista: codi,
+            tipo_lista: lista.tipo_lista ?? null,
+            es_oferta: codi === 'O' || tipo === 'O',
+            es_campanya: codi === 'Q' || tipo === 'Q'
+        };
+    }
+
+    // Función auxiliar para convertir nombre a mayúsculas, precio con IVA y lista_activa
+    private normalizeProducto(producto: any, listasMap?: Map<string, IListaPrecio>): IProductos {
+        const codiLista = (producto.lista_precio_activa || 'V').toUpperCase();
+        const lista = listasMap?.get(codiLista);
+        const lista_activa = listasMap ? this.buildListaActivaInfo(lista) : null;
+
         const normalized: any = {
             ...producto,
             nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
-            precio: this.calcularPrecioConIva(producto)
+            precio: this.calcularPrecioConIva(producto),
+            lista_activa: lista_activa ?? undefined
         };
-        
+
         if (normalized.categoria && normalized.categoria.nombre) {
             normalized.categoria = {
                 ...normalized.categoria,
@@ -67,13 +101,13 @@ export class ProductosService {
                 nombre: normalized.grupo.nombre.toUpperCase()
             };
         }
-        
+
         return normalized as IProductos;
     }
 
     // Función auxiliar para normalizar array de productos
-    private normalizeProductos(productos: any[]): IProductos[] {
-        return productos.map(p => this.normalizeProducto(p));
+    private normalizeProductos(productos: any[], listasMap?: Map<string, IListaPrecio>): IProductos[] {
+        return productos.map(p => this.normalizeProducto(p, listasMap));
     }
 
     async getAll(filters: IProductoFilters): Promise<IPaginatedResponse<IProductos>> {
@@ -100,6 +134,7 @@ export class ProductosService {
             precio_min,
             precio_max,
             destacado,
+            publicado,
             financiacion,
             stock_bajo
         } = filters;
@@ -150,6 +185,7 @@ export class ProductosService {
         */
 
         if (destacado !== undefined) whereClause.destacado = destacado;
+        if (publicado !== undefined) whereClause.publicado = publicado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
 
         // Filtros usando códigos del CSV
@@ -298,8 +334,8 @@ export class ProductosService {
             }) as unknown as IProductos[];
         }
 
-        // Normalizar nombres a mayúsculas
-        const productosNormalizados = this.normalizeProductos(productosFiltrados);
+        const listasMap = await this.getListasMap();
+        const productosNormalizados = this.normalizeProductos(productosFiltrados, listasMap);
 
         const result = {
             data: productosNormalizados,
@@ -347,7 +383,8 @@ export class ProductosService {
             },
         });
 
-        const result = producto ? this.normalizeProducto(producto) : null;
+        const listasMap = await this.getListasMap();
+        const result = producto ? this.normalizeProducto(producto, listasMap) : null;
 
         // Guardar en cache si existe
         if (result) {
@@ -382,7 +419,8 @@ export class ProductosService {
             return null;
         }
 
-        const result = this.normalizeProducto(producto);
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProducto(producto, listasMap);
 
         // Guardar en cache
         if (result) {
@@ -392,17 +430,51 @@ export class ProductosService {
         return result;
     }
 
-    async create(data: ICreateProductoDTO): Promise<IProductos> {
-        const { id_cat, id_subcat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, ...cleanData } = data;
+    /** Límites de longitud en BD (productos) para evitar P2000 */
+    private static readonly PRODUCTO_MAX_LEN = {
+        codi_arti: 10,
+        nombre: 255,
+        unidad_medida: 3,
+        codi_barras: 22,
+        img_principal: 120,
+    } as const;
 
+    private truncateStr(value: string | null | undefined, max: number): string | null {
+        if (value == null || value === '') return null;
+        const s = String(value).trim();
+        return s.length > max ? s.slice(0, max) : s || null;
+    }
+
+    async create(data: ICreateProductoDTO): Promise<IProductos> {
+        const { id_cat, id_subcat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...rest } = data;
+        const L = ProductosService.PRODUCTO_MAX_LEN;
+
+        const listaActiva = rest.lista_precio_activa != null && rest.lista_precio_activa !== ''
+            ? (rest.lista_precio_activa as string).toUpperCase().slice(0, 1)
+            : null;
         const nuevoProducto = await prisma.productos.create({
             data: {
-                ...cleanData,
-                nombre: cleanData.nombre ? cleanData.nombre.toUpperCase() : cleanData.nombre,
-                codi_categoria: codi_categoria || null,
-                codi_marca: codi_marca || null,
-                codi_grupo: codi_grupo || null,
-                codi_impuesto: codi_impuesto || null,
+                codi_arti: this.truncateStr(rest.codi_arti, L.codi_arti) ?? '',
+                nombre: this.truncateStr(rest.nombre, L.nombre) ?? null,
+                descripcion: rest.descripcion != null && rest.descripcion !== '' ? String(rest.descripcion).trim() : null,
+                precio_venta: rest.precio_venta ?? null,
+                precio_especial: rest.precio_especial ?? null,
+                precio_pvp: rest.precio_pvp ?? null,
+                precio_campanya: rest.precio_campanya ?? null,
+                lista_precio_activa: listaActiva,
+                stock: rest.stock ?? null,
+                stock_min: rest.stock_min ?? null,
+                codi_barras: this.truncateStr(rest.codi_barras, L.codi_barras),
+                unidad_medida: this.truncateStr(rest.unidad_medida, L.unidad_medida),
+                unidades_por_producto: rest.unidades_por_producto ?? null,
+                img_principal: this.truncateStr(rest.img_principal, L.img_principal),
+                imagenes: rest.imagenes != null ? rest.imagenes : Prisma.JsonNull,
+                destacado: rest.destacado ?? false,
+                financiacion: rest.financiacion ?? false,
+                codi_categoria: this.truncateStr(codi_categoria, 4) ?? null,
+                codi_marca: this.truncateStr(codi_marca, 3) ?? null,
+                codi_grupo: this.truncateStr(codi_grupo, 4) ?? null,
+                codi_impuesto: this.truncateStr(codi_impuesto, 2) ?? null,
                 estado: 1,
                 creado_en: new Date(),
                 actualizado_en: new Date()
@@ -415,7 +487,8 @@ export class ProductosService {
             }
         });
 
-        const result = this.normalizeProducto(nuevoProducto);
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProducto(nuevoProducto, listasMap);
 
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
@@ -437,18 +510,26 @@ export class ProductosService {
             select: { codi_arti: true }
         });
 
+        const listaActiva = cleanData.lista_precio_activa !== undefined
+            ? (cleanData.lista_precio_activa != null && cleanData.lista_precio_activa !== ''
+                ? (cleanData.lista_precio_activa as string).toUpperCase()
+                : null)
+            : undefined;
+        const { cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...updateData } = cleanData;
+        const updatePayload = {
+            ...updateData,
+            nombre: updateData.nombre ? updateData.nombre.toUpperCase() : updateData.nombre,
+            ...(codi_categoria !== undefined && { codi_categoria: codi_categoria || null }),
+            ...(codi_marca !== undefined && { codi_marca: codi_marca || null }),
+            ...(codi_grupo !== undefined && { codi_grupo: codi_grupo || null }),
+            ...(codi_impuesto !== undefined && { codi_impuesto: codi_impuesto || null }),
+            ...(listaActiva !== undefined && { lista_precio_activa: listaActiva }),
+            ...(estado !== undefined && estado !== null && { estado: Number(estado) }),
+            actualizado_en: new Date()
+        };
         const productoActualizado = await prisma.productos.update({
             where: { id_prod: id },
-            data: {
-                ...cleanData,
-                nombre: cleanData.nombre ? cleanData.nombre.toUpperCase() : cleanData.nombre,
-                codi_categoria: codi_categoria !== undefined ? (codi_categoria || null) : undefined,
-                codi_marca: codi_marca !== undefined ? (codi_marca || null) : undefined,
-                codi_grupo: codi_grupo !== undefined ? (codi_grupo || null) : undefined,
-                codi_impuesto: codi_impuesto !== undefined ? (codi_impuesto || null) : undefined,
-                estado: estado !== undefined && estado !== null ? Number(estado) : undefined,
-                actualizado_en: new Date()
-            },
+            data: updatePayload as Prisma.productosUpdateInput,
             include: {
                 categoria: true,
                 marca: true,
@@ -457,7 +538,8 @@ export class ProductosService {
             }
         });
 
-        const result = this.normalizeProducto(productoActualizado);
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProducto(productoActualizado, listasMap);
 
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
@@ -569,11 +651,7 @@ export class ProductosService {
             where: {
                 destacado: true,
                 estado: 1,
-                // ⚠️ VALIDACIÓN TEMPORAL: Solo productos con imagen principal
-                // AND: [
-                //     { img_principal: { not: null } },
-                //     { img_principal: { not: { equals: '' } } }
-                // ]
+                publicado: true, // Solo productos publicados en tienda
             },
             include: {
                 categoria: true,
@@ -587,7 +665,8 @@ export class ProductosService {
             }
         });
 
-        const result = this.normalizeProductos(productos);
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProductos(productos, listasMap);
 
         // Guardar en cache
         await cacheService.set(cacheKey, result, this.TTL_DESTACADOS);
@@ -628,7 +707,8 @@ export class ProductosService {
             return Number(producto.stock) <= Number(producto.stock_min);
         });
 
-        const result = this.normalizeProductos(productosStockBajo);
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProductos(productosStockBajo, listasMap);
 
         // Guardar en cache
         await cacheService.set(cacheKey, result, this.TTL_CATALOGO);
@@ -645,7 +725,7 @@ export class ProductosService {
         }
 
 
-        const [marcas, categorias, grupos, ivas] = await Promise.all([
+        const [marcas, categorias, grupos, ivas, listasPrecio, situacionesFiscales] = await Promise.all([
             prisma.marca.findMany({
                 orderBy: { nombre: 'asc' }
             }),
@@ -657,23 +737,41 @@ export class ProductosService {
             }),
             prisma.iva.findMany({
                 orderBy: { id_iva: 'asc' }
+            }),
+            prisma.lista_precio.findMany({
+                where: { activo: true },
+                orderBy: { codi_lista: 'asc' }
+            }),
+            prisma.situacion_fiscal.findMany({
+                where: { activo: true },
+                orderBy: { codi_sifi: 'asc' }
             })
         ]);
 
-        const result = {
-            marcas: marcas.map(m => ({
+        const result: ICrearProductoContenido = {
+            marcas: marcas.map((m: IMarca) => ({
                 ...m,
                 nombre: m.nombre ? m.nombre.toUpperCase() : m.nombre
             })) as IMarca[],
-            categorias: categorias.map(c => ({
+            categorias: categorias.map((c: ICategoria) => ({
                 ...c,
                 nombre: c.nombre ? c.nombre.toUpperCase() : c.nombre
             })) as ICategoria[],
-            grupos: grupos.map(g => ({
+            grupos: grupos.map((g: IGrupo) => ({
                 ...g,
                 nombre: g.nombre ? g.nombre.toUpperCase() : g.nombre
-            })) as any[], // Agregar tipo IGrupo si es necesario
-            ivas: ivas as IIva[]
+            })) as IGrupo[],
+            ivas: ivas as IIva[],
+            listasPrecio: listasPrecio as IListaPrecio[],
+            situacionesFiscales: situacionesFiscales.map((s) => ({
+                id_sifi: s.id_sifi,
+                codi_sifi: s.codi_sifi,
+                nombre: s.nombre,
+                codi_impuesto: s.codi_impuesto,
+                activo: s.activo,
+                creado_en: s.creado_en,
+                actualizado_en: s.actualizado_en
+            })) as ISituacionFiscal[]
         };
 
         // Guardar en cache
@@ -712,7 +810,8 @@ export class ProductosService {
             }
         });
 
-        const result = this.normalizeProducto(productoActualizado);
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProducto(productoActualizado, listasMap);
 
         // Invalidar cache relacionado
         await cacheService.delete(`producto:${id}`);
@@ -720,6 +819,70 @@ export class ProductosService {
         await cacheService.deletePattern('productos:*');
 
         return result;
+    }
+
+    /** Cambia el estado publicado de un producto (solo productos no eliminados). */
+    async togglePublicado(id: number): Promise<IProductos> {
+        const producto = await prisma.productos.findFirst({
+            where: {
+                id_prod: id,
+                estado: { not: 0 }
+            }
+        });
+
+        if (!producto) {
+            throw new Error('Producto no encontrado o eliminado');
+        }
+
+        const nuevoPublicado = !(producto.publicado ?? false);
+
+        const productoActualizado = await prisma.productos.update({
+            where: { id_prod: id },
+            data: {
+                publicado: nuevoPublicado,
+                actualizado_en: new Date()
+            },
+            include: {
+                categoria: true,
+                marca: true,
+                grupo: true,
+                iva: true
+            }
+        });
+
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProducto(productoActualizado, listasMap);
+
+        await cacheService.delete(`producto:${id}`);
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.deletePattern('productos:tienda:*');
+        await cacheService.deletePattern('productos:*');
+
+        return result;
+    }
+
+    /** Establece publicado a true/false para varios productos (solo no eliminados). */
+    async bulkSetPublicado(ids: number[], publicado: boolean): Promise<IBulkPublicadoResult> {
+        if (!ids?.length) {
+            return { count: 0 };
+        }
+
+        const result = await prisma.productos.updateMany({
+            where: {
+                id_prod: { in: ids },
+                estado: { not: 0 }
+            },
+            data: {
+                publicado,
+                actualizado_en: new Date()
+            }
+        });
+
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.deletePattern('productos:tienda:*');
+        await cacheService.deletePattern('productos:*');
+
+        return { count: result.count };
     }
 
     /**
@@ -802,8 +965,8 @@ export class ProductosService {
         const endIndex = startIndex + limit;
         const productosPaginados = productosConImagen.slice(startIndex, endIndex);
 
-        // Normalizar nombres a mayúsculas
-        const productosNormalizados = this.normalizeProductos(productosPaginados);
+        const listasMap = await this.getListasMap();
+        const productosNormalizados = this.normalizeProductos(productosPaginados, listasMap);
 
         const result = {
             data: productosNormalizados,
@@ -821,11 +984,9 @@ export class ProductosService {
         return result;
     }
 
-    // Método específico para tienda (client/user): solo marca INGCO (004) con imágenes
+    // Tienda: solo productos activos + publicados; filtros opcionales (categoría, marca, grupo, etc.)
     async getProductosTienda(filters?: IProductoFilters): Promise<IPaginatedResponse<IProductos>> {
-        // Generar clave de cache
         const cacheKey = `productos:tienda:${JSON.stringify(filters || {})}`;
-        
         const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
         if (cached) {
             return cached;
@@ -838,25 +999,17 @@ export class ProductosService {
             order = 'desc',
             busqueda,
             id_cat,
+            id_marca,
             precio_min,
             precio_max,
             destacado,
             financiacion
         } = filters || {};
 
-        // Construir el where con filtros fijos para tienda
+        // Regla de oro tienda: solo productos ACTIVOS (estado=1) y PUBLICADOS
         const whereClause: any = {
-            // SIEMPRE excluir eliminados
-            estado: { not: 0 },
-            // SIEMPRE solo productos publicados
-            activo: "A",
-            // SIEMPRE marca 004 (INGCO)
-            codi_marca: "004",
-            // SIEMPRE productos con imagen (no null y no vacío)
-            AND: [
-                { img_principal: { not: null } },
-                { img_principal: { not: { equals: '' } } }
-            ]
+            estado: 1,
+            publicado: true
         };
 
         // Filtros opcionales
@@ -879,6 +1032,17 @@ export class ProductosService {
             }
         }
 
+        if (id_marca) {
+            if (typeof id_marca === 'number') {
+                const marca = await prisma.marca.findFirst({ where: { id_marca } });
+                if (marca) {
+                    whereClause.codi_marca = marca.codi_marca;
+                }
+            } else if (typeof id_marca === 'string') {
+                whereClause.codi_marca = id_marca;
+            }
+        }
+
         if (precio_min !== undefined || precio_max !== undefined) {
             const gte = precio_min !== undefined ? precio_min : undefined;
             const lte = precio_max !== undefined ? precio_max : undefined;
@@ -896,7 +1060,7 @@ export class ProductosService {
                 { lista_precio_activa: null, ...cond('precio_venta') }
             ].filter((o: any) => Object.keys(o).length > 1);
             if (priceOr.length > 0) {
-                whereClause.AND = [...(whereClause.AND || []), { OR: priceOr }];
+                whereClause.AND = (whereClause.AND || []).concat({ OR: priceOr });
             }
         }
         if (destacado !== undefined) whereClause.destacado = destacado;
@@ -921,8 +1085,8 @@ export class ProductosService {
             take: limit
         });
 
-        // Normalizar productos (añade precio con IVA)
-        const productosNormalizados = this.normalizeProductos(productos);
+        const listasMap = await this.getListasMap();
+        const productosNormalizados = this.normalizeProductos(productos, listasMap);
 
         const precioStats = await prisma.productos.aggregate({
             where: whereClause,

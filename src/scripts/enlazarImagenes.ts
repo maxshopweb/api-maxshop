@@ -181,7 +181,7 @@ async function enlazarImagenes() {
     });
     
     const productosMap = new Map<string, typeof productos[0]>();
-    productos.forEach(p => {
+    productos.forEach((p: any) => {
       if (p.codi_arti) {
         productosMap.set(p.codi_arti, p);
       }

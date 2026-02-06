@@ -73,6 +73,22 @@ export class CategoriasController {
         }
     }
 
+    async getSiguienteCodigo(req: Request, res: Response): Promise<void> {
+        try {
+            const codigo = await categoriasService.getSiguienteCodigo();
+            res.json({
+                success: true,
+                data: { codigo }
+            });
+        } catch (error) {
+            console.error('Error en getSiguienteCodigo:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener siguiente código'
+            });
+        }
+    }
+
     async getCategoriaByCodigo(req: Request, res: Response): Promise<void> {
         try {
             const codi_categoria = asSingleString(req.params.codigo);

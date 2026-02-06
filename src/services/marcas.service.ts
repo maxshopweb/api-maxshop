@@ -10,7 +10,7 @@ export class MarcasService {
                 nombre: 'asc'
             }
         });
-        return marcas.map(marca => ({
+        return marcas.map((marca: IMarca) => ({
             ...marca,
             nombre: marca.nombre ? marca.nombre.toUpperCase() : marca.nombre
         })) as IMarca[];
@@ -88,5 +88,15 @@ export class MarcasService {
             where: { id_marca: id }
         });
         return count > 0;
+    }
+
+    /** Devuelve el siguiente código disponible (último id + 1, formateado a 3 dígitos). */
+    async getSiguienteCodigo(): Promise<string> {
+        const ultima = await prisma.marca.findFirst({
+            orderBy: { id_marca: 'desc' },
+            select: { codi_marca: true }
+        });
+        const num = ultima ? (parseInt(ultima.codi_marca, 10) || 0) + 1 : 1;
+        return num.toString().padStart(3, '0');
     }
 }

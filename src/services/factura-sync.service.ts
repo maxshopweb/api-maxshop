@@ -165,7 +165,7 @@ export class FacturaSyncService {
         });
 
         // Mapear a formato IVentaPendienteFactura
-        return registros.map((r) => ({
+        return registros.map((r: any) => ({
             id: r.id,
             venta_id: r.venta_id,
             fecha_creacion: r.fecha_creacion,

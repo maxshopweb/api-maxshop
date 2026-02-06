@@ -1357,19 +1357,19 @@ export class CSVImporterService {
       const stockMap = this.cargarStock(path.join(csvDir, 'MAESSTOK.csv'));
 
       // 3. Cargar dependencias para productos
-      const categoriasSet = new Set(
+      const categoriasSet = new Set<string>(
         (await prisma.categoria.findMany({ select: { codi_categoria: true } })).map(
-          (c) => c.codi_categoria
-        )
+          (c: { codi_categoria: string | null }) => c.codi_categoria
+        ).filter((x: string | null): x is string => x != null)
       );
-      const marcasSet = new Set(
+      const marcasSet = new Set<string>(
         (await prisma.marca.findMany({ select: { codi_marca: true } })).map(
-          (m) => m.codi_marca
+          (m: { codi_marca: string }) => m.codi_marca
         )
       );
-      const gruposSet = new Set(
+      const gruposSet = new Set<string>(
         (await prisma.grupo.findMany({ select: { codi_grupo: true } })).map(
-          (g) => g.codi_grupo
+          (g: { codi_grupo: string }) => g.codi_grupo
         )
       );
       const impuestosMap = new Map<string, number>();
@@ -1377,7 +1377,7 @@ export class CSVImporterService {
         await prisma.iva.findMany({
           select: { codi_impuesto: true, porcentaje: true },
         })
-      ).forEach((imp) => {
+      ).forEach((imp: any) => {
         if (imp.codi_impuesto && imp.porcentaje) {
           impuestosMap.set(imp.codi_impuesto, Number(imp.porcentaje));
         }

@@ -116,7 +116,7 @@ export class ClientesService {
         });
 
         // Formatear respuesta
-        const formattedClientes: ICliente[] = clientes.map((cliente) => ({
+        const formattedClientes: ICliente[] = clientes.map((cliente: any) => ({
             id_cliente: cliente.id_cliente,
             id_usuario: cliente.id_usuario,
             direccion: cliente.direccion,
@@ -245,14 +245,14 @@ export class ClientesService {
         });
 
         const totalVentas = ventas.length;
-        const totalGastado = ventas.reduce((sum, v) => sum + Number(v.total_neto || 0), 0);
+        const totalGastado = ventas.reduce((sum: number, v: any) => sum + Number(v.total_neto || 0), 0);
         const promedioVenta = totalVentas > 0 ? totalGastado / totalVentas : 0;
         const ultimaVenta = ventas.length > 0 ? ventas[0].fecha : null;
 
         // Contar productos únicos comprados
         const productosIds = new Set<number>();
-        ventas.forEach((venta) => {
-            venta.venta_detalle.forEach((detalle) => {
+        ventas.forEach((venta: any) => {
+            venta.venta_detalle.forEach((detalle: any) => {
                 if (detalle.id_prod) {
                     productosIds.add(detalle.id_prod);
                 }
@@ -293,7 +293,7 @@ export class ClientesService {
             take: limit,
         });
 
-        const formattedVentas = ventas.map((venta) => ({
+        const formattedVentas = ventas.map((venta: any) => ({
             id_venta: venta.id_venta,
             fecha: venta.fecha,
             total_neto: Number(venta.total_neto),

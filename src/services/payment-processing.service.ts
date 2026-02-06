@@ -1,11 +1,10 @@
 import { IVenta } from '../types';
 import { ProductosService } from './productos.service';
-import { andreaniPreEnvioService } from './andreani/andreani.preenvio.service';
 import mailService from '../mail';
 import { prisma } from '../index';
 import cacheService from './cache.service';
-import { eventBus } from '../infrastructure/event-bus/event-bus';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
+import { handlerExecutorService } from './handlers/handler-executor.service';
 
 /**
  * Servicio centralizado para procesar confirmaciones de pago
@@ -90,18 +89,18 @@ export class PaymentProcessingService {
             await cacheService.delete(`venta:${idVenta}`);
             await cacheService.deletePattern('ventas:*');
 
-            // Obtener venta actualizada
+            // Obtener venta actualizada (aún sin envío Andreani)
             let ventaActualizada = await ventasService.getById(idVenta);
 
-
-            // Emitir evento SALE_CREATED SOLO cuando el pago está aprobado
-            // Los handlers del Event Bus se ejecutarán automáticamente
+            // 6. Ejecutar handlers SALE_CREATED (Andreani, etiquetas, Excel, etc.) y LUEGO emitir al bus.
+            // Se usa runHandlersAndEmit para esperar a que Andreani cree el pre-envío antes de enviar
+            // el email, así el cliente recibe el número de seguimiento en el mismo correo.
             if (ventaActualizada.estado_pago === 'aprobado' && ventaActualizada.fecha) {
                 const event = SaleEventFactory.createSaleCreated({
                     id_venta: ventaActualizada.id_venta,
                     estado_pago: 'aprobado',
                     fecha: ventaActualizada.fecha.toISOString(),
-                    venta: ventaActualizada, // Incluir datos completos de la venta
+                    venta: ventaActualizada,
                     paymentData: paymentData ? {
                         metodoPago: paymentData.metodoPago,
                         transactionId: paymentData.transactionId,
@@ -109,39 +108,18 @@ export class PaymentProcessingService {
                         notas: paymentData.notas,
                     } : undefined,
                 });
-                await eventBus.emit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
-                    console.error('❌ [PaymentProcessing] Error al emitir evento SALE_CREATED:', error);
+                await handlerExecutorService.runHandlersAndEmit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
+                    console.error('❌ [PaymentProcessing] Error en runHandlersAndEmit SALE_CREATED:', error);
                 });
+
+                // 7. Re-obtener la venta para incluir envio.cod_seguimiento (creado por AndreaniHandler)
+                ventaActualizada = await ventasService.getById(idVenta);
             }
 
-            // NOTA: La creación del pre-envío en Andreani ahora se hace a través del Event Bus
-            // El handler AndreaniHandler se ejecutará automáticamente cuando se emita SALE_CREATED
-            // Mantenemos este código comentado por si se necesita crear el envío de forma síncrona
-            // (por ahora, el Event Bus lo maneja de forma asíncrona)
-            
-            // 6. Crear pre-envío en Andreani (ahora manejado por Event Bus)
-            // El AndreaniHandler se ejecutará automáticamente desde el Event Bus
-            // Si necesitas crear el envío de forma síncrona, descomenta el código siguiente:
-            /*
-            const esRetiro = ventaActualizada.observaciones?.toLowerCase().includes('retiro en tienda') || 
-                            ventaActualizada.observaciones?.toLowerCase().includes('tipo: retiro');
-            
-            if (!esRetiro) {
-                try {
-                    await andreaniPreEnvioService.crearPreEnvio(idVenta);
-                    ventaActualizada = await ventasService.getById(idVenta);
-                } catch (error: any) {
-                    console.error(`❌ [PaymentProcessing] Error al crear pre-envío para venta #${idVenta}:`, error);
-                }
-            }
-            */
-
-            // 7. Enviar email de confirmación con tracking (no bloqueante)
-            // El número de seguimiento se obtiene de ventaActualizada.envio?.cod_seguimiento
-            this.sendConfirmationEmail(ventaActualizada).catch((error) => {
+            // 8. Enviar email de confirmación al cliente (siempre con nro de pedido; con tracking si hay envío)
+            await this.sendConfirmationEmail(ventaActualizada).catch((error) => {
                 console.error(`❌ [PaymentProcessing] Error al enviar email de confirmación:`, error);
             });
-
 
             return ventaActualizada;
         } catch (error: any) {

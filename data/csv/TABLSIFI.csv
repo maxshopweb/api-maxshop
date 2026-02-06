@@ -5,7 +5,7 @@
 4,EX,Exento,0,,,N,N,0,0,0,0002,00,N
 5,R1,"Resp.No Inscripto 3,12 %","3,12",111111,,S,N,0,0,0,0001,01,N
 6,R2,"Resp.No Inscripto 2,60 %","2,6",111111,,s,n,0,0,0,0002,01,N
-7,RE,Responsable exportador,0,212101,114201,s,s,1000,0,0,0001,01,N
+7,RE,Responsable exportador,0,212101,114201,s,s,0,0,0,0004,00,N
 8,CF,Consumidor Final,0,212101,114201,N,N,1000,10,20,0001,01,N
 9,RM,Responsable Monotributo,0,212101,114201,S,S,0,0,0,0001,01,N
 10,RC,No Categorizado,"10,5",212101,114201,N,N,0,0,0,0001,01,S

@@ -9,6 +9,7 @@ const categoriasController = new CategoriasController();
 // ========================================
 
 router.get('/', categoriasController.getAllCategorias.bind(categoriasController));
+router.get('/siguiente-codigo', categoriasController.getSiguienteCodigo.bind(categoriasController));
 router.get('/codigo/:codigo', categoriasController.getCategoriaByCodigo.bind(categoriasController));
 router.get('/:id', categoriasController.getCategoriaById.bind(categoriasController));
 router.post('/', categoriasController.createCategoria.bind(categoriasController));

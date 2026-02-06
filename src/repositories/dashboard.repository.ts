@@ -1,5 +1,4 @@
 import { prisma } from '../index';
-import { Prisma } from '@prisma/client';
 
 /**
  * Repository para queries del dashboard
@@ -10,7 +9,7 @@ export class DashboardRepository {
    * Obtiene KPIs principales (solo agregados, sin listas)
    */
   async getKpis(dateFrom: Date, dateTo: Date) {
-    const whereClause: Prisma.ventaWhereInput = {
+    const whereClause = {
       fecha: {
         gte: dateFrom,
         lte: dateTo,
@@ -44,7 +43,7 @@ export class DashboardRepository {
       total_ventas_netas: totalVentasNetas,
       cantidad_ordenes: cantidadOrdenes,
       ticket_promedio: ticketPromedio,
-      clientes_unicos: clientesUnicos.filter((c) => c.id_cliente !== null).length,
+      clientes_unicos: clientesUnicos.filter((c: any) => c.id_cliente !== null).length,
     };
   }
 
@@ -69,7 +68,7 @@ export class DashboardRepository {
       ORDER BY fecha ASC
     `;
 
-    return results.map((row) => ({
+    return results.map((row: any) => ({
       fecha: row.fecha instanceof Date ? row.fecha.toISOString().split('T')[0] : String(row.fecha).split('T')[0], // YYYY-MM-DD
       total_vendido: Number(row.total_vendido),
       cantidad_ordenes: Number(row.cantidad_ordenes),
@@ -94,12 +93,12 @@ export class DashboardRepository {
     });
 
     return results
-      .filter((r) => r.estado_pago !== null)
-      .map((r) => ({
+      .filter((r: any) => r.estado_pago !== null)
+      .map((r: any) => ({
         estado_pago: r.estado_pago!,
         cantidad: r._count.id_venta,
       }))
-      .sort((a, b) => b.cantidad - a.cantidad);
+      .sort((a: any, b: any) => b.cantidad - a.cantidad);
   }
 
   /**
@@ -128,7 +127,7 @@ export class DashboardRepository {
       LIMIT ${limit}
     `;
 
-    return results.map((row) => ({
+    return results.map((row: any) => ({
       id_producto: row.id_producto,
       nombre: row.nombre || 'Producto sin nombre',
       cantidad_vendida: Number(row.cantidad_vendida),
@@ -159,7 +158,7 @@ export class DashboardRepository {
       ORDER BY total_vendido DESC
     `;
 
-    return results.map((row) => ({
+    return results.map((row: any) => ({
       categoria: row.categoria || 'Sin categoría',
       total_vendido: Number(row.total_vendido),
       cantidad_productos_vendidos: Number(row.cantidad_productos_vendidos),

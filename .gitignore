@@ -1,6 +1,6 @@
 node_modules
 # Keep environment variables out of version control
-.env
+.env*
 
 # TypeScript compiled output (generated automatically)
 dist/
@@ -10,3 +10,4 @@ dist/
 data/
 
 .DS_Store
+

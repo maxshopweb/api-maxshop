@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
 import { IVenta, IVentaFilters, IPaginatedResponse, ICreateVentaDTO, IUpdateVentaDTO } from '../types';
 import cacheService from './cache.service';
@@ -354,7 +355,7 @@ export class VentasService {
         }
 
         // Crear venta con cod_interno automático usando transacción
-        const venta = await prisma.$transaction(async (tx) => {
+        const venta = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             // 1. Crear la venta (sin cod_interno aún)
             const ventaCreada = await tx.venta.create({
                 data: {
