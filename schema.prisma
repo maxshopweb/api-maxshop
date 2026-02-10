@@ -286,7 +286,38 @@ model negocio {
 }
 
 
- @relation(fields: [codi_marca], references: [codi_marca])
+model productos {
+  id_prod               Int             @id @default(autoincrement())
+  codi_arti             String          @unique @db.VarChar(10)
+  nombre                String?         @db.VarChar(255)
+  descripcion           String?
+  codi_categoria        String?         @db.VarChar(4)
+  codi_marca            String?         @db.VarChar(3)
+  codi_grupo            String?         @db.VarChar(4)
+  codi_impuesto         String?         @db.VarChar(2)
+  precio_venta          Decimal?        @db.Decimal(19, 6)
+  precio_especial       Decimal?        @db.Decimal(19, 6)
+  precio_pvp            Decimal?        @db.Decimal(19, 6)
+  precio_campanya       Decimal?        @db.Decimal(19, 6)
+  lista_precio_activa   String?         @db.VarChar(1)
+  unidad_medida         String?         @db.VarChar(3)
+  unidades_por_producto Decimal?        @db.Decimal(5, 0)
+  codi_barras           String?         @db.VarChar(22)
+  stock                 Decimal?        @db.Decimal(12, 2)
+  img_principal         String?         @db.VarChar(120)
+  activo                String?         @db.VarChar(1)
+  estado                Int?            @default(1)
+  stock_min             Int?
+  imagenes              Json?
+  destacado             Boolean?        @default(false)
+  financiacion          Boolean?        @default(false)
+  publicado             Boolean?        @default(false)
+  creado_en             DateTime?       @default(now()) @db.Timestamp(6)
+  actualizado_en        DateTime?       @default(now()) @db.Timestamp(6)
+  categoria             categoria?      @relation(fields: [codi_categoria], references: [codi_categoria])
+  grupo                 grupo?          @relation(fields: [codi_grupo], references: [codi_grupo])
+  iva                   iva?            @relation(fields: [codi_impuesto], references: [codi_impuesto])
+  marca                 marca?          @relation(fields: [codi_marca], references: [codi_marca])
   venta_detalle         venta_detalle[]
 
   @@index([activo], map: "idx_productos_activo")

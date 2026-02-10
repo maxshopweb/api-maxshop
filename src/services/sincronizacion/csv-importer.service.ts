@@ -1203,7 +1203,13 @@ export class CSVImporterService {
           const lista_precio_activa = 'V';
 
           const stockData = dependencias.stock.get(codiartiLimpio);
-          const stock = stockData?.stock ?? 0;
+          let stock = stockData?.stock ?? 0;
+          // Para pruebas: si IMPORT_STOCK_OVERRIDE está definido, usar ese valor; cuando tengas el MAESSTOK final, quita la variable y se usará el stock real
+          const overrideEnv = process.env.IMPORT_STOCK_OVERRIDE;
+          if (overrideEnv !== undefined && overrideEnv !== '') {
+            const override = parseInt(overrideEnv, 10);
+            if (!isNaN(override) && override >= 0) stock = override;
+          }
           const stock_min = stockData?.stock_min != null ? Math.round(stockData.stock_min) : null;
 
           const codi_arti_truncado = codiarti.substring(0, 10);
@@ -1355,6 +1361,10 @@ export class CSVImporterService {
       console.log('📦 Cargando datos auxiliares...');
       const preciosMap = this.cargarPrecios(path.join(csvDir, 'maesprec.csv'));
       const stockMap = this.cargarStock(path.join(csvDir, 'MAESSTOK.csv'));
+      const overrideEnv = process.env.IMPORT_STOCK_OVERRIDE;
+      if (overrideEnv !== undefined && overrideEnv !== '' && !isNaN(parseInt(overrideEnv, 10))) {
+        console.log(`⚠️ IMPORT_STOCK_OVERRIDE=${overrideEnv} activo: todos los productos usarán este stock (quita la variable cuando tengas el MAESSTOK final)`);
+      }
 
       // 3. Cargar dependencias para productos
       const categoriasSet = new Set<string>(

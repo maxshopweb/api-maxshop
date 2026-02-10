@@ -70,17 +70,27 @@ export class ProductosService {
         };
     }
 
+    /** Stock por defecto para todos los productos cuando DEFAULT_STOCK está en .env (ej: 100) */
+    private getDefaultStock(): number | null {
+        const v = process.env.DEFAULT_STOCK;
+        if (v == null || v === '') return null;
+        const n = parseInt(String(v).trim(), 10);
+        return Number.isNaN(n) || n < 0 ? null : n;
+    }
+
     // Función auxiliar para convertir nombre a mayúsculas, precio con IVA y lista_activa
     private normalizeProducto(producto: any, listasMap?: Map<string, IListaPrecio>): IProductos {
         const codiLista = (producto.lista_precio_activa || 'V').toUpperCase();
         const lista = listasMap?.get(codiLista);
         const lista_activa = listasMap ? this.buildListaActivaInfo(lista) : null;
 
+        const defaultStock = this.getDefaultStock();
         const normalized: any = {
             ...producto,
             nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
             precio: this.calcularPrecioConIva(producto),
-            lista_activa: lista_activa ?? undefined
+            lista_activa: lista_activa ?? undefined,
+            ...(defaultStock !== null && { stock: defaultStock })
         };
 
         if (normalized.categoria && normalized.categoria.nombre) {
