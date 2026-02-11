@@ -131,7 +131,8 @@ export class AuthController {
         ...req.body,
         ip: req.ip ?? null,
         userAgent: req.headers['user-agent']?.toString() ?? null,
-        endpoint: req.originalUrl ?? null
+        endpoint: req.originalUrl ?? null,
+        guestDeviceId: (req.body as { guestDeviceId?: string }).guestDeviceId ?? ((req.headers['x-guest-device-id'] as string)?.trim() || undefined)
       });
 
       res.status(result.created ? 201 : 200).json({

@@ -5,7 +5,7 @@
  */
 
 import { MailEventType, MailEventNames } from './mail.events';
-import { MailTemplate, MailEventData, OrderEventData, ShippingEventData, PromotionEventData, AbandonedCartEventData, PaymentInstructionsEventData } from './mail.types';
+import { MailTemplate, MailEventData, OrderEventData, ShippingEventData, PromotionEventData, AbandonedCartEventData, PaymentInstructionsEventData, WelcomeEventData } from './mail.types';
 
 /**
  * Layout base para todos los emails
@@ -104,6 +104,10 @@ export function getMailTemplate(event: MailEventType, data: MailEventData): Mail
             return getPromotionTemplate(data as PromotionEventData);
         case MailEventType.ABANDONED_CART:
             return getAbandonedCartTemplate(data as AbandonedCartEventData);
+        case MailEventType.WELCOME_GUEST:
+            return getWelcomeGuestTemplate(data as WelcomeEventData);
+        case MailEventType.WELCOME_USER:
+            return getWelcomeUserTemplate(data as WelcomeEventData);
         case MailEventType.GENERIC:
             return getGenericTemplate(data);
         default:
@@ -618,6 +622,70 @@ function getAbandonedCartTemplate(data: AbandonedCartEventData): MailTemplate {
 
     return {
         subject: '¡Completa tu compra! - MaxShop',
+        htmlContent: getBaseLayout(content),
+    };
+}
+
+/**
+ * Template: Bienvenida checkout invitado
+ */
+function getWelcomeGuestTemplate(data: WelcomeEventData): MailTemplate {
+    const nombre = data.nombre || data.apellido
+        ? `${data.nombre || ''} ${data.apellido || ''}`.trim()
+        : 'Cliente';
+
+    const content = `
+        <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
+            ¡Hola${nombre !== 'Cliente' ? ` ${nombre}` : ''}!
+        </h2>
+        
+        <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+            Gracias por elegir MaxShop. Completaste tus datos para continuar con tu compra como invitado.
+        </p>
+        
+        <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+            Podés seguir con el checkout y finalizar tu pedido. Si tenés alguna duda, estamos para ayudarte.
+        </p>
+        
+        <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
+            ¡Gracias por confiar en nosotros!
+        </p>
+    `;
+
+    return {
+        subject: 'Bienvenido a MaxShop - Completá tu pedido',
+        htmlContent: getBaseLayout(content),
+    };
+}
+
+/**
+ * Template: Bienvenida usuario registrado
+ */
+function getWelcomeUserTemplate(data: WelcomeEventData): MailTemplate {
+    const nombre = data.nombre || data.apellido
+        ? `${data.nombre || ''} ${data.apellido || ''}`.trim()
+        : 'Cliente';
+
+    const content = `
+        <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
+            ¡Hola${nombre !== 'Cliente' ? ` ${nombre}` : ''}!
+        </h2>
+        
+        <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+            Te damos la bienvenida a MaxShop. Tu cuenta fue creada correctamente.
+        </p>
+        
+        <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+            Recordá verificar tu email con el enlace que te enviamos para activar tu cuenta y poder comprar con todos los beneficios.
+        </p>
+        
+        <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
+            ¡Gracias por registrarte!
+        </p>
+    `;
+
+    return {
+        subject: 'Bienvenido a MaxShop - Verificá tu email',
         htmlContent: getBaseLayout(content),
     };
 }

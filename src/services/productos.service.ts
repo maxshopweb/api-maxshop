@@ -89,6 +89,7 @@ export class ProductosService {
             ...producto,
             nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
             precio: this.calcularPrecioConIva(producto),
+            precio_sin_iva: this.getPrecioListaActiva(producto),
             lista_activa: lista_activa ?? undefined,
             ...(defaultStock !== null && { stock: defaultStock })
         };

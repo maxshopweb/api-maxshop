@@ -609,6 +609,7 @@ export class VentasService {
                 metodo_pago: metodoPagoNormalizado,
                 tipo_venta: 'online', // Siempre online desde checkout
                 observaciones: data.observaciones,
+                costo_envio: data.costo_envio,
                 detalles: data.detalles.map((detalle) => ({
                     id_prod: detalle.id_prod,
                     cantidad: detalle.cantidad,

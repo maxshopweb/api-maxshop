@@ -15,6 +15,9 @@ import { andreaniEnvioService } from '../services/andreani/andreani.envio.servic
 import { andreaniEnviosService } from '../services/andreani/andreani.envios.service';
 import { ICotizarEnvioRequest } from '../services/andreani/andreani.types';
 import { IApiResponse } from '../types';
+import { ConfigTiendaService } from '../services/config-tienda.service';
+
+const configTiendaService = new ConfigTiendaService();
 
 export class AndreaniController {
     // ============================================
@@ -231,9 +234,8 @@ export class AndreaniController {
      * Cotiza un envío con Andreani
      * 
      * POST /api/andreani/envios/cotizar
-     * Body: { cpDestino, contrato, cliente, sucursalOrigen?, bultos[0][volumen], bultos[0][kilos]?, ... }
-     * 
-     * IMPORTANTE: La API de tarifas usa query params (GET), pero mantenemos POST para consistencia
+     * Body: { cpDestino, contrato, cliente, volumen, kilos?, valorDeclarado?, subtotalCarrito?, ... }
+     * Si subtotalCarrito >= envio_gratis_minimo (config negocio), devuelve precio 0 sin llamar a Andreani.
      */
     async cotizarEnvio(req: Request, res: Response): Promise<void> {
         try {
@@ -248,6 +250,7 @@ export class AndreaniController {
                 altoCm,
                 largoCm,
                 anchoCm,
+                subtotalCarrito,
             } = req.body;
 
             // Validar campos obligatorios
@@ -283,6 +286,31 @@ export class AndreaniController {
                 return;
             }
 
+            // Envío gratis: si el carrito alcanza el mínimo configurado, no cotizar con Andreani
+            const config = await configTiendaService.getConfig();
+            const minimoEnvioGratis = config.envio_gratis_minimo ?? null;
+            const subtotal =
+                typeof subtotalCarrito === 'number' && !Number.isNaN(subtotalCarrito) ? subtotalCarrito : null;
+
+            if (
+                minimoEnvioGratis != null &&
+                minimoEnvioGratis > 0 &&
+                subtotal != null &&
+                subtotal >= minimoEnvioGratis
+            ) {
+                const response: IApiResponse = {
+                    success: true,
+                    data: {
+                        precio: 0,
+                        moneda: 'ARS',
+                        envioGratis: true,
+                    },
+                    message: 'Envío gratis por compra mínima alcanzada',
+                };
+                res.json(response);
+                return;
+            }
+
             // Preparar input para el service
             const input: ICotizarEnvioRequest = {
                 cpDestino,
@@ -306,7 +334,7 @@ export class AndreaniController {
                 data: {
                     precio: cotizacion.precio, // Ya es con IVA
                     moneda: cotizacion.moneda,
-                    // Opcional: devolver detalles si se necesitan
+                    envioGratis: false,
                     tarifaConIva: cotizacion.tarifaConIva,
                 },
                 message: 'Cotización obtenida exitosamente',

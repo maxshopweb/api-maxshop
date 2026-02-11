@@ -386,6 +386,52 @@ export class MailService {
     }
 
     /**
+     * Envía email de bienvenida al completar checkout como invitado
+     */
+    async sendWelcomeGuest(data: {
+        email: string;
+        nombre?: string;
+        apellido?: string;
+    }): Promise<BrevoResponse> {
+        return this.send({
+            event: MailEventType.WELCOME_GUEST,
+            to: {
+                email: data.email,
+                name: [data.nombre, data.apellido].filter(Boolean).join(' ') || 'Cliente',
+            },
+            data: {
+                email: data.email,
+                nombre: data.nombre,
+                apellido: data.apellido,
+            },
+            tags: ['bienvenida', 'invitado'],
+        });
+    }
+
+    /**
+     * Envía email de bienvenida al registrarse como usuario (cuenta nueva)
+     */
+    async sendWelcomeUser(data: {
+        email: string;
+        nombre?: string;
+        apellido?: string;
+    }): Promise<BrevoResponse> {
+        return this.send({
+            event: MailEventType.WELCOME_USER,
+            to: {
+                email: data.email,
+                name: [data.nombre, data.apellido].filter(Boolean).join(' ') || 'Cliente',
+            },
+            data: {
+                email: data.email,
+                nombre: data.nombre,
+                apellido: data.apellido,
+            },
+            tags: ['bienvenida', 'registro'],
+        });
+    }
+
+    /**
      * Envía un email con adjunto (PDF de factura)
      */
     async sendEmailWithAttachment(

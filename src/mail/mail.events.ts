@@ -24,6 +24,10 @@ export enum MailEventType {
     PROMOTION = 'PROMOTION',
     ABANDONED_CART = 'ABANDONED_CART',
     
+    // Bienvenida (registro invitado o usuario normal)
+    WELCOME_GUEST = 'WELCOME_GUEST',
+    WELCOME_USER = 'WELCOME_USER',
+    
     // Eventos genéricos
     GENERIC = 'GENERIC',
 }
@@ -41,6 +45,8 @@ export const MailEventNames: Record<MailEventType, string> = {
     [MailEventType.SHIPPING_DELIVERED]: 'Envío Entregado',
     [MailEventType.PROMOTION]: 'Promoción',
     [MailEventType.ABANDONED_CART]: 'Carrito Abandonado',
+    [MailEventType.WELCOME_GUEST]: 'Bienvenida - Checkout invitado',
+    [MailEventType.WELCOME_USER]: 'Bienvenida - Usuario registrado',
     [MailEventType.GENERIC]: 'Email Genérico',
 };
 

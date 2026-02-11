@@ -15,6 +15,7 @@ import {
 } from '../types/auth.type';
 import { auditService } from './audit.service';
 import { parseDate, parseTelefono, sanitizeString } from '../utils/validation.utils';
+import mailService from '../mail';
 
 export class AuthService {
   private ensureFirebaseAdmin() {
@@ -392,6 +393,18 @@ export class AuthService {
       processingTimeMs: processingTime
     });
 
+    if (created) {
+      mailService
+        .sendWelcomeUser({
+          email: mappedUser.email ?? email,
+          nombre: mappedUser.nombre ?? undefined,
+          apellido: mappedUser.apellido ?? undefined
+        })
+        .catch((err) =>
+          console.error('❌ [AuthService] Error al enviar email de bienvenida usuario:', err)
+        );
+    }
+
     return {
       user: mappedUser,
       created,
@@ -598,6 +611,7 @@ export class AuthService {
     ip?: string;
     userAgent?: string;
     endpoint?: string;
+    guestDeviceId?: string;
   }): Promise<AuthOperationResult> {
     const start = performance.now();
 
@@ -645,22 +659,23 @@ export class AuthService {
       throw new Error('Este email ya está registrado. Por favor, inicia sesión en su lugar.');
     }
 
-    // Si existe como invitado, actualizar en lugar de crear
+    // Si existe como invitado, actualizar en lugar de crear (por UID, email o guest_device_id)
+    const guestDeviceId = input.guestDeviceId?.trim() || null;
+    const orConditions: Array<{ id_usuario: string } | { email: string } | { guest_device_id: string }> = [
+      { id_usuario: firebaseUid },
+      { email: email }
+    ];
+    if (guestDeviceId) orConditions.push({ guest_device_id: guestDeviceId });
+
     let userRecord = await prisma.usuarios.findFirst({
-      where: {
-        OR: [
-          { id_usuario: firebaseUid },
-          { email: email }
-        ]
-      },
-      include: {
-        roles: true
-      }
+      where: { OR: orConditions },
+      include: { roles: true }
     });
-    
+
     console.log('🔍 [registerGuest] Búsqueda de usuario existente:', {
       firebaseUid,
       email,
+      guestDeviceId: guestDeviceId || undefined,
       encontrado: !!userRecord,
       idUsuarioEncontrado: userRecord?.id_usuario
     });
@@ -742,16 +757,16 @@ export class AuthService {
         }
       }
     } else {
-      // Crear nuevo usuario invitado
+      // Crear nuevo usuario invitado (mismo dispositivo puede tener otro UID; guardamos guest_device_id)
       const createData: any = {
         id_usuario: firebaseUid,
-        email: email, // Email siempre tiene valor (incluso para invitados)
+        email: email,
         nombre,
         apellido,
         telefono,
         username: email.split('@')[0],
         es_anonimo: true,
-        estado: 1, // Estado 1 = invitado
+        estado: 1,
         id_rol: guestRole.id_rol,
         activo: true,
         creado_en: new Date(),
@@ -759,6 +774,7 @@ export class AuthService {
         login_ip: loginIp,
         actualizado_en: new Date()
       };
+      if (guestDeviceId) createData.guest_device_id = guestDeviceId;
 
       // Intentar agregar email_no_verificado si existe
       try {
@@ -840,6 +856,18 @@ export class AuthService {
       userId: userRecord.id_usuario,
       processingTimeMs: processingTime
     });
+
+    if (created) {
+      mailService
+        .sendWelcomeGuest({
+          email: mappedUser.email ?? email,
+          nombre: mappedUser.nombre ?? undefined,
+          apellido: mappedUser.apellido ?? undefined
+        })
+        .catch((err) =>
+          console.error('❌ [AuthService] Error al enviar email de bienvenida invitado:', err)
+        );
+    }
 
     return {
       user: mappedUser,

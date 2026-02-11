@@ -147,3 +147,12 @@ export interface PaymentInstructionsEventData extends MailEventData {
     };
 }
 
+/**
+ * Datos para emails de bienvenida (invitado o usuario registrado)
+ */
+export interface WelcomeEventData extends MailEventData {
+    email: string;
+    nombre?: string;
+    apellido?: string;
+}
+

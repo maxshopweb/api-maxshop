@@ -38,19 +38,32 @@ export class ConfigTiendaService {
     if (!negocio) {
       const created = await prisma.negocio.create({
         data: {
-          envio_gratis_minimo: dto.envio_gratis_minimo ?? 100000,
-          cuotas_sin_interes: dto.cuotas_sin_interes ?? 3,
-          cuotas_sin_interes_minimo: dto.cuotas_sin_interes_minimo ?? 80000,
+          envio_gratis_minimo: String(dto.envio_gratis_minimo ?? 100000),
+          cuotas_sin_interes: String(dto.cuotas_sin_interes ?? 3),
+          cuotas_sin_interes_minimo: String(dto.cuotas_sin_interes_minimo ?? 80000),
         },
       });
       return fromDb(created);
     }
+    const current = fromDb(negocio);
+    const envio = dto.envio_gratis_minimo ?? current.envio_gratis_minimo ?? DEFAULTS.envio_gratis_minimo;
+    const cuotas = dto.cuotas_sin_interes ?? current.cuotas_sin_interes ?? DEFAULTS.cuotas_sin_interes;
+    const cuotasMin = dto.cuotas_sin_interes_minimo ?? current.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo;
+    const envioNum = typeof envio === 'number' ? envio : Number(envio);
+    const cuotasNum = typeof cuotas === 'number' ? cuotas : Number(cuotas);
+    const cuotasMinNum = typeof cuotasMin === 'number' ? cuotasMin : Number(cuotasMin);
+    const currentEnvio = current.envio_gratis_minimo ?? DEFAULTS.envio_gratis_minimo;
+    const currentCuotas = current.cuotas_sin_interes ?? DEFAULTS.cuotas_sin_interes;
+    const currentCuotasMin = current.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo;
+    if (envioNum === currentEnvio && cuotasNum === currentCuotas && cuotasMinNum === currentCuotasMin) {
+      return current;
+    }
     const updated = await prisma.negocio.update({
       where: { id_neg: negocio.id_neg },
       data: {
-        ...(dto.envio_gratis_minimo !== undefined && { envio_gratis_minimo: dto.envio_gratis_minimo }),
-        ...(dto.cuotas_sin_interes !== undefined && { cuotas_sin_interes: dto.cuotas_sin_interes }),
-        ...(dto.cuotas_sin_interes_minimo !== undefined && { cuotas_sin_interes_minimo: dto.cuotas_sin_interes_minimo }),
+        envio_gratis_minimo: String(envioNum),
+        cuotas_sin_interes: String(cuotasNum),
+        cuotas_sin_interes_minimo: String(cuotasMinNum),
       },
     });
     return fromDb(updated);
