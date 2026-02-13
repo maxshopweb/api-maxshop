@@ -62,6 +62,9 @@ export interface CreatePreferenceRequest {
     expires?: boolean;
     expiration_date_from?: string;
     expiration_date_to?: string;
+    payment_methods?: {
+        default_installments?: number;
+    };
 }
 
 export interface PreferenceResponse {
@@ -185,6 +188,7 @@ interface CreatePreferenceFromVentaParams {
     backUrls?: BackUrls;
     notificationUrl?: string;
     useAutoReturn?: boolean; // Si es false, no se incluye auto_return (útil para localhost)
+    defaultInstallments?: number;
 }
 
 interface CreatePreferenceFromDataParams {
@@ -206,6 +210,7 @@ interface CreatePreferenceFromDataParams {
     };
     backUrls?: BackUrls;
     notificationUrl?: string;
+    defaultInstallments?: number;
 }
 
 // ============================================
@@ -331,7 +336,7 @@ class MercadoPagoService {
      * Crea una preferencia de pago a partir de una venta completa
      */
     async createPreferenceFromVenta(params: CreatePreferenceFromVentaParams): Promise<PreferenceResponse> {
-        const { venta, backUrls, notificationUrl, useAutoReturn = true } = params;
+        const { venta, backUrls, notificationUrl, useAutoReturn = true, defaultInstallments } = params;
 
         // Log solo en desarrollo
         if (process.env.NODE_ENV !== 'production') {
@@ -505,6 +510,9 @@ class MercadoPagoService {
             // Solo usar auto_return si está habilitado Y tenemos back_urls.success válido
             auto_return: (useAutoReturn && backUrlsFinal.success) ? 'approved' : undefined,
             notification_url: notificationUrl || process.env.MERCADOPAGO_WEBHOOK_URL || undefined,
+            payment_methods: (defaultInstallments && Number.isInteger(defaultInstallments) && defaultInstallments > 1)
+                ? { default_installments: defaultInstallments }
+                : undefined,
         };
         
         // Remover propiedades undefined para que no se envíen en el JSON
@@ -513,6 +521,9 @@ class MercadoPagoService {
         }
         if (!preferenceRequest.notification_url) {
             delete (preferenceRequest as any).notification_url;
+        }
+        if (!preferenceRequest.payment_methods) {
+            delete (preferenceRequest as any).payment_methods;
         }
 
         // Log detallado solo en desarrollo
@@ -534,7 +545,7 @@ class MercadoPagoService {
      * Crea una preferencia de pago a partir de datos básicos
      */
     async createPreferenceFromData(params: CreatePreferenceFromDataParams): Promise<PreferenceResponse> {
-        const { idVenta, items, payer: payerData, backUrls, notificationUrl } = params;
+        const { idVenta, items, payer: payerData, backUrls, notificationUrl, defaultInstallments } = params;
 
         if (!items || items.length === 0) {
             throw new Error('Debe haber al menos un item para crear la preferencia');
@@ -575,6 +586,9 @@ class MercadoPagoService {
             back_urls: backUrls,
             auto_return: 'approved',
             notification_url: notificationUrl || process.env.MERCADOPAGO_WEBHOOK_URL,
+            payment_methods: (defaultInstallments && Number.isInteger(defaultInstallments) && defaultInstallments > 1)
+                ? { default_installments: defaultInstallments }
+                : undefined,
         };
 
         try {

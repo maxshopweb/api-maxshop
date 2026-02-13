@@ -122,7 +122,4 @@ Si MAESSTOK aún viene en 0 y quieres probar con stock fijo, en el `.env` del ba
 
 ```env
 IMPORT_STOCK_OVERRIDE=100
-```
-
-En la importación/sincronización, todos los productos usarán ese valor como stock. **Quita o comenta esta variable cuando tengas el archivo MAESSTOK final** para que se use el stock real del CSV.
-
+```En la importación/sincronización, todos los productos usarán ese valor como stock. **Quita o comenta esta variable cuando tengas el archivo MAESSTOK final** para que se use el stock real del CSV.

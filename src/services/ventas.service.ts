@@ -8,6 +8,9 @@ import { eventBus } from '../infrastructure/event-bus/event-bus';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
 import { direccionesService } from './direcciones.service';
 import { mercadoPagoService } from './mercado-pago.service';
+import { ConfigTiendaService } from './config-tienda.service';
+
+const configTiendaService = new ConfigTiendaService();
 
 export class VentasService {
     private TTL_VENTA = 3600; // 1 hora
@@ -676,6 +679,28 @@ export class VentasService {
                         throw new Error('Mercado Pago no está configurado. Verifica las credenciales en .env');
                     }
 
+                    // Regla opcional: sugerir cuotas sin interés (NO limita opciones del comprador)
+                    // Solo aplica si la tienda configuró valores válidos (> 0) y el monto alcanza el mínimo.
+                    let defaultInstallments: number | undefined;
+                    try {
+                        const installmentsConfig = await configTiendaService.getPaymentInstallmentsConfig();
+                        const totalNetoVenta = Number(venta.total_neto || 0);
+                        const cuotas = installmentsConfig.cuotasSinInteres;
+                        const minimo = installmentsConfig.cuotasSinInteresMinimo;
+
+                        if (cuotas && minimo && totalNetoVenta >= minimo) {
+                            const cuotasEnteras = Math.trunc(cuotas);
+                            if (cuotasEnteras > 1) {
+                                defaultInstallments = cuotasEnteras;
+                                console.log(
+                                    `💳 [VentasService] Cuotas sugeridas para venta #${venta.id_venta}: ${defaultInstallments} (monto ${totalNetoVenta} >= mínimo ${minimo})`
+                                );
+                            }
+                        }
+                    } catch (configError: any) {
+                        console.warn(`⚠️ [VentasService] No se pudo evaluar regla de cuotas sin interés: ${configError.message}`);
+                    }
+
                     // Obtener URLs de retorno desde variables de entorno o usar defaults
                     // SIMPLIFICADO: En sandbox, usar URLs simples sin auto_return para evitar problemas
                     const baseUrl = process.env.DEFAULT_SUCCESS_URL 
@@ -718,6 +743,7 @@ export class VentasService {
                         venta,
                         backUrls,
                         useAutoReturn: shouldUseAutoReturn, // Pasar flag para controlar auto_return
+                        defaultInstallments, // Sugerencia opcional de cuotas (sin limitar)
                     });
 
                     // Usar sandbox_init_point en modo test, init_point en producción

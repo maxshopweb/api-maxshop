@@ -19,6 +19,11 @@ function fromDb(row: {
   };
 }
 
+export interface IPaymentInstallmentsConfig {
+  cuotasSinInteres: number | null;
+  cuotasSinInteresMinimo: number | null;
+}
+
 export class ConfigTiendaService {
   async getConfig(): Promise<IConfigTienda> {
     const negocio = await prisma.negocio.findFirst({
@@ -67,5 +72,30 @@ export class ConfigTiendaService {
       },
     });
     return fromDb(updated);
+  }
+
+  /**
+   * Configuración raw para reglas de pago.
+   * Si el valor viene null/0 (o inválido), se considera "no configurado".
+   */
+  async getPaymentInstallmentsConfig(): Promise<IPaymentInstallmentsConfig> {
+    const negocio = await prisma.negocio.findFirst({
+      select: { cuotas_sin_interes: true, cuotas_sin_interes_minimo: true },
+    });
+
+    if (!negocio) {
+      return {
+        cuotasSinInteres: null,
+        cuotasSinInteresMinimo: null,
+      };
+    }
+
+    const cuotas = negocio.cuotas_sin_interes != null ? Number(negocio.cuotas_sin_interes) : null;
+    const minimo = negocio.cuotas_sin_interes_minimo != null ? Number(negocio.cuotas_sin_interes_minimo) : null;
+
+    return {
+      cuotasSinInteres: cuotas && Number.isFinite(cuotas) && cuotas > 0 ? cuotas : null,
+      cuotasSinInteresMinimo: minimo && Number.isFinite(minimo) && minimo > 0 ? minimo : null,
+    };
   }
 }
