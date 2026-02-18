@@ -118,8 +118,6 @@ Cada tabla de referencia tiene su `id` autoincrement para ordenamiento interno, 
 
 ### Variable de entorno para pruebas (stock)
 
-Si MAESSTOK aún viene en 0 y quieres probar con stock fijo, en el `.env` del backend puedes definir:
-
-```env
+Si MAESSTOK aún viene en 0 y quieres probar con stock fijo, en el `.env` del backend puedes definir:```env
 IMPORT_STOCK_OVERRIDE=100
 ```En la importación/sincronización, todos los productos usarán ese valor como stock. **Quita o comenta esta variable cuando tengas el archivo MAESSTOK final** para que se use el stock real del CSV.

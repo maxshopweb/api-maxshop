@@ -7,10 +7,27 @@ import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ImportResult, ImportSummary, ImportDependencies, PrecioData, StockData } from '../../types/sincronizacion.types';
+import { UPLOAD_ROOT } from '../../config/upload.config';
 
 const prisma = new PrismaClient();
+const IMPORT_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+
+type ParsedImportImagePath =
+  | { status: 'empty'; reason: 'empty' }
+  | { status: 'invalid'; reason: string }
+  | { status: 'ok'; value: string };
+
+type ImportImageStats = {
+  actualizados: number;
+  saltadosConImagenExistente: number;
+  invalidos: number;
+  sinPath: number;
+  insertadosConImagen: number;
+};
 
 export class CSVImporterService {
+  private readonly importImageValidationCache = new Map<string, boolean>();
+
   /**
    * Parsea un CSV simple (maneja comillas y comas)
    */
@@ -80,6 +97,92 @@ export class CSVImporterService {
     if (limpio.length === 0) return null;
     if (limpio.length <= maxLength) return limpio;
     return limpio.substring(0, maxLength);
+  }
+
+  private tieneValor(value: string | null | undefined): boolean {
+    return !!value && value.trim().length > 0;
+  }
+
+  /**
+   * Convierte rutas de CSV (incluyendo Windows) a path relativo web `IMAGENES/...`.
+   * Ejemplo: F:\TEKNO\IMAGENES\INGCO\a.png -> IMAGENES/INGCO/a.png
+   */
+  private parseCsvImagePath(rawPath: string | null | undefined): ParsedImportImagePath {
+    const cleaned = this.limpiarCampo(rawPath ?? undefined);
+    if (!cleaned) return { status: 'empty', reason: 'empty' };
+
+    if (/^https?:\/\//i.test(cleaned)) {
+      return { status: 'invalid', reason: 'path_url_no_permitido' };
+    }
+
+    const normalized = cleaned.replace(/\\/g, '/').replace(/\/+/g, '/').trim();
+    const marker = normalized.toUpperCase().indexOf('/IMAGENES/');
+    const startsWithImagenes = normalized.toUpperCase().startsWith('IMAGENES/');
+
+    let relativePath = '';
+    if (startsWithImagenes) {
+      relativePath = normalized;
+    } else if (marker >= 0) {
+      relativePath = normalized.substring(marker + 1);
+    } else {
+      return { status: 'invalid', reason: 'no_contiene_segmento_imagenes' };
+    }
+
+    const posixPath = path.posix.normalize(relativePath).replace(/^\/+/, '');
+    if (!posixPath.toUpperCase().startsWith('IMAGENES/')) {
+      return { status: 'invalid', reason: 'path_fuera_de_imagenes' };
+    }
+    if (posixPath.includes('..')) {
+      return { status: 'invalid', reason: 'path_traversal_no_permitido' };
+    }
+    if (posixPath.includes(':')) {
+      return { status: 'invalid', reason: 'path_absoluto_no_permitido' };
+    }
+
+    const ext = path.extname(posixPath).toLowerCase();
+    if (!IMPORT_ALLOWED_EXTENSIONS.has(ext)) {
+      return { status: 'invalid', reason: `extension_no_permitida:${ext || 'sin_extension'}` };
+    }
+
+    if (posixPath.length > 120) {
+      return { status: 'invalid', reason: 'path_supera_120_caracteres' };
+    }
+
+    return { status: 'ok', value: posixPath };
+  }
+
+  /**
+   * Verifica existencia física bajo UPLOAD_ROOT, sin permitir salida de raíz.
+   */
+  private validateImportedPathExists(relativePath: string): boolean {
+    // Por defecto NO validamos existencia física para no bloquear rutas
+    // válidas en CDN que no estén montadas localmente.
+    // Solo validar cuando se activa explícitamente con "true".
+    if (process.env.CSV_IMPORT_VALIDATE_IMAGE_EXISTS !== 'true') {
+      return true;
+    }
+
+    const cached = this.importImageValidationCache.get(relativePath);
+    if (cached !== undefined) return cached;
+
+    const rootResolved = path.resolve(UPLOAD_ROOT);
+    const absolutePath = path.resolve(rootResolved, relativePath);
+    const isInsideRoot =
+      absolutePath === rootResolved || absolutePath.startsWith(`${rootResolved}${path.sep}`);
+
+    if (!isInsideRoot) {
+      this.importImageValidationCache.set(relativePath, false);
+      return false;
+    }
+
+    let exists = false;
+    try {
+      exists = fs.existsSync(absolutePath) && fs.statSync(absolutePath).isFile();
+    } catch {
+      exists = false;
+    }
+    this.importImageValidationCache.set(relativePath, exists);
+    return exists;
   }
 
   /**
@@ -1154,10 +1257,7 @@ export class CSVImporterService {
             this.limpiarCampo(row[indices['ACTIARTI'] ?? -1] || ''),
             1
           );
-          const imagarti = this.truncarString(
-            this.limpiarCampo(row[indices['IMAGARTI'] ?? -1] || ''),
-            120
-          );
+          const imagarti = this.limpiarCampo(row[indices['IMAGARTI'] ?? -1] || '');
           const unmearti = this.truncarString(
             this.limpiarCampo(row[indices['UNMEARTI'] ?? 4] || ''),
             3
@@ -1231,7 +1331,7 @@ export class CSVImporterService {
             codi_barras: partarti,
             stock,
             stock_min,
-            img_principal: imagarti,
+            img_principal_csv: imagarti,
             activo: actiarti,
             estado: actiarti === 'A' ? 1 : 0,
           };
@@ -1277,11 +1377,94 @@ export class CSVImporterService {
    * Procesa un lote de productos usando upsert
    */
   private async procesarBatchProductos(productosBatch: any[]): Promise<void> {
+    const stats: ImportImageStats = {
+      actualizados: 0,
+      saltadosConImagenExistente: 0,
+      invalidos: 0,
+      sinPath: 0,
+      insertadosConImagen: 0,
+    };
+
     for (const producto of productosBatch) {
       try {
+        const existente = await prisma.productos.findUnique({
+          where: { codi_arti: producto.codi_arti },
+          select: { img_principal: true },
+        });
+
+        const updateData: Record<string, unknown> = {
+          nombre: producto.nombre,
+          codi_grupo: producto.codi_grupo,
+          codi_categoria: producto.codi_categoria,
+          codi_marca: producto.codi_marca,
+          codi_impuesto: producto.codi_impuesto,
+          precio_venta: producto.precio_venta,
+          precio_especial: producto.precio_especial,
+          precio_pvp: producto.precio_pvp,
+          precio_campanya: producto.precio_campanya,
+          // No actualizar lista_precio_activa: el usuario puede haberla cambiado manualmente; el cron no la pisa
+          unidad_medida: producto.unidad_medida,
+          unidades_por_producto: producto.unidades_por_producto,
+          codi_barras: producto.codi_barras,
+          stock: producto.stock,
+          stock_min: producto.stock_min,
+          activo: producto.activo,
+          estado: producto.estado,
+          actualizado_en: new Date(),
+        };
+
+        let imgPrincipalCreate: string | null = null;
+        const parsedCsvImage = this.parseCsvImagePath(producto.img_principal_csv);
+
+        if (existente) {
+          // Regla de negocio: si ya tiene imagen principal, nunca pisarla desde CSV.
+          if (this.tieneValor(existente.img_principal)) {
+            stats.saltadosConImagenExistente++;
+          } else if (parsedCsvImage.status === 'ok') {
+            if (this.validateImportedPathExists(parsedCsvImage.value)) {
+              updateData.img_principal = parsedCsvImage.value;
+              stats.actualizados++;
+              console.log(`🖼️ [IMPORT IMG] actualizado codi_arti=${producto.codi_arti}`);
+            } else {
+              stats.invalidos++;
+              console.warn(
+                `⚠️ [IMPORT IMG] path inválido/no existe codi_arti=${producto.codi_arti} path=${parsedCsvImage.value}`
+              );
+            }
+          } else if (parsedCsvImage.status === 'invalid') {
+            stats.invalidos++;
+            console.warn(
+              `⚠️ [IMPORT IMG] path inválido codi_arti=${producto.codi_arti} motivo=${parsedCsvImage.reason}`
+            );
+          } else {
+            stats.sinPath++;
+          }
+        } else {
+          if (parsedCsvImage.status === 'ok') {
+            if (this.validateImportedPathExists(parsedCsvImage.value)) {
+              imgPrincipalCreate = parsedCsvImage.value;
+              stats.insertadosConImagen++;
+            } else {
+              stats.invalidos++;
+              console.warn(
+                `⚠️ [IMPORT IMG] path inválido/no existe (create) codi_arti=${producto.codi_arti} path=${parsedCsvImage.value}`
+              );
+            }
+          } else if (parsedCsvImage.status === 'invalid') {
+            stats.invalidos++;
+            console.warn(
+              `⚠️ [IMPORT IMG] path inválido (create) codi_arti=${producto.codi_arti} motivo=${parsedCsvImage.reason}`
+            );
+          } else {
+            stats.sinPath++;
+          }
+        }
+
         await prisma.productos.upsert({
           where: { codi_arti: producto.codi_arti },
-          update: {
+          update: updateData,
+          create: {
+            codi_arti: producto.codi_arti,
             nombre: producto.nombre,
             codi_grupo: producto.codi_grupo,
             codi_categoria: producto.codi_categoria,
@@ -1291,18 +1474,16 @@ export class CSVImporterService {
             precio_especial: producto.precio_especial,
             precio_pvp: producto.precio_pvp,
             precio_campanya: producto.precio_campanya,
-            // No actualizar lista_precio_activa: el usuario puede haberla cambiado manualmente; el cron no la pisa
+            lista_precio_activa: producto.lista_precio_activa,
             unidad_medida: producto.unidad_medida,
             unidades_por_producto: producto.unidades_por_producto,
             codi_barras: producto.codi_barras,
             stock: producto.stock,
             stock_min: producto.stock_min,
-            img_principal: producto.img_principal,
+            img_principal: imgPrincipalCreate,
             activo: producto.activo,
             estado: producto.estado,
-            actualizado_en: new Date(),
           },
-          create: producto,
         });
       } catch (error: any) {
         console.error(
@@ -1311,6 +1492,10 @@ export class CSVImporterService {
         );
       }
     }
+
+    console.log(
+      `🧾 [IMPORT IMG] resumen lote -> actualizados=${stats.actualizados}, saltados=${stats.saltadosConImagenExistente}, invalidos=${stats.invalidos}, sin_path=${stats.sinPath}, insertados_con_imagen=${stats.insertadosConImagen}`
+    );
   }
 
   /**

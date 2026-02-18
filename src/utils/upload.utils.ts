@@ -1,12 +1,11 @@
 /**
  * Utilidades para upload de imágenes: validación por magic bytes y construcción de paths.
- * Los paths devueltos son relativos (ej. files/productos/123/123.jpg) para guardar en BD.
+ * Los paths devueltos son relativos (ej. productos/123/123.jpg) para guardar en BD.
  */
 
 import fs from 'fs/promises';
 import path from 'path';
 import {
-  FILES_PATH_PREFIX,
   UPLOAD_ALLOWED_MIMES,
   UPLOAD_ALLOWED_EXTENSIONS,
   UPLOAD_ROOT,
@@ -47,17 +46,17 @@ export function getMimeAndExtensionFromBuffer(buffer: Buffer): MimeAndExtension 
 
 /**
  * Path relativo para imagen de producto (para guardar en BD).
- * Formato: files/productos/[id_prod]/[id_prod].[ext]
+ * Formato: productos/[id_prod]/[id_prod].[ext]
  */
 export function buildProductImagePath(idProd: number, extension: string): string {
   const ext = extension.startsWith('.') ? extension : `.${extension}`;
   const filename = `${idProd}${ext}`;
-  return path.join(FILES_PATH_PREFIX, 'productos', String(idProd), filename).split(path.sep).join('/');
+  return path.join('productos', String(idProd), filename).split(path.sep).join('/');
 }
 
 /**
  * Path relativo para imagen secundaria de producto (para guardar en BD, campo imagenes).
- * Formato: files/productos/[id_prod]/[id_prod]_[N].[ext] (N = 2, 3, ...)
+ * Formato: productos/[id_prod]/[id_prod]_[N].[ext] (N = 2, 3, ...)
  */
 export function buildProductSecondaryImagePath(
   idProd: number,
@@ -66,19 +65,16 @@ export function buildProductSecondaryImagePath(
 ): string {
   const ext = extension.startsWith('.') ? extension : `.${extension}`;
   const filename = `${idProd}_${index}${ext}`;
-  return path
-    .join(FILES_PATH_PREFIX, 'productos', String(idProd), filename)
-    .split(path.sep)
-    .join('/');
+  return path.join('productos', String(idProd), filename).split(path.sep).join('/');
 }
 
 /**
  * Path relativo para banner (para guardar en BD o respuesta).
- * Formato: files/banners/banner-[N].[ext]
+ * Formato: banners/banner-[N].[ext]
  */
 export function buildBannerPath(index: number, extension: string): string {
   const ext = extension.startsWith('.') ? extension : `.${extension}`;
-  return `${FILES_PATH_PREFIX}/banners/banner-${index}${ext}`;
+  return `banners/banner-${index}${ext}`;
 }
 
 /**
@@ -86,7 +82,7 @@ export function buildBannerPath(index: number, extension: string): string {
  * Si la carpeta no existe o está vacía, devuelve 1.
  */
 export async function getNextBannerIndex(): Promise<number> {
-  const bannersDir = path.join(UPLOAD_ROOT, FILES_PATH_PREFIX, 'banners');
+  const bannersDir = path.join(UPLOAD_ROOT, 'banners');
   try {
     await fs.mkdir(bannersDir, { recursive: true });
   } catch {
@@ -109,10 +105,10 @@ export async function getNextBannerIndex(): Promise<number> {
 
 /**
  * Obtiene el siguiente índice para imagen secundaria de producto (2, 3, ...).
- * Lee la carpeta files/productos/[id_prod] y busca archivos [id]_N.ext.
+ * Lee la carpeta productos/[id_prod] y busca archivos [id]_N.ext.
  */
 export async function getNextProductSecondaryIndex(idProd: number): Promise<number> {
-  const productDir = path.join(UPLOAD_ROOT, FILES_PATH_PREFIX, 'productos', String(idProd));
+  const productDir = path.join(UPLOAD_ROOT, 'productos', String(idProd));
   let maxN = 1;
   try {
     const entries = await fs.readdir(productDir, { withFileTypes: true });

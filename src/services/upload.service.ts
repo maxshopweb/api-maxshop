@@ -1,7 +1,7 @@
 /**
  * Servicio de subida de imágenes: productos y banners.
  * Valida tamaño, tipo (magic bytes), límite diario por usuario y persiste en disco.
- * En BD se guarda solo el path relativo (ej. files/productos/123/123.jpg).
+ * En BD se guarda solo el path relativo (ej. productos/123/123.jpg).
  */
 
 import fs from 'fs/promises';
@@ -11,7 +11,6 @@ import { auditService } from './audit.service';
 import cacheService from './cache.service';
 import {
   UPLOAD_ROOT,
-  FILES_PATH_PREFIX,
   UPLOAD_MAX_FILE_SIZE,
   UPLOAD_MAX_PER_DAY,
   UPLOAD_AUDIT_ACTION,
@@ -74,7 +73,7 @@ export class UploadService {
 
   /**
    * Sube la imagen principal de un producto.
-   * Crea la carpeta files/productos/[id_prod], guarda el archivo como [id_prod].[ext],
+   * Crea la carpeta productos/[id_prod], guarda el archivo como [id_prod].[ext],
    * actualiza producto.img_principal con el path relativo e invalida cache.
    */
   async uploadProductImage(
@@ -107,7 +106,7 @@ export class UploadService {
     }
 
     const relativePath = buildProductImagePath(idProd, mimeExt.ext);
-    const absoluteDir = path.join(UPLOAD_ROOT, FILES_PATH_PREFIX, 'productos', String(idProd));
+    const absoluteDir = path.join(UPLOAD_ROOT, 'productos', String(idProd));
     const absolutePath = path.join(absoluteDir, `${idProd}${mimeExt.ext}`);
 
     await fs.mkdir(absoluteDir, { recursive: true });
@@ -168,7 +167,7 @@ export class UploadService {
 
     const index = await getNextProductSecondaryIndex(idProd);
     const relativePath = buildProductSecondaryImagePath(idProd, index, mimeExt.ext);
-    const absoluteDir = path.join(UPLOAD_ROOT, FILES_PATH_PREFIX, 'productos', String(idProd));
+    const absoluteDir = path.join(UPLOAD_ROOT, 'productos', String(idProd));
     const absolutePath = path.join(absoluteDir, `${idProd}_${index}${mimeExt.ext}`);
 
     await fs.mkdir(absoluteDir, { recursive: true });
@@ -220,7 +219,7 @@ export class UploadService {
 
     const index = await getNextBannerIndex();
     const relativePath = buildBannerPath(index, mimeExt.ext);
-    const bannersDir = path.join(UPLOAD_ROOT, FILES_PATH_PREFIX, 'banners');
+    const bannersDir = path.join(UPLOAD_ROOT, 'banners');
     const absolutePath = path.join(bannersDir, `banner-${index}${mimeExt.ext}`);
 
     await fs.mkdir(bannersDir, { recursive: true });

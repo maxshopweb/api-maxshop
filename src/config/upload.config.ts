@@ -5,14 +5,11 @@
 
 import path from 'path';
 
-/** Ruta base en disco (hermana de la API en el VPS). Puede ser absoluta o relativa a process.cwd(). */
+/** Ruta base en disco para archivos servidos públicamente (ej. /opt/files). */
 export const UPLOAD_ROOT =
   process.env.UPLOAD_ROOT ?? path.join(process.cwd(), '..', 'files');
 
-/** Prefijo de ruta que se guarda en BD y se concatena con FILES_BASE_URL en el front. */
-export const FILES_PATH_PREFIX = 'files';
-
-/** URL base para servir archivos (ej. https://files.maxshop.com.ar). El front concatena esta URL + path de BD. */
+/** URL base para servir archivos (ej. https://files.maxshop.com.ar). */
 export const FILES_BASE_URL = process.env.FILES_BASE_URL ?? 'https://files.maxshop.com.ar';
 
 /** Tamaño máximo por archivo en bytes (5 MB). */

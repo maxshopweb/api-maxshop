@@ -112,7 +112,7 @@ app.use(sanitizeBody);
 // Validar tamaño de payload
 app.use(validatePayloadSize(10 * 1024 * 1024)); // 10MB máximo
 
-app.use('/api', apiRoutes);
+app.use(apiRoutes);
 
 // Exportar app para Vercel Serverless
 export default app;

@@ -12,8 +12,7 @@ Documentación del flujo de upload de imágenes (productos y banners) en **backe
 
 | Variable | Uso |
 |----------|-----|
-| `UPLOAD_ROOT` | Ruta en disco donde se crea la carpeta `files/` (hermana de la API en el VPS). Por defecto `../files` respecto a `process.cwd()`. En producción usar `process.env.UPLOAD_ROOT`. |
-| `FILES_PATH_PREFIX` | Prefijo de ruta que se guarda en BD: `"files"`. No cambiar salvo que se renombre la carpeta en disco. |
+| `UPLOAD_ROOT` | Ruta base en disco de archivos públicos (ej. `/opt/files`). Por defecto `../files` respecto a `process.cwd()`. En producción usar `process.env.UPLOAD_ROOT`. |
 | `FILES_BASE_URL` | URL base para servir archivos (ej. `https://files.maxshop.com.ar`). El front concatena esta URL + path de BD. |
 | `UPLOAD_MAX_FILE_SIZE` | Tamaño máximo por archivo (bytes). Por defecto 5 MB. |
 | `UPLOAD_ALLOWED_MIMES` | MIME permitidos: `image/jpeg`, `image/png`, `image/webp`. |
@@ -30,10 +29,10 @@ Documentación del flujo de upload de imágenes (productos y banners) en **backe
 | Función | Descripción |
 |---------|-------------|
 | `getMimeAndExtensionFromBuffer(buffer)` | Detecta MIME por magic bytes (JPEG/PNG/WebP). Devuelve `{ mime, ext }` o `null`. |
-| `buildProductImagePath(idProd, extension)` | Path relativo imagen principal: `files/productos/[id]/[id].[ext]`. |
-| `buildProductSecondaryImagePath(idProd, index, extension)` | Path relativo imagen secundaria: `files/productos/[id]/[id]_[N].[ext]` (N = 2, 3, …). |
+| `buildProductImagePath(idProd, extension)` | Path relativo imagen principal: `productos/[id]/[id].[ext]`. |
+| `buildProductSecondaryImagePath(idProd, index, extension)` | Path relativo imagen secundaria: `productos/[id]/[id]_[N].[ext]` (N = 2, 3, …). |
 | `getNextProductSecondaryIndex(idProd)` | Siguiente índice para secundaria leyendo la carpeta del producto en disco. |
-| `buildBannerPath(index, extension)` | Path relativo banner: `files/banners/banner-[N].[ext]`. |
+| `buildBannerPath(index, extension)` | Path relativo banner: `banners/banner-[N].[ext]`. |
 | `getNextBannerIndex()` | Siguiente número para banner (1, 2, …) leyendo carpeta banners. |
 | `isAllowedExtension(ext)` | Comprueba extensión en whitelist. |
 
@@ -45,7 +44,7 @@ Documentación del flujo de upload de imágenes (productos y banners) en **backe
 |--------|-------------|
 | `uploadProductImage(idProd, file, userId)` | Valida producto, límite diario y archivo; guarda como `[id].[ext]`; actualiza `productos.img_principal`; auditoría e invalidación de cache. |
 | `uploadProductSecondaryImage(idProd, file, userId)` | Igual validación; guarda como `[id]_[N].[ext]` (siguiente N); **appendea** el path a `productos.imagenes` (JSON); auditoría e invalidación de cache. |
-| `uploadBanner(file, userId)` | Guarda en `files/banners/banner-[N].[ext]`; no actualiza BD; devuelve path. |
+| `uploadBanner(file, userId)` | Guarda en `banners/banner-[N].[ext]`; no actualiza BD; devuelve path. |
 
 ---
 
@@ -63,8 +62,8 @@ Todas requieren: `verifyFirebaseToken` → `loadUserFromDatabase` → `requireRo
 
 ### Base de datos (productos)
 
-- **`img_principal`:** un path relativo (ej. `files/productos/123/123.jpg`). Posición 1.
-- **`imagenes`:** JSON array de paths relativos (ej. `["files/productos/123/123_2.jpg","files/productos/123/123_3.jpg"]`). Posiciones 2, 3, …
+- **`img_principal`:** un path relativo (ej. `productos/123/123.jpg`). Posición 1.
+- **`imagenes`:** JSON array de paths relativos (ej. `["productos/123/123_2.jpg","productos/123/123_3.jpg"]`). Posiciones 2, 3, …
 
 El front concatena `FILES_BASE_URL + "/" + path` para mostrar la imagen.
 
