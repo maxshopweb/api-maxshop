@@ -50,6 +50,8 @@ export type AuditLogPayload = {
   status?: AuditLogStatus;
   userId?: string | null;
   processingTimeMs?: number;
+  /** Si true, solo se registra cuando ENABLE_ADMIN_AUDIT=true (auditoría solo admin, configurable prod/dev). */
+  adminAudit?: boolean;
 };
 
 export type AuthenticatedUser = {

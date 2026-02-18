@@ -1,5 +1,11 @@
 import { Router } from 'express';
 import { ProductosController } from '../controllers/productos.controller';
+import {
+    verifyFirebaseToken,
+    requireAuthenticatedUser,
+    loadUserFromDatabase,
+    requireRole,
+} from '../middlewares/auth.middleware';
 import { 
     validarProductoActivo, 
     validarStockDisponible, 
@@ -8,6 +14,13 @@ import {
 
 const router = Router();
 const productosController = new ProductosController();
+
+const adminAuth = [
+    verifyFirebaseToken,
+    requireAuthenticatedUser,
+    loadUserFromDatabase,
+    requireRole('ADMIN'),
+];
 
 // Rutas para obtener datos del formulario (sin middleware)
 router.get('/contenido-crear', productosController.getContenidoCrearProducto.bind(productosController));
@@ -30,42 +43,48 @@ router.get('/:id',
     productosController.getById.bind(productosController)
 );
 
-// POST crear: validar relaciones (marca, subcategoría, IVA)
-router.post('/', 
+// POST crear: solo admin, validar relaciones (marca, subcategoría, IVA)
+router.post('/',
+    adminAuth,
     validarRelacionesProducto,
     productosController.create.bind(productosController)
 );
 
-// PUT actualizar: validar que el producto esté activo y relaciones
-router.put('/:id', 
+// PUT actualizar: solo admin, validar que el producto esté activo y relaciones
+router.put('/:id',
+    adminAuth,
     validarProductoActivo,
     validarRelacionesProducto,
     productosController.update.bind(productosController)
 );
 
-// DELETE: validar que el producto esté activo antes de hacer soft delete
-router.delete('/:id', 
+// DELETE: solo admin, validar que el producto esté activo antes de hacer soft delete
+router.delete('/:id',
+    adminAuth,
     validarProductoActivo,
     productosController.delete.bind(productosController)
 );
 
-// PATCH stock: validar que el producto esté activo
-router.patch('/:id/stock', 
+// PATCH stock: solo admin
+router.patch('/:id/stock',
+    adminAuth,
     validarProductoActivo,
     productosController.updateStock.bind(productosController)
 );
 
-// PATCH /api/productos/:id/destacado
-router.patch('/:id/destacado', 
+// PATCH /api/productos/:id/destacado: solo admin
+router.patch('/:id/destacado',
+    adminAuth,
     validarProductoActivo,
     productosController.toggleDestacado.bind(productosController)
 );
 
-// PATCH /api/productos/bulk/publicado (debe ir antes de /:id)
-router.patch('/bulk/publicado', productosController.bulkSetPublicado.bind(productosController));
+// PATCH /api/productos/bulk/publicado: solo admin (debe ir antes de /:id)
+router.patch('/bulk/publicado', adminAuth, productosController.bulkSetPublicado.bind(productosController));
 
-// PATCH /api/productos/:id/publicado
-router.patch('/:id/publicado', 
+// PATCH /api/productos/:id/publicado: solo admin
+router.patch('/:id/publicado',
+    adminAuth,
     validarProductoActivo,
     productosController.togglePublicado.bind(productosController)
 );

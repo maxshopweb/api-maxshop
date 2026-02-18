@@ -23,6 +23,7 @@ import { Request, Response } from 'express';
 import { asSingleString } from '../utils/validation.utils';
 import { paymentWebhookService } from '../services/payment-webhook.service';
 import { failedWebhookRetryService } from '../services/failed-webhook-retry.service';
+import { auditService } from '../services/audit.service';
 import { IMercadoPagoWebhookEvent } from '../types';
 
 class PaymentWebhookController {
@@ -163,6 +164,21 @@ class PaymentWebhookController {
 
             const result = await paymentWebhookService.processManualPayment(paymentId);
 
+            if (req.authenticatedUser) {
+                await auditService.record({
+                    action: 'WEBHOOK_MANUAL_PAYMENT',
+                    table: 'venta',
+                    description: `Admin procesó pago manual: ${paymentId}`,
+                    previousData: { paymentId },
+                    currentData: result as unknown as Record<string, unknown>,
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                    status: result.success ? 'SUCCESS' : 'ERROR',
+                    adminAudit: true,
+                });
+            }
+
             res.status(result.success ? 200 : 500).json({
                 success: result.success,
                 data: result,
@@ -267,6 +283,21 @@ class PaymentWebhookController {
 
             const success = await failedWebhookRetryService.retrySpecificWebhook(BigInt(webhookId));
 
+            if (req.authenticatedUser) {
+                await auditService.record({
+                    action: 'WEBHOOK_RETRY',
+                    table: 'failed_webhooks',
+                    description: `Admin reintentó webhook: ${webhookId}`,
+                    previousData: { webhookId },
+                    currentData: { webhookId, success },
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                    status: success ? 'SUCCESS' : 'ERROR',
+                    adminAudit: true,
+                });
+            }
+
             res.status(success ? 200 : 500).json({
                 success,
                 message: success 
@@ -300,6 +331,21 @@ class PaymentWebhookController {
             }
 
             await failedWebhookRetryService.resetFailedWebhook(BigInt(webhookId));
+
+            if (req.authenticatedUser) {
+                await auditService.record({
+                    action: 'WEBHOOK_RESET',
+                    table: 'failed_webhooks',
+                    description: `Admin reseteó webhook para nuevos intentos: ${webhookId}`,
+                    previousData: { webhookId },
+                    currentData: { webhookId, reset: true },
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                    status: 'SUCCESS',
+                    adminAudit: true,
+                });
+            }
 
             res.status(200).json({
                 success: true,

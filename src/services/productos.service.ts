@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
+import { auditService } from './audit.service';
 import { IIva, IListaPrecio, IPaginatedResponse, IMarca, ISituacionFiscal } from '../types';
 import { IGrupo } from './grupos.service';
 import { ICategoria, ISubcategoria } from '../types/categoria.type';
@@ -7,6 +8,12 @@ import { ICrearProductoContenido, ICreateProductoDTO, IProductoFilters, IProduct
 import fs from 'fs';
 import path from 'path';
 import cacheService from './cache.service';
+
+export type ProductoAuditContext = {
+    userId: string;
+    userAgent?: string | null;
+    endpoint?: string | null;
+};
 
 export class ProductosService {
 
@@ -456,7 +463,7 @@ export class ProductosService {
         return s.length > max ? s.slice(0, max) : s || null;
     }
 
-    async create(data: ICreateProductoDTO): Promise<IProductos> {
+    async create(data: ICreateProductoDTO, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const { id_cat, id_subcat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...rest } = data;
         const L = ProductosService.PRODUCTO_MAX_LEN;
 
@@ -501,6 +508,21 @@ export class ProductosService {
         const listasMap = await this.getListasMap();
         const result = this.normalizeProducto(nuevoProducto, listasMap);
 
+        if (auditContext) {
+            await auditService.record({
+                action: 'PRODUCTO_CREATE',
+                table: 'productos',
+                description: `Producto creado: ${result.codi_arti} - ${result.nombre}`,
+                previousData: null,
+                currentData: result as unknown as Record<string, unknown>,
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
         await cacheService.delete(`producto:${result.id_prod}`);
@@ -512,14 +534,14 @@ export class ProductosService {
         return result;
     }
 
-    async update(id: number, data: IUpdateProductoDTO): Promise<IProductos> {
+    async update(id: number, data: IUpdateProductoDTO, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const { id_cat, id_subcat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, estado, ...cleanData } = data;
         
-        // Obtener producto antes de actualizar para invalidar cache por código
-        const productoAnterior = await prisma.productos.findUnique({
+        // Obtener producto antes de actualizar (cache + auditoría)
+        const productoAntes = await prisma.productos.findUnique({
             where: { id_prod: id },
-            select: { codi_arti: true }
         });
+        const productoAnterior = productoAntes ? { codi_arti: productoAntes.codi_arti } : null;
 
         const listaActiva = cleanData.lista_precio_activa !== undefined
             ? (cleanData.lista_precio_activa != null && cleanData.lista_precio_activa !== ''
@@ -568,15 +590,30 @@ export class ProductosService {
         await cacheService.deletePattern('ventas:*');
         await cacheService.deletePattern('venta:*');
 
+        if (auditContext && productoAntes) {
+            await auditService.record({
+                action: 'PRODUCTO_UPDATE',
+                table: 'productos',
+                description: `Producto actualizado: ${result.codi_arti} - ${result.nombre}`,
+                previousData: productoAntes as unknown as Record<string, unknown>,
+                currentData: result as unknown as Record<string, unknown>,
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+
         return result;
     }
 
-    async delete(id: number): Promise<void> {
-        // Obtener producto antes de eliminar para invalidar cache por código
-        const producto = await prisma.productos.findUnique({
+    async delete(id: number, auditContext?: ProductoAuditContext): Promise<void> {
+        // Obtener producto antes de eliminar (cache + auditoría)
+        const productoAntes = await prisma.productos.findUnique({
             where: { id_prod: id },
-            select: { codi_arti: true }
         });
+        const producto = productoAntes ? { codi_arti: productoAntes.codi_arti } : null;
 
         // Soft delete: cambiar estado a 0
         await prisma.productos.update({
@@ -586,6 +623,21 @@ export class ProductosService {
                 actualizado_en: new Date()
             }
         });
+
+        if (auditContext && productoAntes) {
+            await auditService.record({
+                action: 'PRODUCTO_DELETE',
+                table: 'productos',
+                description: `Producto eliminado (soft): ${productoAntes.codi_arti} - ${productoAntes.nombre}`,
+                previousData: productoAntes as unknown as Record<string, unknown>,
+                currentData: { id_prod: id, estado: 0 },
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
 
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
@@ -622,7 +674,7 @@ export class ProductosService {
         return count > 0;
     }
 
-    async updateStock(id: number, cantidad: number): Promise<IProductos> {
+    async updateStock(id: number, cantidad: number, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const producto = await prisma.productos.findFirst({
             where: {
                 id_prod: id,
@@ -642,8 +694,8 @@ export class ProductosService {
             throw new Error(`Stock insuficiente. Stock actual: ${stockActual}, intentando reducir: ${Math.abs(cantidad)}`);
         }
 
-        // update() ya invalida el cache, pero también invalidamos stock-bajo específicamente
-        const result = await this.update(id, { stock: nuevoStock });
+        // update() ya invalida el cache y registra auditoría si auditContext
+        const result = await this.update(id, { stock: nuevoStock }, auditContext);
         await cacheService.delete('productos:stock-bajo');
 
         return result;
@@ -793,7 +845,7 @@ export class ProductosService {
 
     // Método removido - ya no hay subcategorías en el nuevo schema
 
-    async toggleDestacado(id: number): Promise<IProductos> {
+    async toggleDestacado(id: number, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const producto = await prisma.productos.findFirst({
             where: {
                 id_prod: id,
@@ -824,6 +876,21 @@ export class ProductosService {
         const listasMap = await this.getListasMap();
         const result = this.normalizeProducto(productoActualizado, listasMap);
 
+        if (auditContext) {
+            await auditService.record({
+                action: 'PRODUCTO_TOGGLE_DESTACADO',
+                table: 'productos',
+                description: `Producto ${producto.codi_arti} ${nuevoEstadoDestacado ? 'marcado como destacado' : 'removido de destacados'}`,
+                previousData: { id_prod: id, destacado: producto.destacado },
+                currentData: { id_prod: id, destacado: nuevoEstadoDestacado },
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+
         // Invalidar cache relacionado
         await cacheService.delete(`producto:${id}`);
         await cacheService.deletePattern('productos:destacados:*');
@@ -833,7 +900,7 @@ export class ProductosService {
     }
 
     /** Cambia el estado publicado de un producto (solo productos no eliminados). */
-    async togglePublicado(id: number): Promise<IProductos> {
+    async togglePublicado(id: number, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const producto = await prisma.productos.findFirst({
             where: {
                 id_prod: id,
@@ -845,7 +912,8 @@ export class ProductosService {
             throw new Error('Producto no encontrado o eliminado');
         }
 
-        const nuevoPublicado = !(producto.publicado ?? false);
+        const anteriorPublicado = producto.publicado ?? false;
+        const nuevoPublicado = !anteriorPublicado;
 
         const productoActualizado = await prisma.productos.update({
             where: { id_prod: id },
@@ -864,6 +932,23 @@ export class ProductosService {
         const listasMap = await this.getListasMap();
         const result = this.normalizeProducto(productoActualizado, listasMap);
 
+        if (auditContext) {
+            await auditService.record({
+                action: 'PRODUCTO_TOGGLE_PUBLICADO',
+                table: 'productos',
+                description: result.publicado
+                    ? `Producto "${result.nombre}" publicado`
+                    : `Producto "${result.nombre}" despublicado`,
+                previousData: { id_prod: id, publicado: anteriorPublicado, nombre: producto.nombre },
+                currentData: { id_prod: id, publicado: nuevoPublicado, nombre: result.nombre },
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+
         await cacheService.delete(`producto:${id}`);
         await cacheService.deletePattern('productos:destacados:*');
         await cacheService.deletePattern('productos:tienda:*');
@@ -873,7 +958,7 @@ export class ProductosService {
     }
 
     /** Establece publicado a true/false para varios productos (solo no eliminados). */
-    async bulkSetPublicado(ids: number[], publicado: boolean): Promise<IBulkPublicadoResult> {
+    async bulkSetPublicado(ids: number[], publicado: boolean, auditContext?: ProductoAuditContext): Promise<IBulkPublicadoResult> {
         if (!ids?.length) {
             return { count: 0 };
         }
@@ -888,6 +973,21 @@ export class ProductosService {
                 actualizado_en: new Date()
             }
         });
+
+        if (auditContext && result.count > 0) {
+            await auditService.record({
+                action: 'PRODUCTO_BULK_PUBLICADO',
+                table: 'productos',
+                description: `${result.count} producto(s) ${publicado ? 'publicado(s)' : 'despublicado(s)'}`,
+                previousData: { ids, count: result.count },
+                currentData: { ids, publicado, count: result.count },
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
 
         await cacheService.deletePattern('productos:destacados:*');
         await cacheService.deletePattern('productos:tienda:*');

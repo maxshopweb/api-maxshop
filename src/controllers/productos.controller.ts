@@ -148,7 +148,14 @@ export class ProductosController {
                 return;
             }
 
-            const producto = await productosService.create(data);
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const producto = await productosService.create(data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -211,7 +218,14 @@ export class ProductosController {
                 return;
             }
 
-            const producto = await productosService.update(id, data);
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const producto = await productosService.update(id, data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -251,7 +265,14 @@ export class ProductosController {
                 return;
             }
 
-            await productosService.delete(id);
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            await productosService.delete(id, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -320,7 +341,14 @@ export class ProductosController {
                 return;
             }
 
-            const producto = await productosService.updateStock(id, cantidad);
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const producto = await productosService.updateStock(id, cantidad, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -369,7 +397,14 @@ export class ProductosController {
                 return;
             }
 
-            const producto = await productosService.toggleDestacado(id);
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const producto = await productosService.toggleDestacado(id, auditContext);
 
             const mensaje = producto.destacado 
                 ? `Producto "${producto.nombre}" marcado como destacado`
@@ -403,7 +438,14 @@ export class ProductosController {
                 return;
             }
 
-            const producto = await productosService.togglePublicado(id);
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const producto = await productosService.togglePublicado(id, auditContext);
 
             const mensaje = producto.publicado
                 ? `Producto "${producto.nombre}" publicado`
@@ -445,7 +487,14 @@ export class ProductosController {
                 return;
             }
 
-            const result = await productosService.bulkSetPublicado(ids, publicado);
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const result = await productosService.bulkSetPublicado(ids, publicado, auditContext);
 
             const response: IApiResponse = {
                 success: true,

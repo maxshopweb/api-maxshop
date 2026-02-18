@@ -92,6 +92,8 @@ export function getMailTemplate(event: MailEventType, data: MailEventData): Mail
             return getOrderConfirmedTemplate(data as OrderEventData);
         case MailEventType.ORDER_CANCELLED:
             return getOrderCancelledTemplate(data as OrderEventData);
+        case MailEventType.ORDER_EXPIRED:
+            return getOrderExpiredTemplate(data as OrderEventData);
         case MailEventType.PAYMENT_INSTRUCTIONS:
             return getPaymentInstructionsTemplate(data as PaymentInstructionsEventData);
         case MailEventType.SHIPPING_PREPARING:
@@ -300,6 +302,41 @@ function getOrderCancelledTemplate(data: OrderEventData): MailTemplate {
 
     return {
         subject: `Pedido #${orderId} cancelado - MaxShop`,
+        htmlContent: getBaseLayout(content),
+    };
+}
+
+/**
+ * Template: Pedido Vencido (sin pago a tiempo)
+ */
+function getOrderExpiredTemplate(data: OrderEventData): MailTemplate {
+    const userName = data.cliente?.nombre || 'Cliente';
+    const orderId = data.orderId || data.orderNumber || 'N/A';
+    const total = data.totalFormatted || formatCurrency(data.total);
+
+    const content = `
+        <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
+            Hola ${userName}
+        </h2>
+        
+        <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+            Tu pedido #${orderId} ha vencido por no haber recibido el pago dentro del plazo establecido.
+        </p>
+        
+        <div style="background-color: #fff3cd; border-left: 4px solid #e88a42; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #856404; font-size: 14px;">
+                <strong>Pedido vencido:</strong> #${orderId}<br>
+                <strong>Total:</strong> ${total}
+            </p>
+        </div>
+        
+        <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
+            Si deseas realizar una nueva compra, puedes volver a ingresar a la tienda. Cualquier duda, contactanos.
+        </p>
+    `;
+
+    return {
+        subject: `Tu pedido #${orderId} ha vencido - MaxShop`,
         htmlContent: getBaseLayout(content),
     };
 }

@@ -1,5 +1,12 @@
 import { prisma } from '../index';
+import { auditService } from './audit.service';
 import { IConfigTienda, IUpdateConfigTiendaDTO } from '../types/config-tienda.type';
+
+export type AuditContext = {
+  userId: string;
+  userAgent?: string | null;
+  endpoint?: string | null;
+};
 
 const DEFAULTS: IConfigTienda = {
   envio_gratis_minimo: 100000,
@@ -38,7 +45,7 @@ export class ConfigTiendaService {
     };
   }
 
-  async updateConfig(dto: IUpdateConfigTiendaDTO): Promise<IConfigTienda> {
+  async updateConfig(dto: IUpdateConfigTiendaDTO, auditContext?: AuditContext): Promise<IConfigTienda> {
     const negocio = await prisma.negocio.findFirst();
     if (!negocio) {
       const created = await prisma.negocio.create({
@@ -48,7 +55,22 @@ export class ConfigTiendaService {
           cuotas_sin_interes_minimo: String(dto.cuotas_sin_interes_minimo ?? 80000),
         },
       });
-      return fromDb(created);
+      const result = fromDb(created);
+      if (auditContext) {
+        await auditService.record({
+          action: 'CONFIG_TIENDA_UPDATE',
+          table: 'negocio',
+          description: 'Creación/actualización de configuración de tienda',
+          previousData: null,
+          currentData: result as unknown as Record<string, unknown>,
+          userId: auditContext.userId,
+          userAgent: auditContext.userAgent ?? null,
+          endpoint: auditContext.endpoint ?? null,
+          status: 'SUCCESS',
+          adminAudit: true,
+        });
+      }
+      return result;
     }
     const current = fromDb(negocio);
     const envio = dto.envio_gratis_minimo ?? current.envio_gratis_minimo ?? DEFAULTS.envio_gratis_minimo;
@@ -71,7 +93,22 @@ export class ConfigTiendaService {
         cuotas_sin_interes_minimo: String(cuotasMinNum),
       },
     });
-    return fromDb(updated);
+    const result = fromDb(updated);
+    if (auditContext) {
+      await auditService.record({
+        action: 'CONFIG_TIENDA_UPDATE',
+        table: 'negocio',
+        description: 'Actualización de configuración de tienda',
+        previousData: current as unknown as Record<string, unknown>,
+        currentData: result as unknown as Record<string, unknown>,
+        userId: auditContext.userId,
+        userAgent: auditContext.userAgent ?? null,
+        endpoint: auditContext.endpoint ?? null,
+        status: 'SUCCESS',
+        adminAudit: true,
+      });
+    }
+    return result;
   }
 
   /**

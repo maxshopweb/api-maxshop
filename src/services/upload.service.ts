@@ -53,13 +53,14 @@ export class UploadService {
   }
 
   /**
-   * Registra el upload en auditoría (para límite diario y trazabilidad).
+   * Registra el upload en auditoría (para límite diario y trazabilidad). Solo admin; respeta ENABLE_ADMIN_AUDIT.
    */
   private async recordUpload(
     userId: string,
     description: string,
     tableAffected: string,
-    currentData?: Record<string, unknown>
+    currentData?: Record<string, unknown>,
+    previousData?: Record<string, unknown> | null
   ): Promise<void> {
     await auditService.record({
       action: UPLOAD_AUDIT_ACTION,
@@ -67,7 +68,9 @@ export class UploadService {
       description,
       userId,
       status: 'SUCCESS',
+      previousData: previousData ?? undefined,
       currentData,
+      adminAudit: true,
     });
   }
 
@@ -112,15 +115,20 @@ export class UploadService {
     await fs.mkdir(absoluteDir, { recursive: true });
     await fs.writeFile(absolutePath, file.buffer);
 
+    const previousImg = product.img_principal;
+
     await prisma.productos.update({
       where: { id_prod: idProd },
       data: { img_principal: relativePath, actualizado_en: new Date() },
     });
 
-    await this.recordUpload(userId, `Imagen producto ${idProd}`, 'productos', {
-      id_prod: idProd,
-      path: relativePath,
-    });
+    await this.recordUpload(
+      userId,
+      `Imagen principal producto ${idProd}`,
+      'productos',
+      { id_prod: idProd, path: relativePath },
+      previousImg != null ? { id_prod: idProd, img_principal: previousImg } : null
+    );
 
     await cacheService.deletePattern('productos:*');
     await cacheService.delete(`producto:${idProd}`);
@@ -181,11 +189,13 @@ export class UploadService {
       data: { imagenes: newImagenes, actualizado_en: new Date() },
     });
 
-    await this.recordUpload(userId, `Imagen secundaria producto ${idProd}`, 'productos', {
-      id_prod: idProd,
-      path: relativePath,
-      index,
-    });
+    await this.recordUpload(
+      userId,
+      `Imagen secundaria producto ${idProd}`,
+      'productos',
+      { id_prod: idProd, path: relativePath, index, imagenes: newImagenes },
+      { id_prod: idProd, imagenes: currentImagenes }
+    );
 
     await cacheService.deletePattern('productos:*');
     await cacheService.delete(`producto:${idProd}`);

@@ -57,13 +57,17 @@ export class PaymentProcessingService {
                 throw new Error(`Venta ${idVenta} no encontrada`);
             }
 
-            // 2. Validar que esté pendiente
+            // 2. Validar estado: acepta 'pendiente' o 'vencido' (aprobar desde vencida)
             if (venta.estado_pago === 'aprobado') {
                 return venta;
             }
 
             if (venta.estado_pago === 'cancelado') {
                 throw new Error(`No se puede confirmar una venta cancelada (Venta #${idVenta})`);
+            }
+
+            if (venta.estado_pago !== 'pendiente' && venta.estado_pago !== 'vencido') {
+                throw new Error(`Solo se puede confirmar una venta en estado pendiente o vencido. Estado actual: ${venta.estado_pago}`);
             }
 
             // 3. Validar stock antes de descontar

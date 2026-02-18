@@ -197,6 +197,39 @@ export class MailService {
     }
 
     /**
+     * Envía un email de pedido vencido (sin pago a tiempo)
+     */
+    async sendOrderExpired(
+        orderData: {
+            orderId: number | string;
+            orderNumber?: string;
+            total?: number;
+            totalFormatted?: string;
+            cliente: {
+                email: string;
+                nombre?: string;
+                apellido?: string;
+            };
+        }
+    ): Promise<BrevoResponse> {
+        return this.send({
+            event: MailEventType.ORDER_EXPIRED,
+            to: {
+                email: orderData.cliente.email,
+                name: `${orderData.cliente.nombre || ''} ${orderData.cliente.apellido || ''}`.trim() || 'Cliente',
+            },
+            data: {
+                orderId: orderData.orderId,
+                orderNumber: orderData.orderNumber,
+                total: orderData.total,
+                totalFormatted: orderData.totalFormatted,
+                cliente: orderData.cliente,
+            },
+            tags: ['pedido', 'vencido'],
+        });
+    }
+
+    /**
      * Envía un email de pedido cancelado
      */
     async sendOrderCancelled(

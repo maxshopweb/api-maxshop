@@ -15,7 +15,14 @@ export class FacturasController {
     async syncFacturas(req: Request, res: Response): Promise<void> {
         try {
             console.log('🔄 [FacturasController] Sincronización manual iniciada...');
-            const resultado = await facturaSyncService.syncFacturasPendientes();
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const resultado = await facturaSyncService.syncFacturasPendientes(auditContext);
 
             res.status(200).json({
                 success: true,

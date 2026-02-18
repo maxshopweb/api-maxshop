@@ -150,6 +150,11 @@ if (process.env.VERCEL !== '1') {
             catalogoSyncWorker.start();
             console.log('✅ [Server] Worker de sincronización de catálogo iniciado (arranque + cada 20 min)');
 
+            // Cron de vencimiento de ventas pendientes (02:00 diario)
+            const { startVencimientoCron } = require('./services/vencimiento.cron');
+            startVencimientoCron();
+            console.log('✅ [Server] Cron de vencimiento de ventas iniciado (02:00)');
+
             httpServer.listen(PORT);
         } catch (error) {
             console.error('❌ Error al iniciar el servidor:', error);
@@ -171,6 +176,9 @@ if (process.env.VERCEL !== '1') {
 
         const { catalogoSyncWorker } = require('./services/catalogo-sync-worker.service');
         catalogoSyncWorker.stop();
+
+        const { stopVencimientoCron } = require('./services/vencimiento.cron');
+        stopVencimientoCron();
 
         // Cerrar Event Bus (cierra conexiones Redis)
         const { eventBus } = require('./infrastructure/event-bus/event-bus');

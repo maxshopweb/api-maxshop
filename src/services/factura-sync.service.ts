@@ -13,9 +13,16 @@
  */
 
 import { prisma } from '../index';
+import { auditService } from './audit.service';
 import ftpService from './ftp.service';
 import mailService from '../mail/mail.service';
 import { IVenta, IVentaPendienteFactura } from '../types';
+
+export type FacturaSyncAuditContext = {
+    userId: string;
+    userAgent?: string | null;
+    endpoint?: string | null;
+};
 import * as path from 'path';
 import * as fs from 'fs';
 import { FileInfo } from 'basic-ftp';
@@ -49,7 +56,7 @@ export class FacturaSyncService {
     /**
      * Método principal: sincroniza todas las facturas pendientes
      */
-    async syncFacturasPendientes(): Promise<SyncFacturasResult> {
+    async syncFacturasPendientes(auditContext?: FacturaSyncAuditContext): Promise<SyncFacturasResult> {
         const resultado: SyncFacturasResult = {
             procesadas: 0,
             noEncontradas: 0,
@@ -68,6 +75,8 @@ export class FacturaSyncService {
                 console.log('ℹ️ [FacturaSync] No hay ventas pendientes de factura');
                 return resultado;
             }
+
+            const beforeIds = ventasPendientes.map((v) => v.venta_id);
 
             // 2. Conectar al FTP
             await ftpService.connect();
@@ -121,6 +130,22 @@ export class FacturaSyncService {
             }
 
             console.log(`✅ [FacturaSync] Sincronización completada: ${resultado.procesadas} procesada(s), ${resultado.noEncontradas} no encontrada(s), ${resultado.errores} error(es)`);
+
+            if (auditContext) {
+                await auditService.record({
+                    action: 'FACTURAS_SYNC',
+                    table: 'ventas_pendientes_factura',
+                    description: `Sincronización manual: ${resultado.procesadas} procesada(s), ${resultado.noEncontradas} no encontrada(s), ${resultado.errores} error(es)`,
+                    previousData: { pendientesCount: beforeIds.length, ventaIds: beforeIds },
+                    currentData: resultado as unknown as Record<string, unknown>,
+                    userId: auditContext.userId,
+                    userAgent: auditContext.userAgent ?? null,
+                    endpoint: auditContext.endpoint ?? null,
+                    status: 'SUCCESS',
+                    adminAudit: true,
+                });
+            }
+
             return resultado;
 
         } catch (error: any) {

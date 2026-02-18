@@ -23,7 +23,14 @@ export class ConfigTiendaController {
   async updateConfig(req: Request, res: Response): Promise<void> {
     try {
       const body = req.body as IUpdateConfigTiendaDTO;
-      const data = await configTiendaService.updateConfig(body);
+      const auditContext = req.authenticatedUser
+        ? {
+            userId: req.authenticatedUser.id,
+            userAgent: req.headers['user-agent']?.toString() ?? null,
+            endpoint: req.originalUrl,
+          }
+        : undefined;
+      const data = await configTiendaService.updateConfig(body, auditContext);
       const response: IApiResponse = { success: true, data };
       res.json(response);
     } catch (error) {
