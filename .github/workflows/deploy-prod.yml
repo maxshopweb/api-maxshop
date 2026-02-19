@@ -21,13 +21,9 @@ jobs:
       - name: Notify Discord success
         if: success()
         run: |
-          curl -H "Content-Type: application/json" \
-          -d '{"content": "‚úÖ **PROD** deploy exitoso Ì∫Ä\nCommit: ${{ github.sha }}\nPor: ${{ github.actor }}"}' \
-          ${{ secrets.DISCORD_WEBHOOK_URL }}
+          curl -H "Content-Type: application/json" -d '{"content": "Deploy PROD exitoso! Commit: ${{ github.sha }} Por: ${{ github.actor }}"}' ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       - name: Notify Discord failure
         if: failure()
         run: |
-          curl -H "Content-Type: application/json" \
-          -d '{"content": "‚ùå **PROD** deploy fallido!\nCommit: ${{ github.sha }}\nPor: ${{ github.actor }}"}' \
-          ${{ secrets.DISCORD_WEBHOOK_URL }}
+          curl -H "Content-Type: application/json" -d '{"content": "Deploy PROD fallido! Commit: ${{ github.sha }} Por: ${{ github.actor }}"}' ${{ secrets.DISCORD_WEBHOOK_URL }}
