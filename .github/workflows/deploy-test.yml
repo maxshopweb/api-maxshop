@@ -10,9 +10,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
+        id: deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: /opt/deploy-test.sh
+
+      - name: Notify Discord success
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "‚úÖ **TEST** deploy exitoso Ì∫Ä\nCommit: ${{ github.sha }}\nPor: ${{ github.actor }}"}' \
+          ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Notify Discord failure
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "‚ùå **TEST** deploy fallido!\nCommit: ${{ github.sha }}\nPor: ${{ github.actor }}"}' \
+          ${{ secrets.DISCORD_WEBHOOK_URL }}
