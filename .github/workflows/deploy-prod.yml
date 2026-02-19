@@ -21,9 +21,9 @@ jobs:
       - name: Notify Discord success
         if: success()
         run: |
-          curl -H "Content-Type: application/json" -d '{"content": "Deploy PROD exitoso! Commit: ${{ github.sha }} Por: ${{ github.actor }}"}' ${{ secrets.DISCORD_WEBHOOK_URL }}
+          curl -H "Content-Type: application/json" -d '{"username":"MaxShop API Alert","embeds":[{"title":"✅ Deploy PROD exitoso","description":"El deploy finalizó correctamente","color":5763719,"fields":[{"name":"Branch","value":"main","inline":true},{"name":"Por","value":"${{ github.actor }}","inline":true},{"name":"Commit","value":"`${{ github.sha }}`","inline":false}],"footer":{"text":"MaxShop CI/CD"}}]}' ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       - name: Notify Discord failure
         if: failure()
         run: |
-          curl -H "Content-Type: application/json" -d '{"content": "Deploy PROD fallido! Commit: ${{ github.sha }} Por: ${{ github.actor }}"}' ${{ secrets.DISCORD_WEBHOOK_URL }}
+          curl -H "Content-Type: application/json" -d '{"username":"MaxShop API Alert","embeds":[{"title":"❌ Deploy PROD fallido - REQUIERE ATENCIÓN","description":"El deploy falló, revisá los logs en GitHub Actions","color":15548997,"fields":[{"name":"Branch","value":"main","inline":true},{"name":"Por","value":"${{ github.actor }}","inline":true},{"name":"Commit","value":"`${{ github.sha }}`","inline":false}],"footer":{"text":"MaxShop CI/CD"}}]}' ${{ secrets.DISCORD_WEBHOOK_URL }}
