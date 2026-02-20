@@ -54,9 +54,9 @@ app.use(helmet({
 // CORS
 // ============================================
 const allowedOrigins = [
-    process.env.FRONTEND_URL || 'http://localhost:5173',
-    'https://vertimar.online',
-    'https://www.vertimar.online',
+    process.env.FRONTEND_URL || 'https://maxshop-cyan.vercel.app',
+    'https://www.maxshop.com.ar',
+    
 ];
 
 // En desarrollo, permitir localhost
