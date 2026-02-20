@@ -54,15 +54,12 @@ app.use(helmet({
 // CORS
 // ============================================
 const allowedOrigins = [
-    process.env.FRONTEND_URL || 'https://maxshop-cyan.vercel.app',
+    'https://maxshop-cyan.vercel.app',
     'https://www.maxshop.com.ar',
     
 ];
 
-// En desarrollo, permitir localhost
-if (process.env.NODE_ENV === 'development') {
-    allowedOrigins.push('http://localhost:3000', 'http://192.168.0.13:3000');
-}
+
 
 app.use(cors({
     origin: (origin, callback) => {
