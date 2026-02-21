@@ -56,7 +56,8 @@ app.use(helmet({
 const allowedOrigins = [
     'https://maxshop-cyan.vercel.app',
     'https://www.maxshop.com.ar',
-    
+    'http://localhost:3000',
+    'http://localhost:3001',
 ];
 
 
