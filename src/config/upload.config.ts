@@ -29,3 +29,9 @@ export const UPLOAD_AUDIT_ACTION = 'UPLOAD_IMAGE';
 
 /** Nombre del campo en multipart para la imagen. */
 export const UPLOAD_FIELD_NAME = 'image';
+
+/** Tamaño máximo para banners en bytes (2 MB — imágenes de hero, deben ser ligeras). */
+export const UPLOAD_BANNER_MAX_FILE_SIZE = 2 * 1024 * 1024;
+
+/** Máximo de banners permitidos por tipo (desktop/mobile). */
+export const BANNERS_MAX_PER_TYPE = 5;

@@ -121,6 +121,19 @@ model eventos {
   venta_detalle  venta_detalle[]
 }
 
+model banners {
+  id             Int      @id @default(autoincrement())
+  orden          Int
+  tipo           String   @db.VarChar(10)
+  path_img       String?  @db.VarChar(255)
+  link           String?  @db.VarChar(500)
+  activo         Boolean  @default(false)
+  creado_en      DateTime @default(now()) @db.Timestamp(6)
+  actualizado_en DateTime @default(now()) @db.Timestamp(6)
+
+  @@unique([orden, tipo], name: "orden_tipo")
+}
+
 model grupo {
   id_grupo       Int         @id @default(autoincrement())
   codi_grupo     String      @unique @db.VarChar(4)

@@ -20,6 +20,7 @@ import facturasRoutes from './facturas.routes';
 import healthRoutes from './health.routes';
 import uploadRoutes from './upload.routes';
 import configTiendaRoutes from './config-tienda.routes';
+import bannersRoutes from './banners.routes';
 import auditoriaRoutes from './auditoria.routes';
 import { publicRateLimiter, webhookRateLimiter } from '../middlewares/rate-limit.middleware';
 
@@ -35,6 +36,7 @@ apiRoutes.use(publicRateLimiter);
 apiRoutes.use('/auth', authRoutes);
 apiRoutes.use('/productos', productosRoutes);
 apiRoutes.use('/config/tienda', configTiendaRoutes);
+apiRoutes.use('/banners', bannersRoutes);
 apiRoutes.use('/location', locationRoutes);
 
 // Webhooks (rate limiting especial)
