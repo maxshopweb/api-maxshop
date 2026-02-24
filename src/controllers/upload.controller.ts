@@ -5,7 +5,7 @@
 
 import { Request, Response } from 'express';
 import { uploadService } from '../services/upload.service';
-import { FILES_BASE_URL } from '../config/upload.config';
+import { buildImageUrl } from '../config/upload.config';
 
 const uploadController = {
   /**
@@ -37,7 +37,7 @@ const uploadController = {
       res.json({
         success: true,
         path: relativePath,
-        url: `${FILES_BASE_URL}/${relativePath}`,
+        url: buildImageUrl(relativePath),
       });
     } catch (error: any) {
       const status = error?.statusCode ?? 500;
@@ -79,7 +79,7 @@ const uploadController = {
       res.json({
         success: true,
         path: relativePath,
-        url: `${FILES_BASE_URL}/${relativePath}`,
+        url: buildImageUrl(relativePath),
       });
     } catch (error: any) {
       const status = error?.statusCode ?? 500;
@@ -112,7 +112,7 @@ const uploadController = {
       res.json({
         success: true,
         path: relativePath,
-        url: `${FILES_BASE_URL}/${relativePath}`,
+        url: buildImageUrl(relativePath),
       });
     } catch (error: any) {
       const status = error?.statusCode ?? 500;

@@ -4,7 +4,7 @@ Esta documentación describe la integración completa con la API de Andreani par
 
 ## 📋 Índice
 
-- [Configuración](#configuración)
+- [Configuración](#configuración) (incluye [Modo mock](#modo-mock-andreani_mock))
 - [Arquitectura](#arquitectura) (incluye Handlers del Event Bus SALE_CREATED)
 - [Conceptos](#conceptos)
 - [Pre-envíos](#pre-envíos)
@@ -37,7 +37,23 @@ ANDREANI_CLIENTE=tu_codigo_cliente
 ANDREANI_ORIGEN_CP=0000
 ANDREANI_ORIGEN_LOCALIDAD=
 ANDREANI_ORIGEN_REGION=
+
+# Modo mock (pruebas sin API real / credenciales vencidas)
+# ANDREANI_MOCK=true   # Cuando está en true: cotización $1000 fijo, pre-envío devuelve JSON de ejemplo, etiquetas suben backend/data/etiqueta_1.pdf al FTP
+# Para volver al sistema normal: ANDREANI_MOCK=false o quitar la variable
 ```
+
+### Modo mock (ANDREANI_MOCK)
+
+Cuando `ANDREANI_MOCK=true` no se llama a la API de Andreani. Sirve para probar todo el flujo con credenciales vencidas o sin conectividad:
+
+| Acción | Comportamiento en mock |
+|--------|------------------------|
+| **Cotización** (checkout) | Devuelve costo fijo $1000 (el envío gratis por mínimo se sigue aplicando). |
+| **Crear pre-envío** (al confirmar venta) | No hace POST a Andreani; devuelve el JSON de ejemplo de esta doc, persiste en BD el código de seguimiento de ejemplo (`360000102000579`) y envía el email al cliente. |
+| **Etiquetas** | No descarga desde Andreani; sube el archivo `backend/data/etiqueta_1.pdf` al FTP en `/Tekno/Andreani/{cod_interno}/` (una copia por bulto: `etiqueta_1.pdf`, `etiqueta_2.pdf`, etc.). |
+
+Para volver al sistema normal: poner `ANDREANI_MOCK=false` o eliminar la variable.
 
 ### Base de Datos
 
@@ -79,7 +95,7 @@ src/
 Cuando se confirma una venta se emite el evento `SALE_CREATED`. Dos handlers usan Andreani:
 
 1. **AndreaniHandler** (prioridad 20): Crea el pre-envío en Andreani para la venta (envío a domicilio o sucursal; retiro en tienda se omite).
-2. **EtiquetasAndreaniHandler** (prioridad 25): Tras el pre-envío exitoso, descarga las etiquetas desde los links en la respuesta de Andreani y las sube al FTP en `/Tekno/Andreani/{codigoSeguimiento}/etiqueta_N.pdf` (o `.png`). Si hay varios bultos, sube una etiqueta por bulto; los errores por bulto no detienen el flujo ni a los demás handlers.
+2. **EtiquetasAndreaniHandler** (prioridad 25): Tras el pre-envío exitoso, descarga las etiquetas desde los links en la respuesta de Andreani y las sube al FTP en `/Tekno/Andreani/{cod_interno}/etiqueta_N.pdf` (o `.png`). La carpeta se nombra con el código de venta (`cod_interno`), no con el código de seguimiento Andreani. Si hay varios bultos, sube una etiqueta por bulto; los errores por bulto no detienen el flujo ni a los demás handlers.
 
 El servicio `andreani.api.service` expone `getBinary(endpoint)` para descargar binarios (etiquetas) con el mismo token y retry que el resto de la API.
 

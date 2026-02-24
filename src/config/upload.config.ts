@@ -12,6 +12,26 @@ export const UPLOAD_ROOT =
 /** URL base para servir archivos (ej. https://files.maxshop.com.ar). */
 export const FILES_BASE_URL = process.env.FILES_BASE_URL ?? 'https://files.maxshop.com.ar';
 
+/**
+ * Construye la URL pública de un archivo a partir del path relativo.
+ * Codifica espacios y caracteres especiales (paths con espacios desde FTP/CSV).
+ * Normaliza la extensión del archivo a minúsculas para coincidir con los archivos en FTP.
+ */
+export function buildImageUrl(path: string | null | undefined): string {
+  if (!path || typeof path !== 'string') return '';
+  const trimmed = path.trim();
+  if (!trimmed) return '';
+  let normalized = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+  // Extensión en minúsculas para que la URL coincida con archivos en FTP (.PNG/.JPG en BD → .png/.jpg en URL)
+  normalized = normalized.replace(/\.[a-zA-Z0-9]+$/, (ext) => ext.toLowerCase());
+  const encoded = normalized
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  const base = FILES_BASE_URL.replace(/\/$/, '');
+  return `${base}/${encoded}`;
+}
+
 /** Tamaño máximo por archivo en bytes (5 MB). */
 export const UPLOAD_MAX_FILE_SIZE = 5 * 1024 * 1024;
 

@@ -3,7 +3,8 @@
  *
  * Responsabilidades:
  * - Tras el pre-envío Andreani, descargar las etiquetas desde los links en respuestaCompleta
- * - Subir cada etiqueta al FTP en /Tekno/Andreani/{codigoSeguimiento}/etiqueta_N.{pdf|png}
+ * - Subir cada etiqueta al FTP en /Tekno/Andreani/{cod_interno}/etiqueta_N.{pdf|png}
+ *   (carpeta nombrada por código de venta, no por código de seguimiento Andreani)
  * - Manejo de errores por bulto sin interrumpir el flujo ni otros handlers
  */
 
@@ -15,8 +16,18 @@ import { andreaniApiService } from '../../andreani/andreani.api.service';
 import { andreaniConfig } from '../../../config/andreani.config';
 import ftpService from '../../ftp.service';
 import { IOrdenEnvioResponse } from '../../andreani/andreani.types';
+import { prisma } from '../../../index';
 
 const REMOTE_BASE = '/Tekno/Andreani';
+
+/** PDF de etiqueta usado en modo mock (ANDREANI_MOCK=true) */
+function getMockEtiquetaPath(): string | null {
+    const fromRoot = path.join(process.cwd(), 'backend', 'data', 'etiqueta_1.pdf');
+    const fromBackend = path.join(process.cwd(), 'data', 'etiqueta_1.pdf');
+    if (fs.existsSync(fromRoot)) return fromRoot;
+    if (fs.existsSync(fromBackend)) return fromBackend;
+    return null;
+}
 
 export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayload, EventContext> {
     name = 'etiquetas-andreani-handler';
@@ -71,15 +82,27 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
         const respuestaCompleta = andreaniData.respuestaCompleta;
         const codigoSeguimiento = andreaniData.numeroEnvio ?? respuestaCompleta.bultos?.[0]?.numeroDeEnvio ?? `venta-${id_venta}`;
 
+        // Carpeta en FTP por código de venta (cod_interno), no por código de seguimiento Andreani
+        let codVenta = payload.venta?.cod_interno?.trim() || null;
+        if (!codVenta) {
+            const venta = await prisma.venta.findUnique({
+                where: { id_venta },
+                select: { cod_interno: true },
+            });
+            codVenta = venta?.cod_interno?.trim() ?? id_venta.toString().padStart(8, '0');
+        }
+
         const rutasSubidas: string[] = [];
         const errores: { bulto: string; error: string }[] = [];
+        const isMock = andreaniConfig.useMock;
+        const mockPdfPath = isMock ? getMockEtiquetaPath() : null;
 
         try {
-            console.log(`🏷️ [EtiquetasAndreani] Venta #${id_venta}: descargando y subiendo etiquetas (código: ${codigoSeguimiento})...`);
+            console.log(`🏷️ [EtiquetasAndreani] Venta #${id_venta}: ${isMock ? 'MOCK: subiendo' : 'descargando y subiendo'} etiquetas (carpeta: ${codVenta}, tracking: ${codigoSeguimiento})...`);
 
             await ftpService.connect();
 
-            const tempDir = path.join(this.TEMP_BASE, codigoSeguimiento);
+            const tempDir = path.join(this.TEMP_BASE, codVenta);
             if (!fs.existsSync(tempDir)) {
                 fs.mkdirSync(tempDir, { recursive: true });
             }
@@ -87,6 +110,26 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
             for (let i = 0; i < respuestaCompleta.bultos.length; i++) {
                 const bulto = respuestaCompleta.bultos[i];
                 const numeroBulto = bulto.numeroDeBulto || String(i + 1);
+                const nombreArchivo = `etiqueta_${numeroBulto}.pdf`;
+                const remotePath = `${REMOTE_BASE}/${codVenta}/${nombreArchivo}`;
+
+                if (isMock) {
+                    // Modo mock: subir siempre backend/data/etiqueta_1.pdf al FTP
+                    if (!mockPdfPath) {
+                        console.warn(`⚠️ [EtiquetasAndreani] MOCK: no se encontró backend/data/etiqueta_1.pdf`);
+                        errores.push({ bulto: numeroBulto, error: 'Archivo mock no encontrado' });
+                        continue;
+                    }
+                    try {
+                        await ftpService.uploadFile(mockPdfPath, remotePath);
+                        rutasSubidas.push(remotePath);
+                    } catch (uploadErr: any) {
+                        console.warn(`⚠️ [EtiquetasAndreani] MOCK Bulto ${numeroBulto}: error al subir FTP: ${uploadErr.message}`);
+                        errores.push({ bulto: numeroBulto, error: uploadErr.message });
+                    }
+                    continue;
+                }
+
                 const etiquetaLink = bulto.linking?.find((l) => l.meta === 'Etiqueta');
                 const urlEtiqueta = etiquetaLink?.contenido?.trim();
 
@@ -112,9 +155,9 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
                 }
 
                 const ext = this.extensionDesdeContentType(result.data.contentType);
-                const nombreArchivo = `etiqueta_${numeroBulto}${ext}`;
-                const localPath = path.join(tempDir, nombreArchivo);
-                const remotePath = `${REMOTE_BASE}/${codigoSeguimiento}/${nombreArchivo}`;
+                const nombreArchivoReal = `etiqueta_${numeroBulto}${ext}`;
+                const localPath = path.join(tempDir, nombreArchivoReal);
+                const remotePathReal = `${REMOTE_BASE}/${codVenta}/${nombreArchivoReal}`;
 
                 try {
                     fs.writeFileSync(localPath, result.data.buffer);
@@ -125,8 +168,8 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
                 }
 
                 try {
-                    await ftpService.uploadFile(localPath, remotePath);
-                    rutasSubidas.push(remotePath);
+                    await ftpService.uploadFile(localPath, remotePathReal);
+                    rutasSubidas.push(remotePathReal);
                 } catch (uploadErr: any) {
                     console.warn(`⚠️ [EtiquetasAndreani] Bulto ${numeroBulto}: error al subir FTP: ${uploadErr.message}`);
                     errores.push({ bulto: numeroBulto, error: uploadErr.message });
@@ -151,6 +194,7 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
             const success = rutasSubidas.length > 0;
             context.handlerData[this.name] = {
                 success,
+                codVenta,
                 codigoSeguimiento,
                 rutasSubidas,
                 totalBultos: respuestaCompleta.bultos.length,
@@ -160,7 +204,7 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
             };
 
             if (success) {
-                console.log(`✅ [EtiquetasAndreani] Venta #${id_venta}: ${rutasSubidas.length} etiqueta(s) subidas a ${REMOTE_BASE}/${codigoSeguimiento}/`);
+                console.log(`✅ [EtiquetasAndreani] Venta #${id_venta}: ${rutasSubidas.length} etiqueta(s) subidas a ${REMOTE_BASE}/${codVenta}/`);
             }
             if (errores.length > 0) {
                 console.warn(`⚠️ [EtiquetasAndreani] Venta #${id_venta}: ${errores.length} error(es) en bultos:`, errores.map((e) => e.bulto).join(', '));
@@ -168,6 +212,7 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
         } catch (error: any) {
             context.handlerData[this.name] = {
                 success: false,
+                codVenta,
                 codigoSeguimiento,
                 rutasSubidas,
                 error: error.message || String(error),

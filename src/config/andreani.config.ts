@@ -32,7 +32,21 @@ function getBaseUrl(): string {
     return process.env.ANDREANI_BASE_URL_QA || process.env.ANDREANI_BASE_URL || 'https://apisqa.andreani.com';
 }
 
+/**
+ * Modo mock: cuando ANDREANI_MOCK=true no se llama a la API de Andreani.
+ * - Cotización devuelve costo fijo $1000.
+ * - Pre-envío devuelve el JSON de ejemplo de la doc y persiste en BD.
+ * - Etiquetas: se sube backend/data/etiqueta_1.pdf al FTP.
+ * Para volver al sistema normal, poner ANDREANI_MOCK=false o quitar la variable.
+ */
+function getUseMock(): boolean {
+    return process.env.ANDREANI_MOCK === 'true' || process.env.ANDREANI_MOCK === '1';
+}
+
 export const andreaniConfig = {
+    // Modo mock (credenciales vencidas / pruebas sin API real)
+    useMock: getUseMock(),
+
     // URL base de la API (resuelve automáticamente QA/PROD)
     baseUrl: getBaseUrl(),
     

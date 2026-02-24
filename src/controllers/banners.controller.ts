@@ -6,12 +6,12 @@
 
 import { Request, Response } from 'express';
 import { bannersService } from '../services/banners.service';
-import { FILES_BASE_URL } from '../config/upload.config';
+import { buildImageUrl } from '../config/upload.config';
 
 function addUrl(banner: Record<string, unknown>) {
   return {
     ...banner,
-    url: banner.path_img ? `${FILES_BASE_URL}/${banner.path_img}` : null,
+    url: banner.path_img ? buildImageUrl(String(banner.path_img)) : null,
   };
 }
 
