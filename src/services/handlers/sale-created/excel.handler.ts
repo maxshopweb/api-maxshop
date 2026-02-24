@@ -496,21 +496,11 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             return formatNumeroSinDecimales(totalConIva - totalNeto);
         };
 
-        // Una fila por cada detalle de la venta
-        const totalDetalles = venta.detalles.length;
-        for (let i = 0; i < totalDetalles; i++) {
-            const detalle = venta.detalles[i];
-            const producto = detalle.producto;
-
-            rows.push({
+        // Helpers para filas (venta cabecera / producto detalle)
+        const buildVentaBaseRow = (): VentaExcelRow =>
+            ({
                 AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // COLUMNA A: # de venta (usar cod_interno, fallback a id_venta formateado)
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // Usar actualizado_en según mapeo
-                AF: (detalle.cantidad || 1).toString(),
-                AG: formatNumeroSinDecimales(detalle.sub_total || 0), // COLUMNA G: TOTAL = número entero sin coma
-                AL: calcularEstado(detalle, totalDetalles), // COLUMNA L: sub_total si es un solo producto (igual que columna G), 0 si hay más
-                AN: producto?.codi_barras || '', // COLUMNA N: código de barras del producto
-                AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // COLUMNA R: número entero sin coma
-                AS: producto?.lista_precio_activa ?? 'V', // COLUMNA S: lista de precio activa del producto
                 AT: codigoProvinciaFacturacion, // COLUMNA T: código de provincia de la venta (lookup en tabla provincia)
                 AU: nombreCompletoCliente, // Nombre y apellido del cliente
                 AV: tipoYNumeroDoc, // COLUMNA V: Tipo y número de documento (usar numero_documento)
@@ -542,7 +532,75 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 BT: codigoEnvioAndreani ?? null, // COLUMNA AT Excel: código de envío Andreani
                 BU: sucursalDistribucionAndreani || null, // COLUMNA AU Excel: sucursal de distribución Andreani
                 BV: sucursalRendicionAndreani || null, // COLUMNA AV Excel: sucursal de rendición Andreani
-            });
+            }) as VentaExcelRow;
+
+        const buildProductoRow = (detalle: any): VentaExcelRow => {
+            const producto = detalle.producto;
+            return ({
+                AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // A
+                AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // B
+                AF: (detalle.cantidad || 1).toString(), // F (cantidad del producto)
+                AN: producto?.codi_barras || '', // N
+                AO: producto?.codi_arti || '', // O
+                AP: '', // P (reservado/vacío según formato actual)
+                AQ: producto?.nombre || '', // Q
+                AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // R
+            }) as VentaExcelRow;
+        };
+
+        // Una fila por cada detalle de la venta (comportamiento legacy)
+        const totalDetalles = venta.detalles.length;
+        for (let i = 0; i < totalDetalles; i++) {
+            const detalle = venta.detalles[i];
+            const producto = detalle.producto;
+
+            const legacyRow: VentaExcelRow = {
+                ...buildVentaBaseRow(),
+                AF: (detalle.cantidad || 1).toString(),
+                AG: formatNumeroSinDecimales(detalle.sub_total || 0), // COLUMNA G: TOTAL = número entero sin coma
+                AL: calcularEstado(detalle, totalDetalles), // COLUMNA L: sub_total si es un solo producto (igual que columna G), 0 si hay más
+                AN: producto?.codi_barras || '', // COLUMNA N: código de barras del producto
+                AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // COLUMNA R: número entero sin coma
+                AS: producto?.lista_precio_activa ?? 'V', // COLUMNA S: lista de precio activa del producto
+            };
+
+            rows.push(legacyRow);
+        }
+
+        // NUEVO: Para ventas con MÁS de 2 productos distintos, generar:
+        // 1) fila cabecera de venta (datos de venta)
+        // 2) filas por producto (datos mínimos de producto)
+        const productosDistintos = new Set(
+            venta.detalles
+                .map((d: any) => d.id_prod)
+                .filter((id: any) => id !== null && id !== undefined)
+        );
+        const cantidadProductosDistintos = productosDistintos.size;
+
+        if (cantidadProductosDistintos >= 2) {
+            // Reemplazar filas legacy por el nuevo formato compacto
+            rows.length = 0;
+
+            const totalVenta = formatNumeroSinDecimales(venta.total_con_iva ?? 0);
+            const totalConIvaNum = venta.total_con_iva ? Number(venta.total_con_iva) : 0;
+            const totalNetoNum = venta.total_neto ? Number(venta.total_neto) : 0;
+            const diferencia = totalConIvaNum - totalNetoNum;
+
+            const cabeceraVenta: VentaExcelRow = {
+                ...buildVentaBaseRow(),
+                AC: `Paquete de ${cantidadProductosDistintos} productos`, // C
+                AG: totalVenta, // G
+                AH: formatNumeroSinDecimales(-Math.abs(diferencia)), // H
+                AJ: formatNumeroSinDecimales(-(Math.abs(diferencia) * 0.8378)), // J (mantener esquema actual aproximado)
+                AK: formatNumeroSinDecimales(-(Math.abs(diferencia) * 0.1394)), // K (mantener esquema actual aproximado)
+                AL: formatNumeroSinDecimales(totalNetoNum), // L
+            };
+
+            rows.push(cabeceraVenta);
+
+            for (const detalle of venta.detalles) {
+                rows.push(buildProductoRow(detalle));
+            }
         }
 
         return rows;

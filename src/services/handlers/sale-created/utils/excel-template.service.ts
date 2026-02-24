@@ -7,43 +7,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export interface VentaExcelRow {
-  AA: string; // # de venta (columna A en Excel)
-  AB: string; // Fecha de venta
-  AF: string; // Unidades
-  AG: string; // Total
-  AL: string; // Estado
-  AN: string; // SKU
-  AR: string; // Precio unitario
-  AS: string | null; // codigo lista de precios
-  AT: string | null; // Provincia de facturación
-  AU: string; // Datos personales o de empresa
-  AV: string; // Tipo y número de documento
-  AW: string; // Dirección
-  AX: string; // Condición fiscal
-  AY: string; // Comprador
-  AZ: string; // DNI
-  BA: string; // Domicilio Envio
-  BB: string; // Ciudad
-  BC: string; // Provincia Envio
-  BD: string; // Código postal Envio
-  BE: string; // País
-  BF: string; // Transporte
-  BG: string; // Identificación de Plataforma de Pago
-  BH: string | null; // id de Pago
-  BI: string | null; // Estado del pago
-  BJ: string | null; // Detalle del estado
-  BK: string | null; // Forma de Pago
-  BL: string | null; // Tipo de pago
-  BM: string | null; // Fecha Aprobacion
-  BN: string | null; // Total Pagado
-  BO: string | null; // Total Neto
-  BP: string | null; // Comisiones
-  BQ: string | null; // Cantidad Cuotas
-  BR: string | null; // Numero Tarjeta
-  BS: string | null; // Titular Tarjeta
-  BT: string | null; // Código envío ANDREANI (columna AT en Excel)
-  BU: string | null; // Sucursal distribución ANDREANI (columna AU)
-  BV: string | null; // Sucursal rendición ANDREANI (columna AV)
+  // Permitimos filas parciales para soportar:
+  // - fila cabecera de venta (solo columnas de venta)
+  // - filas detalle de producto (solo columnas de producto)
+  [key: string]: string | null | undefined;
 }
 
 export class ExcelTemplateService {
