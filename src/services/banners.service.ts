@@ -209,7 +209,16 @@ export class BannersService {
           where: { orden_tipo: { orden: data.orden, tipo: banner.tipo } },
         });
         if (conflict) {
-          // Swap: el que estaba en la posición destino pasa a la posición origen
+          // Swap sin violar unique (orden, tipo): usar valor temporal 0
+          const tempOrden = 0;
+          await prisma.banners.update({
+            where: { id: conflict.id },
+            data: { orden: tempOrden, actualizado_en: new Date() },
+          });
+          await prisma.banners.update({
+            where: { id },
+            data: { orden: data.orden, actualizado_en: new Date() },
+          });
           await prisma.banners.update({
             where: { id: conflict.id },
             data: { orden: banner.orden, actualizado_en: new Date() },
