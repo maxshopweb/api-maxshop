@@ -51,8 +51,6 @@ export type GetLogsFilters = {
   tabla_afectada?: string;
   method?: string; // GET, POST, PUT, DELETE
   estado?: string;
-  tiempo_min?: number;
-  tiempo_max?: number;
 };
 
 class AuditService {
@@ -80,10 +78,30 @@ class AuditService {
       };
     } else if (filters.method?.trim()) {
       const m = filters.method.trim().toUpperCase();
-      (where as { accion?: { contains: string; mode: string } }).accion = {
-        contains: m === 'PUT' ? 'UPDATE' : m,
-        mode: 'insensitive'
-      };
+      // Coincide con inferMethod: DELETE/PUT por contenido en accion; POST = el resto
+      if (m === 'DELETE') {
+        (where as { accion?: { contains: string; mode: string } }).accion = {
+          contains: 'DELETE',
+          mode: 'insensitive'
+        };
+      } else if (m === 'PUT') {
+        (where as { OR?: Array<{ accion: { contains: string; mode: string } }> }).OR = [
+          { accion: { contains: 'UPDATE', mode: 'insensitive' } },
+          { accion: { contains: 'PUT', mode: 'insensitive' } }
+        ];
+      } else {
+        // POST o GET: accion null o que no contenga DELETE ni UPDATE/PUT (igual que inferMethod)
+        (where as { OR?: Array<unknown> }).OR = [
+          { accion: null },
+          {
+            AND: [
+              { accion: { not: { contains: 'DELETE', mode: 'insensitive' } } },
+              { accion: { not: { contains: 'UPDATE', mode: 'insensitive' } } },
+              { accion: { not: { contains: 'PUT', mode: 'insensitive' } } }
+            ]
+          }
+        ];
+      }
     }
     if (filters.tabla_afectada?.trim()) {
       (where as { tabla_afectada?: { contains: string; mode: string } }).tabla_afectada = {
@@ -93,14 +111,6 @@ class AuditService {
     }
     if (filters.estado?.trim()) {
       (where as { estado: string }).estado = filters.estado.trim();
-    }
-    if (filters.tiempo_min != null && !Number.isNaN(Number(filters.tiempo_min))) {
-      const t = (where as { tiempo_procesamiento?: Record<string, number> }).tiempo_procesamiento || {};
-      (where as { tiempo_procesamiento: Record<string, number> }).tiempo_procesamiento = { ...t, gte: Number(filters.tiempo_min) };
-    }
-    if (filters.tiempo_max != null && !Number.isNaN(Number(filters.tiempo_max))) {
-      const t = (where as { tiempo_procesamiento?: Record<string, number> }).tiempo_procesamiento || {};
-      (where as { tiempo_procesamiento: Record<string, number> }).tiempo_procesamiento = { ...t, lte: Number(filters.tiempo_max) };
     }
 
     return where;
