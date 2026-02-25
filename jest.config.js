@@ -5,8 +5,12 @@
  *   npm test                    -- todos los tests
  *   npm test -- --watch        -- modo watch
  *   npm test -- payment-processing  -- solo este archivo
+ *   npm test -- --silent       -- sin console.log/error del código bajo test
  *
  * Para cambiar qué archivos se incluyen: ajustar "testMatch" abajo.
+ *
+ * Nota: Si aparece [JEST-01] DeprecationWarning ('id' property accessed after soft deleted),
+ * es por limpieza entre archivos; los tests siguen siendo válidos. Para salida más limpia: npm test -- --silent
  */
 module.exports = {
   preset: 'ts-jest',

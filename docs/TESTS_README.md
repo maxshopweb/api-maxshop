@@ -1,84 +1,113 @@
 # Tests del API MaxShop
 
-## Qué está implementado
+Documentación corta: qué prueba cada archivo, cómo ejecutarlo y qué esperar.
 
-- **Tests de confirmación de pago** (`src/services/__tests__/payment-processing.service.spec.ts`): garantizan que al confirmar un pago se descuenta stock, se actualiza el estado, se ejecutan los handlers (Andreani, etc.) y, **sobre todo**, que se envía **un email al cliente** con:
-  - **Número de pedido (orderId)** siempre.
-  - **Número de seguimiento (trackingCode) y transportista (carrier)** cuando la venta tiene envío (no es retiro en tienda).
+---
 
-Así se asegura que el cliente reciba el correo con el número de pedido y, si aplica, el código para hacer seguimiento del envío.
+## Cómo ejecutar
 
-## Cómo ejecutar los tests
+Desde `api-maxshop`:
 
-Desde la raíz del backend (`api-maxshop`):
+| Comando | Qué hace |
+|---------|----------|
+| `npm test` | Todos los tests |
+| `npm test -- payment-webhook` | Solo webhook de pagos |
+| `npm test -- payment-processing` | Solo confirmación de pago |
+| `npm test -- factura-sync` | Solo sincronización de facturas |
+| `npm test -- andreani.api` | Solo cliente HTTP Andreani |
+| `npm test -- --watch` | Modo watch (re-ejecuta al guardar) |
+| `npm test -- --silent` | Sin `console.log`/`console.error` del código |
 
-```bash
-npm test
-```
+---
 
-Solo el archivo de payment-processing:
+## 1. Payment Processing (`payment-processing.service.spec.ts`)
 
-```bash
-npx jest payment-processing
-```
+**Qué prueba:** Flujo al **confirmar un pago** (después de que Mercado Pago aprueba).
 
-Modo watch (re-ejecuta al guardar):
+- Descuenta stock, actualiza estado de la venta y dispara handlers (Andreani, Excel, etc.).
+- Envía **un solo** email de confirmación al cliente.
+- El email **siempre** lleva el número de pedido (`orderId`).
+- Si la venta tiene envío (no es retiro), el email incluye `trackingCode` y `carrier` (Andreani).
+- Si la venta ya estaba aprobada, no se vuelve a ejecutar nada (idempotencia).
 
-```bash
-npm run test:watch
-```
+**Qué esperar:** 6 tests. No toca BD, Redis ni envía emails reales (todo mockeado).
 
-## Cómo cambiar o ampliar los tests
+**Uso:** `npm test -- payment-processing`
 
-### Añadir un nuevo caso
+---
 
-1. Abre `src/services/__tests__/payment-processing.service.spec.ts`.
-2. Dentro del `describe` que corresponda, añade un bloque:
-   ```ts
-   it('descripción del comportamiento', async () => {
-     // Configurar ventasState.getById con mockResolvedValueOnce / mockResolvedValue
-     // Llamar a service.confirmPayment(idVenta)
-     // expect(mailService.sendOrderConfirmation).toHaveBeenCalledWith(...)
-   });
-   ```
+## 2. Payment Webhook (`payment-webhook.service.spec.ts`)
 
-### Probar otra venta (más productos, otro cliente)
+**Qué prueba:** Procesamiento de **webhooks de Mercado Pago** (entrada del evento de pago).
 
-- Usa las funciones helper `buildVentaPendiente()`, `buildVentaAprobadaSinEnvio()`, `buildVentaAprobadaConEnvio()` y pásales un objeto con `overrides` para cambiar campos.
-- Configura `ventasState.getById` con `mockResolvedValueOnce(venta1).mockResolvedValueOnce(venta2)...` en el orden en que el servicio llama a `getById` (primera vez: venta pendiente; segunda: después de actualizar estado; tercera: después de `runHandlersAndEmit`, si hay envío).
+- **Validación:** Rechaza payload sin `action` o `data.id`; ignora eventos que no son `type=payment` o que no incluyen `"payment"` en la acción.
+- **Idempotencia:** Si el mismo pago llega dos veces con el mismo estado → se salta (skipped), no se duplica confirmación ni email.
+- **Flujo aprobado:** Llama a `confirmPayment`, guarda en `mercado_pago_payments` con `payment_id` y `venta_id` correctos.
+- **Flujo rechazado:** No llama a `confirmPayment`; actualiza la venta a `rechazado`.
+- **Errores:** Si falla MP o no hay venta, guarda en `failed_webhooks` y devuelve `success: false` sin lanzar (para poder responder 200 a MP).
+- **Lock:** Dos webhooks del mismo pago en paralelo → uno se procesa, el otro sale skipped.
 
-### Comprobar que se envió el email con datos concretos
+**Qué esperar:** 14 tests. Prisma, MP y `confirmPayment` mockeados.
 
-```ts
-const call = (mailService.sendOrderConfirmation as jest.Mock).mock.calls[0][0];
-expect(call.orderId).toBe(999);
-expect(call.trackingCode).toBe('...');
-expect(call.cliente.email).toBe('...');
-```
+**Uso:** `npm test -- payment-webhook`
 
-### Qué está mockeado (y por qué)
+---
 
-| Módulo | Qué se simula | Motivo |
-|--------|----------------|--------|
-| `prisma` | `venta.update` | No usar BD real en tests |
-| `cache.service` | `delete`, `deletePattern` | No depender de Redis |
-| `mail` | `sendOrderConfirmation` | No enviar emails; solo comprobar que se llama con los datos correctos |
-| `handler-executor.service` | `runHandlersAndEmit` | No llamar a Andreani ni otros handlers reales |
-| `ventas.service` | `VentasService().getById` | Controlar qué venta “devuelve” la BD en cada paso |
-| `productos.service` | `ProductosService().updateStock` | No modificar stock real |
+## 3. Factura Sync (`factura-sync.service.spec.ts`)
 
-## Cambio de flujo: email con número de seguimiento
+**Qué prueba:** Sincronización de **facturas desde FTP** (Tekno): matching, emails y limpieza.
 
-Para que el cliente reciba el número de seguimiento en el mismo email de confirmación, el flujo hace lo siguiente:
+- Sin ventas pendientes → no conecta al FTP; resultado con 0 procesadas.
+- Con ventas pendientes: conecta/desconecta FTP una vez; busca PDF por `F4-0004-{cod_interno}.pdf` o por `F4-0004-{id_venta 8 dígitos}.pdf` si no hay `cod_interno`.
+- Si encuentra factura: descarga, envía email con factura adjunta, envía email de tracking, borra del FTP, actualiza venta a "facturado".
+- Si no encuentra PDF: incrementa `noEncontradas` y actualiza intentos.
+- Si hay error en una venta: resultado con `errores: 1` y **siempre** desconecta FTP en `finally`.
 
-1. **Antes:** Se emitía `SALE_CREATED` al event bus y se enviaba el email de inmediato con la venta actual. Como los handlers (Andreani) se ejecutaban en paralelo, la venta aún no tenía `envio.cod_seguimiento` y el email salía sin tracking.
+**Qué esperar:** 6 tests. Prisma, FTP y mail mockeados.
 
-2. **Ahora:** En `PaymentProcessingService.confirmPayment` se llama a `handlerExecutorService.runHandlersAndEmit(SALE_CREATED, payload)`, que **espera** a que terminen todos los handlers (incluido Andreani). Luego se vuelve a leer la venta con `getById` y se envía el email con esa venta ya actualizada (con `envio.cod_seguimiento` si Andreani creó el envío).
+**Uso:** `npm test -- factura-sync`
 
-Los tests verifican que, cuando la venta tiene envío, el payload de `sendOrderConfirmation` incluye `trackingCode` y `carrier`.
+---
 
-## Configuración de Jest
+## 4. Andreani API (`andreani.api.service.spec.ts`)
 
-- **Archivo:** `jest.config.js` en la raíz de `api-maxshop`.
-- **Tests:** por defecto se ejecutan los `*.spec.ts` bajo `src/`.
-- Para cambiar timeout, cobertura o qué archivos se incluyen, edita `jest.config.js`.
+**Qué prueba:** Cliente HTTP de **Andreani** (token, reintentos, parsing).
+
+- Incluye `x-authorization-token` en cada request.
+- Ante 401 o 403: renueva token y reintenta la request.
+- Si la respuesta no es OK → devuelve `success: false` con status y error.
+- Parsea JSON cuando `Content-Type` es `application/json`.
+- **getBinary:** Devuelve buffer y contentType para PDF; ante 401 renueva token y reintenta.
+
+**Qué esperar:** 8 tests. Auth y `fetch` mockeados.
+
+**Uso:** `npm test -- andreani.api`
+
+---
+
+## Resumen por archivo
+
+| Archivo | Tests | Qué garantiza |
+|---------|-------|----------------|
+| `payment-processing.service.spec.ts` | 6 | Confirmación de pago: stock, estado, 1 email con orderId y tracking si hay envío, idempotencia |
+| `payment-webhook.service.spec.ts` | 14 | Webhook MP: validación, idempotencia, aprobado/rechazado, errores a `failed_webhooks`, lock |
+| `factura-sync.service.spec.ts` | 6 | Sync facturas FTP: matching cod_interno/id_venta, emails, disconnect en finally |
+| `andreani.api.service.spec.ts` | 8 | Cliente Andreani: token, retry 401/403, JSON/PDF |
+
+**Total:** 34 tests.
+
+---
+
+## Configuración
+
+- **Jest:** `jest.config.js` en la raíz de `api-maxshop`.
+- **Patrón de archivos:** `**/__tests__/**/*.spec.ts` y `**/*.spec.ts` bajo `src/`.
+- Si aparece **JEST-01 DeprecationWarning** al final: es por limpieza entre archivos; los tests son válidos. Para menos ruido: `npm test -- --silent`.
+
+---
+
+## Añadir o cambiar tests
+
+- Cada spec tiene en el encabezado comentarios de "CÓMO EJECUTAR" y "MOCKS".
+- Usa los **builders** (`buildVentaPendiente`, `buildWebhook`, etc.) para datos de prueba.
+- Mockea siempre BD, APIs externas y envío de emails; comprueba con `expect(mock.toHaveBeenCalledWith(...))`.
