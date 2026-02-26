@@ -120,7 +120,8 @@ export class ExcelTemplateService {
               const cellAddress = XLSX.utils.encode_cell({ r: currentRow - 1, c: colIndex });
               const num = typeof value === 'number' && !isNaN(value);
               if (num && columnasNumericas.has(col)) {
-                worksheet[cellAddress] = { t: 'n', v: value, z: '#.##0,00' };
+                const rounded = Math.round((value as number) * 100) / 100;
+                worksheet[cellAddress] = { t: 'n', v: rounded, z: '#.##0,00' };
               } else {
                 worksheet[cellAddress] = { t: 's', v: value.toString() };
               }
