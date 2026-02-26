@@ -5,6 +5,19 @@
 import { Decimal } from '@prisma/client/runtime/library';
 
 /**
+ * Normaliza el nombre de una provincia para comparación (sin acentos, mayúsculas, trim).
+ * Permite matchear "Cordoba" con "CÓRDOBA", "Entre Rios" con "ENTRE RÍOS", etc.
+ */
+export function normalizarNombreProvincia(nombre: string | null | undefined): string {
+  if (!nombre || typeof nombre !== 'string') return '';
+  return nombre
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/\u0300-\u036f/g, '');
+}
+
+/**
  * Formatea una fecha al formato español completo: "8 de mayo de 2025 16:37 hs."
  */
 export function formatFechaVenta(fecha: Date | null | undefined): string {

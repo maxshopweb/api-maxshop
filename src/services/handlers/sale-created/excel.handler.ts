@@ -16,16 +16,11 @@ import ftpService from '../../ftp.service';
 import { excelTemplateService, VentaExcelRow } from './utils/excel-template.service';
 import {
     formatFechaVenta,
-    formatFechaAprobacion,
-    formatNumeroSinDecimales,
-    formatEstado,
     mapMPStatusToSpanish,
     mapMPStatusDetailToSpanish,
     mapPaymentMethodToSpanish,
     mapPaymentTypeToSpanish,
-    formatTipoDocumento,
-    formatDireccionFacturacion,
-    formatDireccionEnvio,
+    normalizarNombreProvincia,
 } from './utils/excel-formatters';
 import { IVenta } from '../../../types';
 import * as path from 'path';
@@ -275,45 +270,24 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
         }
 
         // Obtener código de provincia de facturación (lookup en tabla provincia)
-        // TOMAR PROVINCIA DE LA VENTA (direcciones[0].provincia o cliente.provincia)
+        // Normalización sin acentos: "Cordoba" / "Córdoba" matchean con "CÓRDOBA" en BD
         let codigoProvinciaFacturacion = '';
         const provinciaVenta = direccionEnvio?.provincia || cliente?.provincia || '';
         if (provinciaVenta) {
             try {
-                // Normalizar el nombre de la provincia (trim + uppercase) ya que en BD están en mayúsculas
-                const provinciaNormalizada = provinciaVenta.trim().toUpperCase();
-                
-                // Intentar primero con coincidencia exacta (case insensitive)
-                let provincia = await prisma.provincia.findFirst({
-                    where: {
-                        nombre: {
-                            equals: provinciaNormalizada,
-                            mode: 'insensitive',
-                        },
-                        activo: true,
-                    },
+                const provinciaInputNorm = normalizarNombreProvincia(provinciaVenta);
+                const todasProvincias = await prisma.provincia.findMany({
+                    where: { activo: true },
+                    select: { codi_provincia: true, nombre: true },
                 });
-                
-                // Si no encuentra con equals, intentar con contains
-                if (!provincia) {
-                    provincia = await prisma.provincia.findFirst({
-                        where: {
-                            nombre: {
-                                contains: provinciaNormalizada,
-                                mode: 'insensitive',
-                            },
-                            activo: true,
-                        },
-                    });
-                }
-                
-                codigoProvinciaFacturacion = provincia?.codi_provincia || '';
-                
-                // Log para debug si no se encuentra
-                if (!codigoProvinciaFacturacion) {
-                    console.warn(`⚠️ [ExcelHandler] No se encontró código de provincia para: "${provinciaVenta}" (normalizado: "${provinciaNormalizada}")`);
-                } else {
+                const provincia = todasProvincias.find(
+                    (p) => p.nombre && normalizarNombreProvincia(p.nombre) === provinciaInputNorm
+                );
+                if (provincia) {
+                    codigoProvinciaFacturacion = provincia.codi_provincia || '';
                     console.log(`✅ [ExcelHandler] Provincia encontrada: "${provinciaVenta}" -> código: "${codigoProvinciaFacturacion}"`);
+                } else {
+                    console.warn(`⚠️ [ExcelHandler] No se encontró código de provincia para: "${provinciaVenta}" (normalizado: "${provinciaInputNorm}")`);
                 }
             } catch (error) {
                 console.warn(`⚠️ [ExcelHandler] Error al buscar provincia: ${provinciaVenta}`, error);
@@ -337,15 +311,11 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
         const sucursalDistribucionAndreani = andreaniData?.respuestaCompleta?.sucursalDeDistribucion?.descripcion ?? '';
         const sucursalRendicionAndreani = andreaniData?.respuestaCompleta?.sucursalDeRendicion?.descripcion ?? '';
 
-        // Calcular estado (columna L): total final si es un solo producto, 0 si hay más productos
-        const calcularEstado = (detalleActual: any, total: number): string => {
-            if (total > 1) {
-                // Si hay múltiples artículos, todos son 0
-                return '0';
-            }
-            // Si es un solo artículo, estado = sub_total del detalle (igual que columna G)
+        // Calcular estado (columna L): total final si es un solo producto, 0 si hay más productos (valor numérico)
+        const calcularEstado = (detalleActual: any, total: number): number => {
+            if (total > 1) return 0;
             const subTotal = detalleActual.sub_total ? Number(detalleActual.sub_total) : 0;
-            return formatNumeroSinDecimales(subTotal);
+            return subTotal;
         };
 
         // Formatear nombre de provincia: convertir guiones a espacios y capitalizar cada palabra
@@ -482,18 +452,12 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             return '';
         })();
 
-        // Obtener número de documento solo
-        const numeroDocumentoSolo = usuarioCliente?.numero_documento || usuarioCliente?.id_usuario || '';
-
-        // Calcular comisiones
-        const calcularComisiones = (): string => {
-            if (pagoMP?.commission_amount) {
-                return formatNumeroSinDecimales(pagoMP.commission_amount);
-            }
-            // Calcular: total_con_iva - total_neto
+        // Calcular comisiones (valor numérico para Excel)
+        const calcularComisiones = (): number => {
+            if (pagoMP?.commission_amount != null) return Number(pagoMP.commission_amount);
             const totalConIva = venta.total_con_iva ? Number(venta.total_con_iva) : 0;
             const totalNeto = venta.total_neto ? Number(venta.total_neto) : 0;
-            return formatNumeroSinDecimales(totalConIva - totalNeto);
+            return totalConIva - totalNeto;
         };
 
         // Helpers para filas (venta cabecera / producto detalle)
@@ -507,7 +471,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AW: formatearDireccionFacturacion(), // COLUMNA W: Dirección de facturación formateada
                 AX: 'CF', // COLUMNA X: Condición fiscal fija "CF"
                 AY: nombreCompletoCliente, // Nombre cliente (repeat)
-                AZ: numeroDocumentoSolo, // COLUMNA Z: número documento solo (usar numero_documento, no id_usuario)
+                AZ: tipoYNumeroDoc, // COLUMNA Z (26): mismo formato que AV (22) — "DNI 42234462"
                 BA: formatearDireccionEnvio(), // COLUMNA AA (Excel): Dirección de envío formateada
                 BB: direccionEnvio?.ciudad || cliente?.ciudad || '', // Ciudad envío
                 BC: formatearProvincia(direccionEnvio?.provincia || cliente?.provincia), // Provincia envío (formateada: mayúsculas y espacios)
@@ -523,9 +487,9 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                     ? mapPaymentTypeToSpanish(pagoMP.payment_type_id, pagoMP.card_info)
                     : null, // Tipo de pago
                 BM: pagoMP?.date_approved ? formatFechaVenta(pagoMP.date_approved) : null, // Fecha aprobación (mismo formato que columna B)
-                BN: formatNumeroSinDecimales(venta.total_con_iva ?? 0), // COLUMNA AN: total con IVA de la venta
-                BO: formatNumeroSinDecimales(venta.total_neto ?? 0), // COLUMNA AO: total neto de la venta
-                BP: pagoMP?.commission_amount ? formatNumeroSinDecimales(pagoMP.commission_amount) : '0', // COLUMNA AP: usar commission_amount
+                BN: venta.total_con_iva != null ? Number(venta.total_con_iva) : 0,
+                BO: venta.total_neto != null ? Number(venta.total_neto) : 0,
+                BP: calcularComisiones(),
                 BQ: pagoMP?.installments ? pagoMP.installments.toString() : null, // Cantidad cuotas
                 BR: pagoMP?.card_info?.last_four_digits || null, // Número tarjeta (últimos 4 dígitos)
                 BS: pagoMP?.card_info?.cardholder?.name || nombreCompletoCliente || null, // Titular tarjeta o nombre cliente
@@ -539,12 +503,11 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             return ({
                 AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // A
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // B
-                AF: (detalle.cantidad || 1).toString(), // F (cantidad del producto)
-                AN: producto?.codi_barras || '', // N
-                AO: producto?.codi_arti || '', // O
-                AP: '', // P (reservado/vacío según formato actual)
+                AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1, // F (cantidad, número)
+                AN: producto?.codi_arti || '', // N: solo SKU (codi_arti), no código de barras
                 AQ: producto?.nombre || '', // Q
-                AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // R
+                AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0, // R (número)
+                AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea
             }) as VentaExcelRow;
         };
 
@@ -556,12 +519,12 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
 
             const legacyRow: VentaExcelRow = {
                 ...buildVentaBaseRow(),
-                AF: (detalle.cantidad || 1).toString(),
-                AG: formatNumeroSinDecimales(detalle.sub_total || 0), // COLUMNA G: TOTAL = número entero sin coma
-                AL: calcularEstado(detalle, totalDetalles), // COLUMNA L: sub_total si es un solo producto (igual que columna G), 0 si hay más
-                AN: producto?.codi_barras || '', // COLUMNA N: código de barras del producto
-                AR: formatNumeroSinDecimales(detalle.precio_unitario || 0), // COLUMNA R: número entero sin coma
-                AS: producto?.lista_precio_activa ?? 'V', // COLUMNA S: lista de precio activa del producto
+                AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1,
+                AG: detalle.sub_total != null ? Number(detalle.sub_total) : 0,
+                AL: calcularEstado(detalle, totalDetalles),
+                AN: producto?.codi_arti || '', // N: solo SKU (codi_arti)
+                AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0,
+                AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea
             };
 
             rows.push(legacyRow);
@@ -581,7 +544,6 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             // Reemplazar filas legacy por el nuevo formato compacto
             rows.length = 0;
 
-            const totalVenta = formatNumeroSinDecimales(venta.total_con_iva ?? 0);
             const totalConIvaNum = venta.total_con_iva ? Number(venta.total_con_iva) : 0;
             const totalNetoNum = venta.total_neto ? Number(venta.total_neto) : 0;
             const diferencia = totalConIvaNum - totalNetoNum;
@@ -589,11 +551,11 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             const cabeceraVenta: VentaExcelRow = {
                 ...buildVentaBaseRow(),
                 AC: `Paquete de ${cantidadProductosDistintos} productos`, // C
-                AG: totalVenta, // G
-                AH: formatNumeroSinDecimales(-Math.abs(diferencia)), // H
-                AJ: formatNumeroSinDecimales(-(Math.abs(diferencia) * 0.8378)), // J (mantener esquema actual aproximado)
-                AK: formatNumeroSinDecimales(-(Math.abs(diferencia) * 0.1394)), // K (mantener esquema actual aproximado)
-                AL: formatNumeroSinDecimales(totalNetoNum), // L
+                AG: totalConIvaNum, // G (número)
+                AH: -Math.abs(diferencia), // H (número)
+                AJ: -(Math.abs(diferencia) * 0.8378), // J (número)
+                AK: -(Math.abs(diferencia) * 0.1394), // K (número)
+                AL: totalNetoNum, // L (número)
             };
 
             rows.push(cabeceraVenta);

@@ -10,7 +10,8 @@ export interface VentaExcelRow {
   // Permitimos filas parciales para soportar:
   // - fila cabecera de venta (solo columnas de venta)
   // - filas detalle de producto (solo columnas de producto)
-  [key: string]: string | null | undefined;
+  // Los valores numéricos se escriben como número en Excel (formato decimal)
+  [key: string]: string | number | null | undefined;
 }
 
 export class ExcelTemplateService {
@@ -107,6 +108,9 @@ export class ExcelTemplateService {
 
       let currentRow = startRow;
 
+      // Columnas que se escriben como número en Excel (formato decimal 23000,00)
+      const columnasNumericas = new Set(['AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AR', 'BN', 'BO', 'BP']);
+
       for (const rowData of ventaRows) {
         // Escribir cada columna de la fila
         for (const [col, value] of Object.entries(rowData)) {
@@ -114,7 +118,12 @@ export class ExcelTemplateService {
             const colIndex = columnMap[col];
             if (colIndex !== undefined) {
               const cellAddress = XLSX.utils.encode_cell({ r: currentRow - 1, c: colIndex });
-              worksheet[cellAddress] = { t: 's', v: value.toString() };
+              const num = typeof value === 'number' && !isNaN(value);
+              if (num && columnasNumericas.has(col)) {
+                worksheet[cellAddress] = { t: 'n', v: value, z: '#.##0,00' };
+              } else {
+                worksheet[cellAddress] = { t: 's', v: value.toString() };
+              }
             }
           }
         }
