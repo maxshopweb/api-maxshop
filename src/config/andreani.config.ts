@@ -38,15 +38,14 @@ function getBaseUrl(): string {
  * - Pre-envío devuelve el JSON de ejemplo de la doc y persiste en BD.
  * - Etiquetas: se sube backend/data/etiqueta_1.pdf al FTP.
  * Para volver al sistema normal, poner ANDREANI_MOCK=false o quitar la variable.
+ * Se lee en cada acceso (getter) para que dotenv ya haya cargado el .env.
  */
-function getUseMock(): boolean {
-    return process.env.ANDREANI_MOCK === 'true' || process.env.ANDREANI_MOCK === '1';
+export function getUseMock(): boolean {
+    const v = (process.env.ANDREANI_MOCK ?? '').toString().trim().toLowerCase();
+    return v === 'true' || v === '1';
 }
 
-export const andreaniConfig = {
-    // Modo mock (credenciales vencidas / pruebas sin API real)
-    useMock: getUseMock(),
-
+const configBase = {
     // URL base de la API (resuelve automáticamente QA/PROD)
     baseUrl: getBaseUrl(),
     
@@ -76,7 +75,19 @@ export const andreaniConfig = {
     
     // Timeout para requests (en ms)
     timeout: 30000, // 30 segundos
-} as const;
+};
+
+// useMock como getter: se lee en cada acceso, no al cargar el módulo.
+// Así dotenv.config() ya cargó el .env cuando se usa (cotización, pre-envío, etiquetas).
+Object.defineProperty(configBase, 'useMock', {
+    get(): boolean {
+        return getUseMock();
+    },
+    enumerable: true,
+    configurable: true,
+});
+
+export const andreaniConfig = configBase as typeof configBase & { useMock: boolean };
 
 /**
  * Valida que las credenciales estén configuradas
