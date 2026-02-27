@@ -34,6 +34,7 @@ export class ProductosController {
                 destacado: req.query.destacado === 'true' ? true : req.query.destacado === 'false' ? false : undefined,
                 publicado: req.query.publicado === 'true' ? true : req.query.publicado === 'false' ? false : undefined,
                 financiacion: req.query.financiacion === 'true' ? true : req.query.financiacion === 'false' ? false : undefined,
+                oferta: req.query.oferta === 'true' ? true : req.query.oferta === 'false' ? false : undefined,
                 stock_bajo: req.query.stock_bajo === 'true' ? true : req.query.stock_bajo === 'false' ? false : undefined,
             };
 
@@ -569,6 +570,7 @@ export class ProductosController {
                 precio_max: req.query.precio_max ? parseFloat(req.query.precio_max as string) : undefined,
                 destacado: req.query.destacado === 'true' ? true : req.query.destacado === 'false' ? false : undefined,
                 financiacion: req.query.financiacion === 'true' ? true : req.query.financiacion === 'false' ? false : undefined,
+                oferta: req.query.oferta === 'true' ? true : req.query.oferta === 'false' ? false : undefined,
             };
 
             const result = await productosService.getProductosTienda(filters);

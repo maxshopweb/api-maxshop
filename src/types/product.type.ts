@@ -70,6 +70,8 @@ export interface IProductoFilters {
     precio_max?: number;
     destacado?: boolean;
     financiacion?: boolean;
+    /** Tienda: solo productos con lista Especial/Oferta (lista_precio_activa = 'O') */
+    oferta?: boolean;
     stock_bajo?: boolean;
     busqueda?: string;
     estado?: EstadoGeneral; // Solo para admin: 1 = activo, 2 = inactivo (NUNCA 0 = eliminado)
