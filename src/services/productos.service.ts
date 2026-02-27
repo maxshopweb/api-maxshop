@@ -562,7 +562,14 @@ export class ProductosService {
                 ? (cleanData.lista_precio_activa as string).toUpperCase()
                 : null)
             : undefined;
-        // Excluir campos solo de respuesta (calculados en normalizeProducto), no existen en DB
+        // Excluir campos solo de respuesta (calculados en normalizeProducto), no existen en DB.
+        // El cliente puede enviar el objeto completo del GET, por eso se omiten aquí.
+        const cleanDataForUpdate = cleanData as typeof cleanData & {
+            precio_sin_iva?: number | null;
+            precio?: number | null;
+            lista_activa?: unknown;
+            precio_venta_referencia?: number | null;
+        };
         const {
             cod_sku,
             id_interno,
@@ -576,7 +583,7 @@ export class ProductosService {
             lista_activa,
             precio_venta_referencia,
             ...updateData
-        } = cleanData;
+        } = cleanDataForUpdate;
         const updatePayload = {
             ...updateData,
             nombre: updateData.nombre ? updateData.nombre.toUpperCase() : updateData.nombre,
