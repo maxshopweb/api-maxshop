@@ -562,7 +562,21 @@ export class ProductosService {
                 ? (cleanData.lista_precio_activa as string).toUpperCase()
                 : null)
             : undefined;
-        const { cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...updateData } = cleanData;
+        // Excluir campos solo de respuesta (calculados en normalizeProducto), no existen en DB
+        const {
+            cod_sku,
+            id_interno,
+            modelo,
+            precio_mayorista,
+            precio_minorista,
+            precio_evento,
+            stock_mayorista,
+            precio_sin_iva,
+            precio,
+            lista_activa,
+            precio_venta_referencia,
+            ...updateData
+        } = cleanData;
         const updatePayload = {
             ...updateData,
             nombre: updateData.nombre ? updateData.nombre.toUpperCase() : updateData.nombre,
@@ -1275,7 +1289,7 @@ export class ProductosService {
                         FROM productos p
                         LEFT JOIN iva i ON p.codi_impuesto = i.codi_impuesto
                         WHERE ${whereSql}
-                        ORDER BY ${precioCalcSql} DESC
+                        ORDER BY ${precioCalcSql} DESC NULLS LAST
                         LIMIT ${limit}
                         OFFSET ${(page - 1) * limit}
                     `
