@@ -29,6 +29,8 @@ export interface IProductos {
     precio?: number | null;
     /** Precio base sin impuestos (lista activa) */
     precio_sin_iva?: number | null;
+    /** Precio lista Venta (V) con IVA; solo cuando lista activa no es Venta, para mostrar tachado */
+    precio_venta_referencia?: number | null;
     stock?: number | null;
     stock_min?: number | null;
     unidad_medida?: string | null;

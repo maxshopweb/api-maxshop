@@ -50,6 +50,17 @@ export class ProductosService {
         return precioSinIva * (1 + porcentaje / 100);
     }
 
+    /**
+     * Precio de lista Venta (V) con IVA. Para mostrar tachado cuando la lista activa no es Venta.
+     */
+    private getPrecioVentaConIva(producto: any): number | null {
+        const pv = producto.precio_venta != null ? Number(producto.precio_venta) : null;
+        if (pv === null || pv < 0) return null;
+        const iva = producto.iva;
+        const porcentaje = iva?.porcentaje != null ? Number(iva.porcentaje) : 0;
+        return pv * (1 + porcentaje / 100);
+    }
+
     /** Map codi_lista -> lista para enriquecer producto con lista_activa (sin N+1) */
     private async getListasMap(): Promise<Map<string, IListaPrecio>> {
         const listas = await prisma.lista_precio.findMany({
@@ -92,12 +103,15 @@ export class ProductosService {
         const lista_activa = listasMap ? this.buildListaActivaInfo(lista) : null;
 
         const defaultStock = this.getDefaultStock();
+        const precioActivo = this.calcularPrecioConIva(producto);
+        const precioVentaRef = codiLista !== 'V' ? this.getPrecioVentaConIva(producto) : null;
         const normalized: any = {
             ...producto,
             nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
-            precio: this.calcularPrecioConIva(producto),
+            precio: precioActivo,
             precio_sin_iva: this.getPrecioListaActiva(producto),
             lista_activa: lista_activa ?? undefined,
+            ...(precioVentaRef != null && { precio_venta_referencia: precioVentaRef }),
             ...(defaultStock !== null && { stock: defaultStock })
         };
 
@@ -1111,6 +1125,7 @@ export class ProductosService {
             busqueda,
             id_cat,
             id_marca,
+            codi_grupo,
             precio_min,
             precio_max,
             destacado,
@@ -1123,6 +1138,35 @@ export class ProductosService {
             publicado: true
         };
 
+        // Resolver id_cat / id_marca a códigos para uso en raw query y whereClause
+        let codi_categoria: string | undefined;
+        let codi_marca: string | undefined;
+        if (id_cat) {
+            if (typeof id_cat === 'number') {
+                const categoria = await prisma.categoria.findFirst({ where: { id_cat } });
+                if (categoria) {
+                    codi_categoria = categoria.codi_categoria;
+                    whereClause.codi_categoria = codi_categoria;
+                }
+            } else if (typeof id_cat === 'string') {
+                codi_categoria = id_cat;
+                whereClause.codi_categoria = id_cat;
+            }
+        }
+        if (id_marca) {
+            if (typeof id_marca === 'number') {
+                const marca = await prisma.marca.findFirst({ where: { id_marca } });
+                if (marca) {
+                    codi_marca = marca.codi_marca;
+                    whereClause.codi_marca = codi_marca;
+                }
+            } else if (typeof id_marca === 'string') {
+                codi_marca = id_marca;
+                whereClause.codi_marca = id_marca;
+            }
+        }
+        if (codi_grupo) whereClause.codi_grupo = codi_grupo;
+
         // Filtros opcionales
         if (busqueda) {
             whereClause.OR = [
@@ -1130,28 +1174,6 @@ export class ProductosService {
                 { codi_arti: { contains: busqueda, mode: 'insensitive' } },
                 { descripcion: { contains: busqueda, mode: 'insensitive' } }
             ];
-        }
-
-        if (id_cat) {
-            if (typeof id_cat === 'number') {
-                const categoria = await prisma.categoria.findFirst({ where: { id_cat } });
-                if (categoria) {
-                    whereClause.codi_categoria = categoria.codi_categoria;
-                }
-            } else if (typeof id_cat === 'string') {
-                whereClause.codi_categoria = id_cat;
-            }
-        }
-
-        if (id_marca) {
-            if (typeof id_marca === 'number') {
-                const marca = await prisma.marca.findFirst({ where: { id_marca } });
-                if (marca) {
-                    whereClause.codi_marca = marca.codi_marca;
-                }
-            } else if (typeof id_marca === 'string') {
-                whereClause.codi_marca = id_marca;
-            }
         }
 
         if (precio_min !== undefined || precio_max !== undefined) {
@@ -1180,21 +1202,112 @@ export class ProductosService {
         // Contar total
         const total = await prisma.productos.count({ where: whereClause });
 
-        // Obtener productos con relaciones
-        const productos = await prisma.productos.findMany({
-            where: whereClause,
-            include: {
-                categoria: true,
-                marca: true,
-                grupo: true,
-                iva: true
-            },
-            orderBy: {
-                [order_by]: order
-            },
-            skip: (page - 1) * limit,
-            take: limit
-        });
+        // Orden por precio renderizado (lista activa + IVA): misma lógica que getPrecioListaActiva + calcularPrecioConIva
+        const orderByPrecioRenderizado = order_by === 'precio';
+
+        let productos: any[];
+
+        if (orderByPrecioRenderizado) {
+            // Precio calculado: CASE lista_precio_activa → columna precio, luego * (1 + iva.porcentaje/100)
+            const precioCalcSql = Prisma.sql`
+                (CASE UPPER(COALESCE(p.lista_precio_activa, 'V'))
+                    WHEN 'V' THEN p.precio_venta
+                    WHEN 'O' THEN p.precio_especial
+                    WHEN 'P' THEN p.precio_pvp
+                    WHEN 'Q' THEN p.precio_campanya
+                    ELSE COALESCE(p.precio_venta, p.precio_especial, p.precio_pvp, p.precio_campanya)
+                END) * (1 + COALESCE(i.porcentaje, 0)::numeric / 100)
+            `;
+            const conditions: Prisma.Sql[] = [
+                Prisma.sql`p.estado = 1`,
+                Prisma.sql`p.publicado = true`
+            ];
+            if (busqueda && busqueda.trim()) {
+                const pattern = `%${busqueda.trim()}%`;
+                conditions.push(Prisma.sql`(p.nombre ILIKE ${pattern} OR p.codi_arti ILIKE ${pattern} OR p.descripcion ILIKE ${pattern})`);
+            }
+            if (codi_categoria) conditions.push(Prisma.sql`p.codi_categoria = ${codi_categoria}`);
+            if (codi_marca) conditions.push(Prisma.sql`p.codi_marca = ${codi_marca}`);
+            if (codi_grupo) conditions.push(Prisma.sql`p.codi_grupo = ${codi_grupo}`);
+            if (destacado !== undefined) conditions.push(Prisma.sql`p.destacado = ${destacado}`);
+            if (financiacion !== undefined) conditions.push(Prisma.sql`p.financiacion = ${financiacion}`);
+            if (precio_min !== undefined || precio_max !== undefined) {
+                const gte = precio_min !== undefined ? precio_min : null;
+                const lte = precio_max !== undefined ? precio_max : null;
+                const priceConditions: Prisma.Sql[] = [];
+                if (gte !== null && lte !== null) {
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'V' AND p.precio_venta >= ${gte} AND p.precio_venta <= ${lte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'O' AND p.precio_especial >= ${gte} AND p.precio_especial <= ${lte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'P' AND p.precio_pvp >= ${gte} AND p.precio_pvp <= ${lte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'Q' AND p.precio_campanya >= ${gte} AND p.precio_campanya <= ${lte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa IS NULL AND p.precio_venta >= ${gte} AND p.precio_venta <= ${lte})`);
+                } else if (gte !== null) {
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'V' AND p.precio_venta >= ${gte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'O' AND p.precio_especial >= ${gte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'P' AND p.precio_pvp >= ${gte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'Q' AND p.precio_campanya >= ${gte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa IS NULL AND p.precio_venta >= ${gte})`);
+                } else {
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'V' AND p.precio_venta <= ${lte!})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'O' AND p.precio_especial <= ${lte!})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'P' AND p.precio_pvp <= ${lte!})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'Q' AND p.precio_campanya <= ${lte!})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa IS NULL AND p.precio_venta <= ${lte!})`);
+                }
+                conditions.push(Prisma.sql`(${Prisma.join(priceConditions, ' OR ')})`);
+            }
+            const whereSql = Prisma.join(conditions, ' AND ');
+            const orderedIds = order === 'asc'
+                ? await prisma.$queryRaw<Array<{ id_prod: number }>>(
+                    Prisma.sql`
+                        SELECT p.id_prod
+                        FROM productos p
+                        LEFT JOIN iva i ON p.codi_impuesto = i.codi_impuesto
+                        WHERE ${whereSql}
+                        ORDER BY ${precioCalcSql} ASC
+                        LIMIT ${limit}
+                        OFFSET ${(page - 1) * limit}
+                    `
+                )
+                : await prisma.$queryRaw<Array<{ id_prod: number }>>(
+                    Prisma.sql`
+                        SELECT p.id_prod
+                        FROM productos p
+                        LEFT JOIN iva i ON p.codi_impuesto = i.codi_impuesto
+                        WHERE ${whereSql}
+                        ORDER BY ${precioCalcSql} DESC
+                        LIMIT ${limit}
+                        OFFSET ${(page - 1) * limit}
+                    `
+                );
+            const idList = orderedIds.map((r) => r.id_prod);
+            if (idList.length === 0) {
+                productos = [];
+            } else {
+                const byId = await prisma.productos.findMany({
+                    where: { id_prod: { in: idList } },
+                    include: { categoria: true, marca: true, grupo: true, iva: true }
+                });
+                const orderMap = new Map(idList.map((id, i) => [id, i]));
+                productos = byId.sort((a, b) => (orderMap.get(a.id_prod) ?? 0) - (orderMap.get(b.id_prod) ?? 0));
+            }
+        } else {
+            // Orden por columnas del modelo (nombre, creado_en, stock, etc.)
+            productos = await prisma.productos.findMany({
+                where: whereClause,
+                include: {
+                    categoria: true,
+                    marca: true,
+                    grupo: true,
+                    iva: true
+                },
+                orderBy: {
+                    [order_by]: order
+                },
+                skip: (page - 1) * limit,
+                take: limit
+            });
+        }
 
         const listasMap = await this.getListasMap();
         const productosNormalizados = this.normalizeProductos(productos, listasMap);
