@@ -296,16 +296,25 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             console.warn(`⚠️ [ExcelHandler] No se encontró provincia en dirección de envío ni en cliente para venta #${venta.id_venta}`);
         }
 
-        // Código de plataforma de pago para Excel: "MP" o "TRANS"
+        // Columna AG: "MP" solo si es MercadoPago; transferencia o efectivo → vacío
         const codigoPlataformaPago = (() => {
             const metodo = (venta.metodo_pago || '').toLowerCase();
             if (metodo.includes('mercado') || metodo === 'mercadopago') return 'MP';
-            if (metodo.includes('transferencia') || metodo === 'transferencia') return 'TRANS';
-            return metodo || '';
+            return '';
         })();
 
-        // Transporte: valor fijo "ANDREANI" para columna AF
-        const construirTransporte = (): string => 'ANDREANI';
+        // Columna AK: "0" MercadoPago, "t" transferencia, "E" efectivo
+        const codigoMetodoPagoAK = (() => {
+            const metodo = (venta.metodo_pago || '').toLowerCase();
+            if (metodo.includes('mercado') || metodo === 'mercadopago') return '0';
+            if (metodo.includes('transferencia') || metodo === 'transferencia') return 't';
+            if (metodo.includes('efectivo') || metodo === 'efectivo') return 'E';
+            return '';
+        })();
+
+        // Columna AF: "C3" (código Andreani) solo si es envío con Andreani; si es retiro en local, vacío
+        const esEnvioAndreani = !!(codigoEnvioAndreani || (andreaniData && !(andreaniData as any).skipped));
+        const construirTransporte = (): string => (esEnvioAndreani ? 'C3' : '');
 
         // Sucursales Andreani desde contexto (respuesta del pre-envío)
         const sucursalDistribucionAndreani = andreaniData?.respuestaCompleta?.sucursalDeDistribucion?.descripcion ?? '';
@@ -474,15 +483,16 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AZ: tipoYNumeroDoc, // COLUMNA Z (26): mismo formato que AV (22) — "DNI 42234462"
                 BA: formatearDireccionEnvio(), // COLUMNA AA (Excel): Dirección de envío formateada
                 BB: direccionEnvio?.ciudad || cliente?.ciudad || '', // Ciudad envío
-                BC: formatearProvincia(direccionEnvio?.provincia || cliente?.provincia), // Provincia envío (formateada: mayúsculas y espacios)
+                BC: codigoProvinciaFacturacion, // COLUMNA AC (BC): mismo codi_provincia que columna T
                 BD: (direccionEnvio?.cod_postal || cliente?.cod_postal || '').toString(), // Código postal envío
                 BE: direccionEnvio?.pais || 'ARGENTINA', // País
-                BF: construirTransporte(), // COLUMNA AF: Transporte fijo "ANDREANI"
-                BG: codigoPlataformaPago, // COLUMNA AG: "MP" o "TRANS" según método de pago
+                BF: construirTransporte(), // COLUMNA AF: "C3" si Andreani, vacío si retiro en local
+                BG: codigoPlataformaPago, // COLUMNA AG: "MP" si MercadoPago, vacío si no
                 BH: pagoMP?.payment_id || null, // ID del pago
                 BI: pagoMP?.status_mp ? mapMPStatusToSpanish(pagoMP.status_mp) : null, // Estado del pago
                 BJ: pagoMP?.status_detail ? mapMPStatusDetailToSpanish(pagoMP.status_detail) : null, // Detalle del pago
                 BK: pagoMP?.payment_method_id ? mapPaymentMethodToSpanish(pagoMP.payment_method_id) : null, // Forma de pago
+                AK: codigoMetodoPagoAK, // COLUMNA AK: "0" MP, "t" transferencia, "E" efectivo
                 BL: pagoMP?.payment_type_id
                     ? mapPaymentTypeToSpanish(pagoMP.payment_type_id, pagoMP.card_info)
                     : null, // Tipo de pago
@@ -523,6 +533,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AG: detalle.sub_total != null ? Number(detalle.sub_total) : 0,
                 AL: calcularEstado(detalle, totalDetalles),
                 AN: producto?.codi_arti || '', // N: solo SKU (codi_arti)
+                AQ: producto?.nombre || '', // Q: nombre del artículo (solo en filas legacy, no en cabecera)
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0,
                 AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea
             };
@@ -554,7 +565,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AG: totalConIvaNum, // G (número)
                 AH: -Math.abs(diferencia), // H (número)
                 AJ: -(Math.abs(diferencia) * 0.8378), // J (número)
-                AK: -(Math.abs(diferencia) * 0.1394), // K (número)
+                // AK viene del base row (código medio de pago: "0"|"t"|"E")
                 AL: totalNetoNum, // L (número)
             };
 
