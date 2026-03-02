@@ -1,7 +1,10 @@
 /**
  * Worker de sincronización automática del catálogo (FTP → CSV → BD).
  * - Se ejecuta una vez al levantar el servidor (con pequeño delay).
- * - Luego cada 20 minutos actualiza todo el catálogo.
+ * - Luego cada 20 minutos intenta sincronizar.
+ * - Sin manifest (primera vez): sync completa (descarga todo, importarTodo).
+ * - Con manifest: sync incremental (solo archivos cambiados, importaciones selectivas).
+ * - SYNC_FORZAR_COMPLETA=true: siempre sync completa (mantenimiento/recuperación).
  * - Lock: si una sync sigue en curso, se salta el siguiente tick.
  */
 
@@ -48,7 +51,8 @@ export class CatalogoSyncWorker {
   }
 
   /**
-   * Ejecuta la sincronización completa con lock para evitar solapamientos.
+   * Ejecuta la sincronización: completa si no hay manifest (primera vez), incremental si ya existe.
+   * Lock evita solapamientos.
    */
   private async ejecutarSync(origen: 'arranque' | 'cron'): Promise<void> {
     if (this.isRunning) {
@@ -59,19 +63,44 @@ export class CatalogoSyncWorker {
     }
 
     this.isRunning = true;
-    console.log(`📡 [CatalogoSyncWorker] Iniciando sincronización de catálogo (${origen})...`);
+    const forzarCompleta =
+      process.env.SYNC_FORZAR_COMPLETA === 'true' || process.env.SYNC_FORZAR_COMPLETA === '1';
+    const incremental = !forzarCompleta && sincronizacionService.tieneManifest();
+    console.log(
+      `📡 [CatalogoSyncWorker] Iniciando sincronización (${origen}, ${incremental ? 'incremental' : forzarCompleta ? 'completa forzada' : 'completa'})...`
+    );
 
     try {
-      const resultado = await sincronizacionService.sincronizarCompleto();
-      if (resultado.exito) {
-        console.log(
-          `✅ [CatalogoSyncWorker] Sincronización completada en ${resultado.duracionTotalMs}ms`
-        );
+      if (incremental) {
+        const resultado = await sincronizacionService.sincronizarIncremental();
+        if (resultado.exito) {
+          if (resultado.sinCambios) {
+            console.log(
+              `✅ [CatalogoSyncWorker] Sin cambios en FTP (${resultado.duracionMs}ms)`
+            );
+          } else {
+            console.log(
+              `✅ [CatalogoSyncWorker] Sync incremental: ${resultado.archivosProcesados.length} archivo(s), ${resultado.duracionMs}ms`
+            );
+          }
+        } else {
+          console.error(
+            `❌ [CatalogoSyncWorker] Sync incremental falló: ${resultado.mensaje}`,
+            resultado.errores
+          );
+        }
       } else {
-        console.error(
-          `❌ [CatalogoSyncWorker] Sincronización falló: ${resultado.mensaje}`,
-          resultado.errores
-        );
+        const resultado = await sincronizacionService.sincronizarCompleto();
+        if (resultado.exito) {
+          console.log(
+            `✅ [CatalogoSyncWorker] Sincronización completa en ${resultado.duracionTotalMs}ms`
+          );
+        } else {
+          console.error(
+            `❌ [CatalogoSyncWorker] Sincronización falló: ${resultado.mensaje}`,
+            resultado.errores
+          );
+        }
       }
     } catch (error: any) {
       console.error('❌ [CatalogoSyncWorker] Error en sincronización:', error?.message || error);

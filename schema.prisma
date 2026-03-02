@@ -274,20 +274,20 @@ model forma_pago {
 }
 
 model negocio {
-  id_neg           Int     @id @default(autoincrement())
-  nombre           String? @db.VarChar(255)
-  direccion        String? @db.VarChar(255)
-  logo             String? @db.VarChar(255)
-  telefono         String? @db.VarChar(50)
-  cuit             String? @db.VarChar(50)
-  cond_iva         String? @db.VarChar(100)
-  email            String? @db.VarChar(255)
-  color_primario   String? @db.VarChar(20)
-  color_secundario String? @db.VarChar(20)
-  token_pago       String? @db.VarChar(255)
-  token_envio      String?
-  envio_gratis_minimo Decimal? @db.Decimal(10, 2)
-  cuotas_sin_interes Decimal? @db.Decimal(10, 2)
+  id_neg                    Int      @id @default(autoincrement())
+  nombre                    String?  @db.VarChar(255)
+  direccion                 String?  @db.VarChar(255)
+  logo                      String?  @db.VarChar(255)
+  telefono                  String?  @db.VarChar(50)
+  cuit                      String?  @db.VarChar(50)
+  cond_iva                  String?  @db.VarChar(100)
+  email                     String?  @db.VarChar(255)
+  color_primario            String?  @db.VarChar(20)
+  color_secundario          String?  @db.VarChar(20)
+  token_pago                String?  @db.VarChar(255)
+  token_envio               String?
+  envio_gratis_minimo       Decimal? @db.Decimal(10, 2)
+  cuotas_sin_interes        Decimal? @db.Decimal(10, 2)
   cuotas_sin_interes_minimo Decimal? @db.Decimal(10, 2)
 }
 
@@ -389,7 +389,7 @@ model usuarios {
   email_no_verificado Boolean?      @default(false)
   numero_documento    String?       @db.VarChar(20)
   tipo_documento      String?       @db.VarChar(10)
-  guest_device_id    String?       @unique @db.VarChar(64)
+  guest_device_id     String?       @unique @db.VarChar(64)
   admin               admin?
   auditoria           auditoria[]
   cliente             cliente?

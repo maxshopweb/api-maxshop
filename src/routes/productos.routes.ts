@@ -72,6 +72,12 @@ router.patch('/:id/stock',
     productosController.updateStock.bind(productosController)
 );
 
+// PATCH restaurar precios desde Excel: solo admin (limpia flag; próxima sync traerá precios del CSV)
+router.patch('/:id/restaurar-precios-excel',
+    adminAuth,
+    productosController.restaurarPreciosDesdeExcel.bind(productosController)
+);
+
 // PATCH /api/productos/:id/destacado: solo admin
 router.patch('/:id/destacado',
     adminAuth,

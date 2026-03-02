@@ -587,6 +587,8 @@ export class ProductosService {
             precio_venta_referencia,
             ...updateData
         } = cleanDataForUpdate;
+        const precioFields = ['precio_venta', 'precio_especial', 'precio_pvp', 'precio_campanya'] as const;
+        const editadoPrecio = precioFields.some((f) => data[f] !== undefined);
         const updatePayload = {
             ...updateData,
             nombre: updateData.nombre ? updateData.nombre.toUpperCase() : updateData.nombre,
@@ -596,6 +598,7 @@ export class ProductosService {
             ...(codi_impuesto !== undefined && { codi_impuesto: codi_impuesto || null }),
             ...(listaActiva !== undefined && { lista_precio_activa: listaActiva }),
             ...(estado !== undefined && estado !== null && { estado: Number(estado) }),
+            ...(editadoPrecio && { precio_editado_manualmente: true }),
             actualizado_en: new Date()
         };
         const productoActualizado = await prisma.productos.update({
@@ -689,6 +692,43 @@ export class ProductosService {
         // Invalidar cache de ventas porque incluyen productos actualizados
         await cacheService.deletePattern('ventas:*');
         await cacheService.deletePattern('venta:*');
+    }
+
+    /**
+     * Restaura el flag de precios para que la próxima sync (cron o manual) vuelva a traer
+     * los precios del CSV/Excel. No lee el CSV; solo pone precio_editado_manualmente en false.
+     */
+    async restaurarPreciosDesdeExcel(id: number): Promise<IProductos> {
+        const existente = await prisma.productos.findUnique({
+            where: { id_prod: id },
+            select: { id_prod: true, codi_arti: true },
+        });
+        if (!existente) {
+            throw new Error('Producto no encontrado');
+        }
+        await prisma.productos.update({
+            where: { id_prod: id },
+            data: { precio_editado_manualmente: false, actualizado_en: new Date() } as Prisma.productosUpdateInput,
+        });
+        await cacheService.deletePattern('productos:*');
+        await cacheService.delete(`producto:${id}`);
+        if (existente.codi_arti) {
+            await cacheService.delete(`producto:codigo:${existente.codi_arti}`);
+        }
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.delete('productos:stock-bajo');
+        await cacheService.deletePattern('productos:con-imagenes:*');
+        await cacheService.deletePattern('ventas:*');
+        await cacheService.deletePattern('venta:*');
+        const producto = await prisma.productos.findUnique({
+            where: { id_prod: id },
+            include: { categoria: true, marca: true, grupo: true, iva: true },
+        });
+        if (!producto) {
+            throw new Error('Producto no encontrado');
+        }
+        const listasMap = await this.getListasMap();
+        return this.normalizeProducto(producto, listasMap);
     }
 
     async exists(id: number): Promise<boolean> {

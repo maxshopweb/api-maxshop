@@ -367,6 +367,43 @@ export class ProductosController {
         }
     }
 
+    /**
+     * PATCH /api/productos/:id/restaurar-precios-excel
+     * Limpia precio_editado_manualmente para que la próxima sync traiga precios del CSV.
+     * No lee el CSV; solo actualiza el flag. Solo admin.
+     */
+    async restaurarPreciosDesdeExcel(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido'
+                });
+                return;
+            }
+            const producto = await productosService.restaurarPreciosDesdeExcel(id);
+            res.json({
+                success: true,
+                data: producto,
+                message: 'Los precios de este producto se actualizarán en la próxima sincronización con el FTP/CSV.'
+            });
+        } catch (error) {
+            if (error instanceof Error && error.message === 'Producto no encontrado') {
+                res.status(404).json({
+                    success: false,
+                    error: 'Producto no encontrado'
+                });
+                return;
+            }
+            console.error('Error en restaurarPreciosDesdeExcel:', error);
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Error al restaurar precios desde Excel'
+            });
+        }
+    }
+
     async getContenidoCrearProducto(req: Request, res: Response): Promise<void> {
         try {
             const contenido = await productosService.getContenidoCrearProducto();

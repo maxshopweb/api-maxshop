@@ -1118,6 +1118,202 @@ export class CSVImporterService {
   }
 
   /**
+   * Etapa 3: Actualiza solo stock y stock_min en productos desde MAESSTOK.csv.
+   * No toca precios ni datos maestros. Reutiliza cargarStock().
+   */
+  async actualizarSoloStock(csvDir: string): Promise<{ actualizados: number }> {
+    const csvPath = path.join(csvDir, 'MAESSTOK.csv');
+    if (!fs.existsSync(csvPath)) {
+      console.warn('⚠️ [actualizarSoloStock] No existe MAESSTOK.csv');
+      return { actualizados: 0 };
+    }
+    const stockMap = this.cargarStock(csvPath);
+    let actualizados = 0;
+    const overrideEnv = process.env.IMPORT_STOCK_OVERRIDE;
+    for (const [codiarti, data] of stockMap) {
+      let stock = data.stock;
+      let stock_min = data.stock_min;
+      if (overrideEnv !== undefined && overrideEnv !== '') {
+        const override = parseInt(overrideEnv, 10);
+        if (!isNaN(override) && override >= 0) {
+          stock = override;
+        }
+      }
+      const codi_arti_truncado = codiarti.trim().substring(0, 10);
+      try {
+        const result = await prisma.productos.updateMany({
+          where: { codi_arti: codi_arti_truncado },
+          data: {
+            stock,
+            stock_min: stock_min != null ? Math.round(stock_min) : null,
+            actualizado_en: new Date(),
+          },
+        });
+        actualizados += result.count;
+      } catch (error) {
+        console.error(`⚠️ [actualizarSoloStock] Error en ${codi_arti_truncado}:`, error);
+      }
+    }
+    console.log(`📦 [actualizarSoloStock] ${actualizados} producto(s) actualizado(s)`);
+    return { actualizados };
+  }
+
+  /**
+   * Etapa 3: Actualiza solo precios en productos desde maesprec.csv.
+   * No toca stock ni datos maestros. Reutiliza cargarPrecios().
+   * No actualiza productos con precio_editado_manualmente = true (precios editados en el panel).
+   */
+  async actualizarSoloPrecios(csvDir: string): Promise<{ actualizados: number }> {
+    const csvPath = path.join(csvDir, 'maesprec.csv');
+    if (!fs.existsSync(csvPath)) {
+      console.warn('⚠️ [actualizarSoloPrecios] No existe maesprec.csv');
+      return { actualizados: 0 };
+    }
+    const preciosMap = this.cargarPrecios(csvPath);
+    let actualizados = 0;
+    for (const [codiarti, precios] of preciosMap) {
+      const codi_arti_truncado = codiarti.trim().substring(0, 10);
+      try {
+        const result = await prisma.productos.updateMany({
+          where: {
+            codi_arti: codi_arti_truncado,
+            precio_editado_manualmente: { not: true },
+          },
+          data: {
+            precio_venta: precios.precioVenta ?? null,
+            precio_especial: precios.precioEspecial ?? null,
+            precio_pvp: precios.precioPvp ?? null,
+            precio_campanya: precios.precioCampanya ?? null,
+            actualizado_en: new Date(),
+          },
+        });
+        actualizados += result.count;
+      } catch (error) {
+        console.error(`⚠️ [actualizarSoloPrecios] Error en ${codi_arti_truncado}:`, error);
+      }
+    }
+    console.log(`💰 [actualizarSoloPrecios] ${actualizados} producto(s) actualizado(s)`);
+    return { actualizados };
+  }
+
+  /**
+   * Etapa 3: Actualiza solo datos maestros de productos desde MAESARTI.csv (nombre, categoría, marca, etc.).
+   * No toca precios ni stock. Solo actualiza productos existentes; no crea nuevos.
+   */
+  async actualizarSoloDatosMaestrosProductos(csvDir: string): Promise<{ actualizados: number }> {
+    const csvPath = path.join(csvDir, 'MAESARTI.csv');
+    if (!fs.existsSync(csvPath)) {
+      console.warn('⚠️ [actualizarSoloDatosMaestrosProductos] No existe MAESARTI.csv');
+      return { actualizados: 0 };
+    }
+
+    const categoriasSet = new Set<string>(
+      (await prisma.categoria.findMany({ select: { codi_categoria: true } })).map(
+        (c: { codi_categoria: string | null }) => c.codi_categoria
+      ).filter((x: string | null): x is string => x != null)
+    );
+    const marcasSet = new Set<string>(
+      (await prisma.marca.findMany({ select: { codi_marca: true } })).map(
+        (m: { codi_marca: string }) => m.codi_marca
+      )
+    );
+    const gruposSet = new Set<string>(
+      (await prisma.grupo.findMany({ select: { codi_grupo: true } })).map(
+        (g: { codi_grupo: string }) => g.codi_grupo
+      )
+    );
+    const impuestosKeys = new Set<string>(
+      (await prisma.iva.findMany({ select: { codi_impuesto: true } })).map(
+        (i: { codi_impuesto: string }) => i.codi_impuesto
+      )
+    );
+
+    const contenido = fs.readFileSync(csvPath, 'utf-8');
+    const registros = this.parsearCSV(contenido);
+    const header = registros[0];
+    if (!header) return { actualizados: 0 };
+    const indices = this.obtenerIndicesColumnas(header);
+    if (indices['CODIARTI'] === undefined) return { actualizados: 0 };
+
+    let actualizados = 0;
+    const imageUpdates: { codi_arti: string; imgPath: string }[] = [];
+
+    for (let rowNum = 1; rowNum < registros.length; rowNum++) {
+      const row = registros[rowNum];
+      if (!row) continue;
+
+      try {
+        const codiarti = this.limpiarCampo(row[indices['CODIARTI'] ?? 1]).trim();
+        if (!codiarti) continue;
+
+        const codi_arti_truncado = codiarti.substring(0, 10);
+        const nombre = this.truncarString(this.limpiarCampo(row[indices['DESCARTI'] ?? 3]), 255);
+        const codigrar = this.truncarString(this.limpiarCampo(row[indices['CODIGRAR'] ?? 2]), 4);
+        const codicate = this.truncarString(this.limpiarCampo(row[indices['CODICATE'] ?? -1] || ''), 4);
+        const codimarc = this.truncarString(this.limpiarCampo(row[indices['CODIMARC'] ?? -1] || ''), 3);
+        const codiimp1 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP1'] ?? 7]), 2);
+        const codiimp2 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP2'] ?? 8]), 2);
+        const codiimp3 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP3'] ?? -1] || ''), 2);
+        const actiarti = this.truncarString(this.limpiarCampo(row[indices['ACTIARTI'] ?? -1] || ''), 1);
+        const imagarti = this.limpiarCampo(row[indices['IMAGARTI'] ?? -1] || '');
+        const unmearti = this.truncarString(this.limpiarCampo(row[indices['UNMEARTI'] ?? 4] || ''), 3);
+        const unenarti = this.parsearNumero(row[indices['UNENARTI'] ?? 6]);
+        const partarti = this.truncarString(this.limpiarCampo(row[indices['PARTARTI'] ?? 35] || ''), 22);
+
+        const codi_grupo = codigrar && gruposSet.has(codigrar) ? codigrar : null;
+        const codi_categoria = codicate && categoriasSet.has(codicate) ? codicate : null;
+        const codi_marca = codimarc && marcasSet.has(codimarc) ? codimarc : null;
+        let codi_impuesto: string | null = null;
+        if (codiimp1 && impuestosKeys.has(codiimp1)) codi_impuesto = codiimp1;
+        else if (codiimp2 && impuestosKeys.has(codiimp2)) codi_impuesto = codiimp2;
+        else if (codiimp3 && impuestosKeys.has(codiimp3)) codi_impuesto = codiimp3;
+
+        const parsedCsvImage = this.parseCsvImagePath(imagarti);
+        if (parsedCsvImage.status === 'ok' && this.validateImportedPathExists(parsedCsvImage.value)) {
+          imageUpdates.push({ codi_arti: codi_arti_truncado, imgPath: parsedCsvImage.value });
+        }
+
+        const result = await prisma.productos.updateMany({
+          where: { codi_arti: codi_arti_truncado },
+          data: {
+            nombre,
+            codi_grupo,
+            codi_categoria,
+            codi_marca,
+            codi_impuesto,
+            unidad_medida: unmearti || null,
+            unidades_por_producto: unenarti != null ? unenarti : null,
+            codi_barras: partarti || null,
+            activo: actiarti === 'A' ? 'A' : (actiarti || 'I'),
+            estado: actiarti === 'A' ? 1 : 0,
+            actualizado_en: new Date(),
+          },
+        });
+        actualizados += result.count;
+      } catch (error) {
+        // seguir con la siguiente fila
+      }
+    }
+
+    for (const { codi_arti, imgPath } of imageUpdates) {
+      try {
+        await prisma.productos.updateMany({
+          where: {
+            codi_arti,
+            OR: [{ img_principal: null }, { img_principal: '' }],
+          },
+          data: { img_principal: imgPath, actualizado_en: new Date() },
+        });
+      } catch {
+        // ignorar
+      }
+    }
+
+    console.log(`📝 [actualizarSoloDatosMaestrosProductos] ${actualizados} producto(s) actualizado(s)`);
+    return { actualizados };
+  }
+
+  /**
    * Obtiene índices de columnas del header de MAESARTI
    */
   private obtenerIndicesColumnas(headerRow: string[]): Record<string, number> {
@@ -1389,19 +1585,24 @@ export class CSVImporterService {
       try {
         const existente = await prisma.productos.findUnique({
           where: { codi_arti: producto.codi_arti },
-          select: { img_principal: true },
+          select: { img_principal: true, precio_editado_manualmente: true },
         });
 
+        const noPisarPrecios = existente?.precio_editado_manualmente === true;
         const updateData: Record<string, unknown> = {
           nombre: producto.nombre,
           codi_grupo: producto.codi_grupo,
           codi_categoria: producto.codi_categoria,
           codi_marca: producto.codi_marca,
           codi_impuesto: producto.codi_impuesto,
-          precio_venta: producto.precio_venta,
-          precio_especial: producto.precio_especial,
-          precio_pvp: producto.precio_pvp,
-          precio_campanya: producto.precio_campanya,
+          ...(noPisarPrecios
+            ? {}
+            : {
+                precio_venta: producto.precio_venta,
+                precio_especial: producto.precio_especial,
+                precio_pvp: producto.precio_pvp,
+                precio_campanya: producto.precio_campanya,
+              }),
           // No actualizar lista_precio_activa: el usuario puede haberla cambiado manualmente; el cron no la pisa
           unidad_medida: producto.unidad_medida,
           unidades_por_producto: producto.unidades_por_producto,

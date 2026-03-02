@@ -9,8 +9,10 @@ import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
 import { direccionesService } from './direcciones.service';
 import { mercadoPagoService } from './mercado-pago.service';
 import { ConfigTiendaService } from './config-tienda.service';
+import { ProductosService } from './productos.service';
 
 const configTiendaService = new ConfigTiendaService();
+const productosService = new ProductosService();
 
 export class VentasService {
     private TTL_VENTA = 3600; // 1 hora
@@ -1102,9 +1104,14 @@ export class VentasService {
     }
 
     async delete(id: number): Promise<void> {
-        // Obtener venta antes de cancelar para enviar email
+        // Obtener venta antes de cancelar (para email y, si estaba aprobada, devolver stock)
         const venta = await this.getById(id);
-        
+
+        // Al eliminar (soft delete = cancelar): si la venta estaba aprobada, devolver el stock al inventario
+        if (venta?.estado_pago === 'aprobado') {
+            await this.devolverStockVenta(venta);
+        }
+
         // Soft delete: marcar como cancelada en lugar de eliminar
         await prisma.venta.update({
             where: { id_venta: id },
@@ -1129,16 +1136,50 @@ export class VentasService {
 
     async updateEstadoPago(id: number, estado: string): Promise<IVenta> {
         const ventaAnterior = await this.getById(id);
+
+        // Al pasar a 'cancelado' desde 'aprobado': devolver el stock que se había descontado (idempotente: solo si antes estaba aprobado)
+        if (estado === 'cancelado' && ventaAnterior?.estado_pago === 'aprobado') {
+            await this.devolverStockVenta(ventaAnterior);
+        }
+
         const ventaActualizada = await this.update(id, { estado_pago: estado as any });
-        
+
         // Si el estado cambió a 'cancelado', enviar email de cancelación
         if (estado === 'cancelado' && ventaAnterior?.estado_pago !== 'cancelado') {
             this.sendCancellationEmail(ventaActualizada).catch((error) => {
                 console.error('❌ Error al enviar email de cancelación:', error);
             });
         }
-        
+
         return ventaActualizada;
+    }
+
+    /**
+     * Devuelve al inventario el stock de los productos de una venta (cuando se cancela una venta aprobada).
+     * Solo debe llamarse cuando la venta estaba en estado_pago === 'aprobado'.
+     */
+    private async devolverStockVenta(venta: IVenta): Promise<void> {
+        if (!venta.detalles || venta.detalles.length === 0) {
+            return;
+        }
+
+        for (const detalle of venta.detalles) {
+            const idProd = detalle.id_prod;
+            const cantidad = detalle.cantidad ?? 0;
+            if (idProd == null || cantidad <= 0) {
+                continue;
+            }
+
+            try {
+                await productosService.updateStock(idProd, cantidad);
+            } catch (error) {
+                console.error(
+                    `❌ [VentasService] Error al devolver stock del producto #${idProd} (venta #${venta.id_venta}):`,
+                    error
+                );
+                throw error;
+            }
+        }
     }
 
     async updateEstadoEnvio(id: number, estado: string): Promise<IVenta> {
