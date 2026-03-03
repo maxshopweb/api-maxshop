@@ -109,7 +109,7 @@ export class ExcelTemplateService {
       let currentRow = startRow;
 
       // Columnas que se escriben como número en Excel (formato decimal 23000,00)
-      const columnasNumericas = new Set(['AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AR', 'BN', 'BO', 'BP']);
+      const columnasNumericas = new Set(['AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AO', 'AP', 'AQ', 'AR', 'BN', 'BO', 'BP']);
 
       for (const rowData of ventaRows) {
         // Escribir cada columna de la fila
