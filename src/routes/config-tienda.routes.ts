@@ -6,20 +6,27 @@ import {
   loadUserFromDatabase,
   requireRole,
 } from '../middlewares/auth.middleware';
+import { handleValidationErrors } from '../middlewares/validation.middleware';
+import { configTiendaUpdateValidators } from '../validators/config-tienda.validator';
 
 const router = Router();
 const controller = new ConfigTiendaController();
 
-// GET público (sin auth) – para banner, beneficios, etc.
+// GET público – config completa (reglas + datos_bancarios). Usado por admin y por resultado checkout.
 router.get('/', controller.getConfig.bind(controller));
 
-// PUT solo admin
 const adminMiddleware = [
   verifyFirebaseToken,
   requireAuthenticatedUser,
   loadUserFromDatabase,
   requireRole('ADMIN'),
 ];
-router.put('/', ...adminMiddleware, controller.updateConfig.bind(controller));
+router.put(
+  '/',
+  ...adminMiddleware,
+  configTiendaUpdateValidators(),
+  handleValidationErrors,
+  controller.updateConfig.bind(controller)
+);
 
 export default router;

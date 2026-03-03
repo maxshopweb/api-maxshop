@@ -289,6 +289,13 @@ model negocio {
   envio_gratis_minimo       Decimal? @db.Decimal(10, 2)
   cuotas_sin_interes        Decimal? @db.Decimal(10, 2)
   cuotas_sin_interes_minimo Decimal? @db.Decimal(10, 2)
+  // Datos bancarios (transferencia / efectivo)
+  banco                     String?  @db.VarChar(100)
+  tipo_cuenta               String?  @db.VarChar(50)
+  numero_cuenta             String?  @db.VarChar(50)
+  cbu                       String?  @db.VarChar(22)
+  alias                     String?  @db.VarChar(50)
+  instrucciones             String?  @db.VarChar(500)
 }
 
 model productos {
@@ -318,6 +325,7 @@ model productos {
   precio_pvp            Decimal?        @db.Decimal(19, 6)
   precio_campanya       Decimal?        @db.Decimal(19, 6)
   lista_precio_activa   String?         @db.VarChar(1)
+  precio_editado_manualmente Boolean?   @default(false)
   publicado             Boolean?        @default(false)
   categoria             categoria?      @relation(fields: [codi_categoria], references: [codi_categoria])
   grupo                 grupo?          @relation(fields: [codi_grupo], references: [codi_grupo])
