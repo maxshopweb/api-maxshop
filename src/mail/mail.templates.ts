@@ -343,6 +343,7 @@ function getOrderExpiredTemplate(data: OrderEventData): MailTemplate {
 
 /**
  * Template: Instrucciones de Pago (Datos Bancarios)
+ * Usa data.datosBancarios (negocio) cuando existe; si no, fallback a env o mensaje de contacto.
  */
 function getPaymentInstructionsTemplate(data: PaymentInstructionsEventData): MailTemplate {
     const userName = data.cliente?.nombre || 'Cliente';
@@ -350,20 +351,44 @@ function getPaymentInstructionsTemplate(data: PaymentInstructionsEventData): Mai
     const total = data.totalFormatted || formatCurrency(data.total);
     const metodoPago = data.metodoPago || 'transferencia';
 
-    // Obtener datos bancarios desde variables de entorno o BD
-    // Por ahora usar variables de entorno, luego puedes moverlo a BD
-    const bankData = {
-        cbu: process.env.BANK_CBU || '0000000000000000000000',
-        alias: process.env.BANK_ALIAS || 'TU.ALIAS.BANCARIO',
-        cuit: process.env.BANK_CUIT || '00-00000000-0',
-        razonSocial: process.env.BANK_RAZON_SOCIAL || 'Tu Empresa S.A.',
-        banco: process.env.BANK_NAME || 'Banco',
-    };
+    const db = data.datosBancarios;
+    const hasBankFromDb = db && (db.banco || db.numero_cuenta || db.titular);
+    const bankData = hasBankFromDb
+        ? {
+            banco: db.banco || '—',
+            tipoCuenta: db.tipo_cuenta || '—',
+            numeroCuenta: db.numero_cuenta || '—',
+            cbu: db.cbu || process.env.BANK_CBU || '—',
+            alias: db.alias || process.env.BANK_ALIAS || '—',
+            cuit: db.cuit || process.env.BANK_CUIT || '—',
+            razonSocial: db.titular || process.env.BANK_RAZON_SOCIAL || '—',
+            instrucciones: db.instrucciones || '',
+        }
+        : {
+            banco: process.env.BANK_NAME || 'Banco',
+            tipoCuenta: '—',
+            numeroCuenta: '—',
+            cbu: process.env.BANK_CBU || '—',
+            alias: process.env.BANK_ALIAS || '—',
+            cuit: process.env.BANK_CUIT || '—',
+            razonSocial: process.env.BANK_RAZON_SOCIAL || 'Tu Empresa S.A.',
+            instrucciones: '',
+        };
 
     const isTransferencia = metodoPago === 'transferencia';
     const isEfectivo = metodoPago === 'efectivo';
     const paymentMethodLabel = isTransferencia ? 'Transferencia Bancaria' : 'Efectivo';
     const datosTitulo = isEfectivo ? 'Datos para pago en RapiPago o Pago Fácil' : `Datos para ${paymentMethodLabel}`;
+
+    const bankTableRows = `
+                <tr><td style="padding: 8px 0; color: #333333; font-weight: bold; width: 40%;">Banco:</td><td style="padding: 8px 0; color: #171c35;">${bankData.banco}</td></tr>
+                <tr><td style="padding: 8px 0; color: #333333; font-weight: bold;">Tipo de cuenta:</td><td style="padding: 8px 0; color: #171c35;">${bankData.tipoCuenta}</td></tr>
+                <tr><td style="padding: 8px 0; color: #333333; font-weight: bold;">Número de cuenta:</td><td style="padding: 8px 0; color: #171c35; font-family: monospace;">${bankData.numeroCuenta}</td></tr>
+                <tr><td style="padding: 8px 0; color: #333333; font-weight: bold;">CBU:</td><td style="padding: 8px 0; color: #171c35; font-family: monospace; font-size: 16px;">${bankData.cbu}</td></tr>
+                <tr><td style="padding: 8px 0; color: #333333; font-weight: bold;">Alias:</td><td style="padding: 8px 0; color: #171c35; font-weight: bold; font-size: 16px;">${bankData.alias}</td></tr>
+                <tr><td style="padding: 8px 0; color: #333333; font-weight: bold;">CUIT:</td><td style="padding: 8px 0; color: #171c35;">${bankData.cuit}</td></tr>
+                <tr><td style="padding: 8px 0; color: #333333; font-weight: bold;">Razón Social / Titular:</td><td style="padding: 8px 0; color: #171c35;">${bankData.razonSocial}</td></tr>
+            `;
 
     const content = `
         <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
@@ -381,27 +406,9 @@ function getPaymentInstructionsTemplate(data: PaymentInstructionsEventData): Mai
             
             ${(isTransferencia || isEfectivo) ? `
             <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                    <td style="padding: 8px 0; color: #333333; font-weight: bold; width: 40%;">CBU:</td>
-                    <td style="padding: 8px 0; color: #171c35; font-family: monospace; font-size: 16px;">${bankData.cbu}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px 0; color: #333333; font-weight: bold;">Alias:</td>
-                    <td style="padding: 8px 0; color: #171c35; font-weight: bold; font-size: 16px;">${bankData.alias}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px 0; color: #333333; font-weight: bold;">CUIT:</td>
-                    <td style="padding: 8px 0; color: #171c35;">${bankData.cuit}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px 0; color: #333333; font-weight: bold;">Razón Social:</td>
-                    <td style="padding: 8px 0; color: #171c35;">${bankData.razonSocial}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px 0; color: #333333; font-weight: bold;">Banco:</td>
-                    <td style="padding: 8px 0; color: #171c35;">${bankData.banco}</td>
-                </tr>
+                ${bankTableRows}
             </table>
+            ${bankData.instrucciones ? `<p style="margin-top: 12px; color: #333333; font-size: 14px;"><strong>Importante:</strong> ${bankData.instrucciones}</p>` : ''}
             ` : `
             <p style="color: #333333; margin: 0;">
                 Por favor, acércate a nuestro punto físico para realizar el pago en efectivo.

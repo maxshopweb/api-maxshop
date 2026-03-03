@@ -4,6 +4,7 @@
  */
 
 import { MailEventType } from './mail.events';
+import type { IDatosBancarios } from '../types/config-tienda.type';
 
 /**
  * Canal de comunicación
@@ -145,6 +146,8 @@ export interface PaymentInstructionsEventData extends MailEventData {
         apellido?: string;
         email?: string;
     };
+    /** Datos bancarios del negocio (tabla negocio). Si no viene, el template usa fallback. */
+    datosBancarios?: IDatosBancarios | null;
 }
 
 /**

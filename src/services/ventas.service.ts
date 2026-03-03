@@ -830,6 +830,8 @@ export class VentasService {
                 return;
             }
 
+            const datosBancarios = await configTiendaService.getDatosBancarios();
+
             await mailService.sendPaymentInstructions({
                 orderId: venta.id_venta,
                 total: venta.total_neto || 0,
@@ -840,6 +842,7 @@ export class VentasService {
                     nombre: userName,
                     apellido: userApellido,
                 },
+                datosBancarios: datosBancarios ?? null,
             });
         } catch (error) {
             console.error(`❌ [VentasService] Error al enviar email con instrucciones de pago:`, error);

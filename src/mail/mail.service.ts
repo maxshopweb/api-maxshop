@@ -164,7 +164,7 @@ export class MailService {
     }
 
     /**
-     * Envía un email con instrucciones de pago (datos bancarios)
+     * Envía un email con instrucciones de pago (datos bancarios del negocio)
      */
     async sendPaymentInstructions(
         orderData: {
@@ -177,6 +177,7 @@ export class MailService {
                 nombre?: string;
                 apellido?: string;
             };
+            datosBancarios?: import('../types/config-tienda.type').IDatosBancarios | null;
         }
     ): Promise<BrevoResponse> {
         return this.send({
@@ -191,6 +192,7 @@ export class MailService {
                 totalFormatted: orderData.totalFormatted,
                 metodoPago: orderData.metodoPago,
                 cliente: orderData.cliente,
+                datosBancarios: orderData.datosBancarios ?? null,
             },
             tags: ['pago', 'instrucciones'],
         });
