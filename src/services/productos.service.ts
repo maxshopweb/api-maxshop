@@ -195,11 +195,9 @@ export class ProductosService {
             whereClause.activo = activo.toUpperCase(); // Asegurar mayúsculas para consistencia
         }
 
-        // Filtro por estado (solo para admin ver activos/inactivos, nunca eliminados)
-        // Si se pasa estado explícitamente, usarlo
+        // Filtro por estado (solo para admin: 1=activo, 2=inactivo, 3=pausado; nunca 0=eliminado)
         if (estado !== undefined && estado !== null) {
-            // Admin puede filtrar por estado 1 o 2 (nunca 0)
-            if (estado === 1 || estado === 2) {
+            if (estado === 1 || estado === 2 || estado === 3) {
                 whereClause.estado = estado;
             }
         }
@@ -487,6 +485,13 @@ export class ProductosService {
         const listaActiva = rest.lista_precio_activa != null && rest.lista_precio_activa !== ''
             ? (rest.lista_precio_activa as string).toUpperCase().slice(0, 1)
             : null;
+        // Estado: si el cliente envía 1, 2 o 3 usarlo; si no, INACTIVO (2) sin stock en depósito, ACTIVO (1) con stock
+        const estadoCreate =
+            rest.estado !== undefined && rest.estado !== null && [1, 2, 3].includes(Number(rest.estado))
+                ? Number(rest.estado)
+                : (rest.stock ?? 0) > 0
+                    ? 1
+                    : 2;
         const nuevoProducto = await prisma.productos.create({
             data: {
                 codi_arti: this.truncateStr(rest.codi_arti, L.codi_arti) ?? '',
@@ -510,7 +515,7 @@ export class ProductosService {
                 codi_marca: this.truncateStr(codi_marca, 3) ?? null,
                 codi_grupo: this.truncateStr(codi_grupo, 4) ?? null,
                 codi_impuesto: this.truncateStr(codi_impuesto, 2) ?? null,
-                estado: 1,
+                estado: estadoCreate,
                 creado_en: new Date(),
                 actualizado_en: new Date()
             },

@@ -42,6 +42,7 @@ export class VentasService {
             tipo_venta,
             total_min,
             total_max,
+            incluir_canceladas = false,
         } = filters;
 
         const whereClause: any = {};
@@ -82,6 +83,11 @@ export class VentasService {
         if (estado_envio) whereClause.estado_envio = estado_envio;
         if (metodo_pago) whereClause.metodo_pago = metodo_pago;
         if (tipo_venta) whereClause.tipo_venta = tipo_venta;
+        if (!incluir_canceladas) {
+            whereClause.estado_pago = estado_pago && estado_pago !== 'cancelado'
+                ? estado_pago
+                : { not: 'cancelado' };
+        }
 
         // Filtros por rango de total
         if (total_min !== undefined || total_max !== undefined) {
@@ -298,6 +304,101 @@ export class VentasService {
         await cacheService.set(cacheKey, formattedVenta, this.TTL_VENTA);
 
         return formattedVenta;
+    }
+
+    /**
+     * Obtiene ventas por IDs (para export). Excluye canceladas.
+     */
+    async getByIds(ids: number[]): Promise<IVenta[]> {
+        if (!ids.length) return [];
+        const uniqueIds = [...new Set(ids)];
+        const ventas = await prisma.venta.findMany({
+            where: {
+                id_venta: { in: uniqueIds },
+                estado_pago: { not: 'cancelado' },
+            },
+            orderBy: { fecha: 'desc' },
+            include: {
+                cliente: { include: { usuarios: true } },
+                usuarios: true,
+                venta_detalle: {
+                    include: {
+                        productos: { include: { categoria: true, marca: true } },
+                    },
+                },
+            },
+        });
+        return ventas.map((venta: any) => ({
+            ...venta,
+            total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
+            total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
+            descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
+            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            metodo_pago: venta.metodo_pago as any,
+            estado_pago: venta.estado_pago as any,
+            estado_envio: venta.estado_envio as any,
+            tipo_venta: venta.tipo_venta as any,
+            usuario: venta.usuarios ? { ...venta.usuarios, estado: venta.usuarios.estado as any } : null,
+            cliente: venta.cliente
+                ? {
+                    ...venta.cliente,
+                    usuario: venta.cliente.usuarios
+                        ? { ...venta.cliente.usuarios, estado: venta.cliente.usuarios.estado as any }
+                        : undefined,
+                }
+                : null,
+            detalles: (venta.venta_detalle || []).map((d: any) => ({
+                ...d,
+                precio_unitario: d.precio_unitario ? Number(d.precio_unitario) : null,
+                sub_total: d.sub_total ? Number(d.sub_total) : null,
+                producto: d.productos || null,
+            })),
+            envio: null,
+        }));
+    }
+
+    /**
+     * Exporta ventas seleccionadas a CSV (solo no canceladas).
+     */
+    async exportVentasCsv(ids: number[]): Promise<Buffer> {
+        const ventas = await this.getByIds(ids);
+        const sep = ';';
+        const enc = (v: string | number | null | undefined): string => {
+            const s = String(v ?? '').replace(/"/g, '""');
+            return s.includes(sep) || s.includes('"') || s.includes('\n') ? `"${s}"` : s;
+        };
+        const header = [
+            'id_venta',
+            'fecha',
+            'cliente_nombre',
+            'cliente_apellido',
+            'cliente_email',
+            'total_neto',
+            'estado_pago',
+            'estado_envio',
+            'metodo_pago',
+            'tipo_venta',
+        ].join(sep);
+        const rows = ventas.map((v) => {
+            const nombre = v.cliente?.usuario?.nombre ?? '';
+            const apellido = v.cliente?.usuario?.apellido ?? '';
+            const email = v.cliente?.usuario?.email ?? '';
+            const fecha = v.fecha ? new Date(v.fecha).toISOString() : '';
+            return [
+                enc(v.id_venta),
+                enc(fecha),
+                enc(nombre),
+                enc(apellido),
+                enc(email),
+                enc(v.total_neto),
+                enc(v.estado_pago),
+                enc(v.estado_envio),
+                enc(v.metodo_pago),
+                enc(v.tipo_venta),
+            ].join(sep);
+        });
+        const csv = [header, ...rows].join('\r\n');
+        return Buffer.from(csv, 'utf-8');
     }
 
     async create(data: ICreateVentaDTO, idUsuario?: string): Promise<IVenta> {
@@ -1109,6 +1210,10 @@ export class VentasService {
     async delete(id: number): Promise<void> {
         // Obtener venta antes de cancelar (para email y, si estaba aprobada, devolver stock)
         const venta = await this.getById(id);
+
+        if (venta?.estado_pago === 'cancelado') {
+            throw new Error('La venta ya está dada de baja');
+        }
 
         // Al eliminar (soft delete = cancelar): si la venta estaba aprobada, devolver el stock al inventario
         if (venta?.estado_pago === 'aprobado') {

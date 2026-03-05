@@ -26,6 +26,7 @@ export class VentasController {
                 tipo_venta: req.query.tipo_venta as any,
                 total_min: req.query.total_min ? parseFloat(req.query.total_min as string) : undefined,
                 total_max: req.query.total_max ? parseFloat(req.query.total_max as string) : undefined,
+                incluir_canceladas: req.query.incluir_canceladas === 'true',
             };
 
             const result = await ventasService.getAll(filters);
@@ -35,6 +36,35 @@ export class VentasController {
             res.status(500).json({
                 success: false,
                 error: 'Error al obtener ventas'
+            });
+        }
+    }
+
+    async exportVentas(req: Request, res: Response): Promise<void> {
+        try {
+            const idsParam = req.query.ids as string;
+            if (!idsParam || typeof idsParam !== 'string') {
+                res.status(400).json({ success: false, error: 'Parámetro ids requerido (ej: ids=1,2,3)' });
+                return;
+            }
+            const ids = idsParam
+                .split(',')
+                .map((s) => parseInt(s.trim(), 10))
+                .filter((n) => !isNaN(n) && n > 0);
+            if (ids.length === 0) {
+                res.status(400).json({ success: false, error: 'Ningún ID de venta válido' });
+                return;
+            }
+            const csvBuffer = await ventasService.exportVentasCsv(ids);
+            const filename = `ventas-${new Date().toISOString().slice(0, 10)}.csv`;
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.send(csvBuffer);
+        } catch (error: any) {
+            console.error('Error en exportVentas:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message || 'Error al exportar ventas',
             });
         }
     }
@@ -151,7 +181,8 @@ export class VentasController {
             res.json(response);
         } catch (error: any) {
             console.error('Error en delete:', error);
-            res.status(400).json({
+            const isAlreadyCancelled = error?.message?.toLowerCase().includes('ya está dada de baja');
+            res.status(isAlreadyCancelled ? 409 : 400).json({
                 success: false,
                 error: error.message || 'Error al eliminar venta'
             });

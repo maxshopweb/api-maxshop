@@ -446,6 +446,8 @@ export interface IVentaFilters {
     tipo_venta?: TipoVenta;
     total_min?: number;
     total_max?: number;
+    /** Si true, incluye ventas con estado_pago cancelado. Por defecto no se listan (soft delete). */
+    incluir_canceladas?: boolean;
 }
 
 export interface IUpdateVentaDTO {

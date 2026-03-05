@@ -118,7 +118,6 @@ model eventos {
   reglas_evento  reglas_evento[]
   venta_detalle  venta_detalle[]
 }
-
 model banners {
   id             Int      @id @default(autoincrement())
   orden          Int
@@ -313,6 +312,7 @@ model productos {
   stock                 Decimal?        @db.Decimal(12, 2)
   img_principal         String?         @db.VarChar(120)
   activo                String?         @db.VarChar(1)
+  // estado: 0=eliminado, 1=activo, 2=inactivo, 3=pausado
   estado                Int?            @default(1)
   stock_min             Int?
   imagenes              Json?

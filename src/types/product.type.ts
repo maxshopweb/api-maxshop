@@ -117,10 +117,12 @@ export interface ICreateProductoDTO {
     precio_minorista?: number | null;
     precio_evento?: number | null;
     stock_mayorista?: number | null;
+    /** 1=activo, 2=inactivo, 3=pausado. Si no se envía, se usa INACTIVO (2) sin stock, ACTIVO (1) con stock. */
+    estado?: 1 | 2 | 3;
 }
 
-// Para actualizar producto
-export interface IUpdateProductoDTO extends Partial<ICreateProductoDTO> {
+// Para actualizar producto (estado puede ser 0=eliminado en update; en create solo 1|2|3)
+export interface IUpdateProductoDTO extends Omit<Partial<ICreateProductoDTO>, 'estado'> {
     estado?: EstadoGeneral;
     publicado?: boolean;
 }
