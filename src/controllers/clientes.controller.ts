@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { asSingleString } from '../utils/validation.utils';
 import { clientesService } from '../services/clientes.service';
-import { IClienteFilters, EstadoGeneral } from '../types';
+import { IClienteFilters, EstadoGeneral, IUpdateClienteDTO } from '../types';
 
 export class ClientesController {
     async getAll(req: Request, res: Response) {
@@ -81,6 +81,25 @@ export class ClientesController {
             res.status(500).json({
                 success: false,
                 error: error.message || 'Error al obtener ventas del cliente',
+            });
+        }
+    }
+
+    async update(req: Request, res: Response) {
+        try {
+            const id = asSingleString(req.params.id);
+            const data: IUpdateClienteDTO = req.body || {};
+            const cliente = await clientesService.update(id, data);
+            res.json({
+                success: true,
+                data: cliente,
+                message: 'Cliente actualizado correctamente',
+            });
+        } catch (error: any) {
+            console.error('❌ Error en update cliente:', error);
+            res.status(error.message === 'Cliente no encontrado' ? 404 : 500).json({
+                success: false,
+                error: error.message || 'Error al actualizar cliente',
             });
         }
     }

@@ -18,6 +18,7 @@ router.get('/', cacheMiddleware(1800), clientesController.getAll.bind(clientesCo
 router.get('/:id', cacheMiddleware(3600), clientesController.getById.bind(clientesController));
 router.get('/:id/stats', cacheMiddleware(600), clientesController.getStats.bind(clientesController));
 router.get('/:id/ventas', cacheMiddleware(1800), clientesController.getVentas.bind(clientesController));
+router.put('/:id', clientesController.update.bind(clientesController));
 
 export default router;
 

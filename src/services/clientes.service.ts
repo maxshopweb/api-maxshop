@@ -1,5 +1,5 @@
 import { prisma } from '../index';
-import { ICliente, IClienteFilters, IPaginatedResponse, IClienteStats } from '../types';
+import { ICliente, IClienteFilters, IPaginatedResponse, IClienteStats, IUpdateClienteDTO } from '../types';
 import cacheService from './cache.service';
 
 export class ClientesService {
@@ -138,7 +138,12 @@ export class ClientesService {
                 login_ip: cliente.usuarios.login_ip,
                 img: cliente.usuarios.img,
                 nacimiento: cliente.usuarios.nacimiento,
+                numero_documento: cliente.usuarios.numero_documento,
+                tipo_documento: cliente.usuarios.tipo_documento,
             } : undefined,
+            altura: (cliente as any).altura,
+            piso: (cliente as any).piso,
+            dpto: (cliente as any).dpto,
         }));
 
         const totalPages = Math.ceil(total / limit);
@@ -197,6 +202,9 @@ export class ClientesService {
             cod_postal: cliente.cod_postal,
             ciudad: cliente.ciudad,
             provincia: cliente.provincia,
+            altura: (cliente as any).altura,
+            piso: (cliente as any).piso,
+            dpto: (cliente as any).dpto,
             usuario: cliente.usuarios ? {
                 id_usuario: cliente.usuarios.id_usuario,
                 nombre: cliente.usuarios.nombre,
@@ -212,6 +220,8 @@ export class ClientesService {
                 login_ip: cliente.usuarios.login_ip,
                 img: cliente.usuarios.img,
                 nacimiento: cliente.usuarios.nacimiento,
+                numero_documento: cliente.usuarios.numero_documento,
+                tipo_documento: cliente.usuarios.tipo_documento,
             } : undefined,
             ventas: cliente.venta.map((venta: any) => ({
                 id_venta: venta.id_venta,
@@ -311,6 +321,49 @@ export class ClientesService {
             limit,
             totalPages,
         };
+    }
+
+    async update(id: string, data: IUpdateClienteDTO): Promise<ICliente> {
+        const cliente = await prisma.cliente.findUnique({
+            where: { id_usuario: id },
+            include: { usuarios: true },
+        });
+        if (!cliente) {
+            throw new Error('Cliente no encontrado');
+        }
+
+        const usuarioData: Record<string, unknown> = {};
+        if (data.telefono !== undefined) usuarioData.telefono = data.telefono;
+        if (data.numero_documento !== undefined) usuarioData.numero_documento = data.numero_documento;
+        if (data.tipo_documento !== undefined) usuarioData.tipo_documento = data.tipo_documento;
+
+        if (Object.keys(usuarioData).length > 0) {
+            usuarioData.actualizado_en = new Date();
+            await prisma.usuarios.update({
+                where: { id_usuario: id },
+                data: usuarioData as any,
+            });
+        }
+
+        const clienteData: Record<string, unknown> = {};
+        if (data.direccion !== undefined) clienteData.direccion = data.direccion;
+        if (data.altura !== undefined) clienteData.altura = data.altura;
+        if (data.piso !== undefined) clienteData.piso = data.piso;
+        if (data.dpto !== undefined) clienteData.dpto = data.dpto;
+        if (data.ciudad !== undefined) clienteData.ciudad = data.ciudad;
+        if (data.provincia !== undefined) clienteData.provincia = data.provincia;
+        if (data.cod_postal !== undefined) clienteData.cod_postal = data.cod_postal;
+
+        if (Object.keys(clienteData).length > 0) {
+            await prisma.cliente.update({
+                where: { id_usuario: id },
+                data: clienteData as any,
+            });
+        }
+
+        await cacheService.delete(`cliente:${id}`);
+        await cacheService.deletePattern('clientes:*');
+        return this.getById(id);
     }
 }
 

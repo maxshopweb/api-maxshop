@@ -179,6 +179,20 @@ export interface IClienteStats {
     productosComprados: number;
 }
 
+/** DTO para actualizar datos editables del cliente (teléfono, DNI, domicilio) */
+export interface IUpdateClienteDTO {
+    telefono?: string | null;
+    numero_documento?: string | null;
+    tipo_documento?: string | null;
+    direccion?: string | null;
+    altura?: string | null;
+    piso?: string | null;
+    dpto?: string | null;
+    ciudad?: string | null;
+    provincia?: string | null;
+    cod_postal?: number | null;
+}
+
 export interface IIva {
     id_iva: number;
     codi_impuesto: string;

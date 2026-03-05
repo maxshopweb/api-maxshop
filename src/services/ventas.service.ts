@@ -239,6 +239,7 @@ export class VentasService {
                     },
                 },
                 envios: true,
+                mercado_pago_payments: true,
             },
         });
 
@@ -298,6 +299,7 @@ export class VentasService {
                     ? `/api/andreani/envios/${(venta as any).envios[0].cod_seguimiento}/trazas`
                     : null,
             } : null,
+            mercado_pago_payments: (venta as any).mercado_pago_payments || undefined,
         };
 
         // Guardar en cache
