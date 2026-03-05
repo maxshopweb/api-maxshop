@@ -1079,6 +1079,41 @@ export class ProductosService {
         return { count: result.count };
     }
 
+    /** Establece cuotas_habilitadas (null = regla general, true = siempre 3 cuotas, false = no 3 cuotas) para varios productos. */
+    async bulkUpdateCuotas(ids: number[], cuotas_habilitadas: boolean | null, auditContext?: ProductoAuditContext): Promise<{ updated: number }> {
+        if (!ids?.length) {
+            return { updated: 0 };
+        }
+        const result = await prisma.productos.updateMany({
+            where: {
+                id_prod: { in: ids },
+                estado: { not: 0 }
+            },
+            data: {
+                cuotas_habilitadas,
+                actualizado_en: new Date()
+            }
+        });
+        if (auditContext && result.count > 0) {
+            await auditService.record({
+                action: 'PRODUCTO_BULK_CUOTAS',
+                table: 'productos',
+                description: `${result.count} producto(s) - cuotas: ${cuotas_habilitadas === null ? 'regla general' : cuotas_habilitadas ? 'habilitadas' : 'deshabilitadas'}`,
+                previousData: { ids },
+                currentData: { ids, cuotas_habilitadas, count: result.count },
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+        await cacheService.deletePattern('productos:*');
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.deletePattern('productos:tienda:*');
+        return { updated: result.count };
+    }
+
     /**
      * Obtiene productos que tienen imágenes en la carpeta resources/IMAGENES/img-art
      * Verifica si existe alguna imagen cuyo nombre comience con el codi_arti del producto

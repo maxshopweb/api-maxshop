@@ -64,6 +64,8 @@ export interface CreatePreferenceRequest {
     expiration_date_to?: string;
     payment_methods?: {
         default_installments?: number;
+        /** Máximo de cuotas ofrecidas en el checkout (ej. 3 = solo hasta 3 cuotas) */
+        installments?: number;
     };
 }
 
@@ -189,6 +191,8 @@ interface CreatePreferenceFromVentaParams {
     notificationUrl?: string;
     useAutoReturn?: boolean; // Si es false, no se incluye auto_return (útil para localhost)
     defaultInstallments?: number;
+    /** Máximo de cuotas (envía payment_methods.installments a MP para limitar opciones) */
+    maxInstallments?: number;
 }
 
 interface CreatePreferenceFromDataParams {
@@ -336,7 +340,7 @@ class MercadoPagoService {
      * Crea una preferencia de pago a partir de una venta completa
      */
     async createPreferenceFromVenta(params: CreatePreferenceFromVentaParams): Promise<PreferenceResponse> {
-        const { venta, backUrls, notificationUrl, useAutoReturn = true, defaultInstallments } = params;
+        const { venta, backUrls, notificationUrl, useAutoReturn = true, defaultInstallments, maxInstallments } = params;
 
         // Log solo en desarrollo
         if (process.env.NODE_ENV !== 'production') {
@@ -510,9 +514,15 @@ class MercadoPagoService {
             // Solo usar auto_return si está habilitado Y tenemos back_urls.success válido
             auto_return: (useAutoReturn && backUrlsFinal.success) ? 'approved' : undefined,
             notification_url: notificationUrl || process.env.MERCADOPAGO_WEBHOOK_URL || undefined,
-            payment_methods: (defaultInstallments && Number.isInteger(defaultInstallments) && defaultInstallments > 1)
-                ? { default_installments: defaultInstallments }
-                : undefined,
+            payment_methods: (() => {
+                const useDefault = defaultInstallments != null && Number.isInteger(defaultInstallments) && defaultInstallments > 1;
+                const useMax = maxInstallments != null && Number.isInteger(maxInstallments) && maxInstallments >= 1;
+                if (!useDefault && !useMax) return undefined;
+                const pm: { default_installments?: number; installments?: number } = {};
+                if (useDefault) pm.default_installments = defaultInstallments!;
+                if (useMax) pm.installments = maxInstallments!;
+                return pm;
+            })(),
         };
         
         // Remover propiedades undefined para que no se envíen en el JSON
@@ -522,7 +532,7 @@ class MercadoPagoService {
         if (!preferenceRequest.notification_url) {
             delete (preferenceRequest as any).notification_url;
         }
-        if (!preferenceRequest.payment_methods) {
+        if (!preferenceRequest.payment_methods || Object.keys(preferenceRequest.payment_methods).length === 0) {
             delete (preferenceRequest as any).payment_methods;
         }
 

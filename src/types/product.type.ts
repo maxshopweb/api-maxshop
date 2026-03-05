@@ -40,6 +40,8 @@ export interface IProductos {
     imagenes?: string[] | null;
     destacado?: boolean | null;
     publicado?: boolean | null;
+    /** null = regla general (monto mínimo), true = siempre 3 cuotas, false = no 3 cuotas si está en carrito */
+    cuotas_habilitadas?: boolean | null;
     financiacion?: boolean | null;
     activo?: string | null;
     creado_en?: Date | null;
@@ -125,6 +127,7 @@ export interface ICreateProductoDTO {
 export interface IUpdateProductoDTO extends Omit<Partial<ICreateProductoDTO>, 'estado'> {
     estado?: EstadoGeneral;
     publicado?: boolean;
+    cuotas_habilitadas?: boolean | null;
 }
 
 /** Respuesta de operación bulk de publicado */

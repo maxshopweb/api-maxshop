@@ -782,21 +782,32 @@ export class VentasService {
                         throw new Error('Mercado Pago no está configurado. Verifica las credenciales en .env');
                     }
 
-                    // Regla opcional: sugerir cuotas sin interés (NO limita opciones del comprador)
-                    // Solo aplica si la tienda configuró valores válidos (> 0) y el monto alcanza el mínimo.
+                    // Cuotas sin interés: regla global (monto mínimo) + override por producto (cuotas_habilitadas).
+                    // Si algún producto tiene cuotas_habilitadas=false → no ofrecer cuotas.
+                    // Si total >= mínimo O algún producto tiene cuotas_habilitadas=true → ofrecer N cuotas (y limitar en MP con installments).
                     let defaultInstallments: number | undefined;
+                    let maxInstallments: number | undefined;
                     try {
                         const installmentsConfig = await configTiendaService.getPaymentInstallmentsConfig();
                         const totalNetoVenta = Number(venta.total_neto || 0);
                         const cuotas = installmentsConfig.cuotasSinInteres;
                         const minimo = installmentsConfig.cuotasSinInteresMinimo;
+                        const detalles = (venta as any).detalles || [];
+                        const algunProductoSinCuotas = detalles.some((d: any) => d?.producto?.cuotas_habilitadas === false);
+                        const algunProductoConCuotasForzadas = detalles.some((d: any) => d?.producto?.cuotas_habilitadas === true);
+                        const cumpleMinimo = cuotas && minimo && totalNetoVenta >= minimo;
 
-                        if (cuotas && minimo && totalNetoVenta >= minimo) {
-                            const cuotasEnteras = Math.trunc(cuotas);
+                        if (algunProductoSinCuotas) {
+                            defaultInstallments = undefined;
+                            maxInstallments = 1;
+                            console.log(`💳 [VentasService] Venta #${venta.id_venta}: sin cuotas (producto con cuotas deshabilitadas en carrito)`);
+                        } else if (cumpleMinimo || algunProductoConCuotasForzadas) {
+                            const cuotasEnteras = Math.trunc(cuotas || 3);
                             if (cuotasEnteras > 1) {
                                 defaultInstallments = cuotasEnteras;
+                                maxInstallments = cuotasEnteras;
                                 console.log(
-                                    `💳 [VentasService] Cuotas sugeridas para venta #${venta.id_venta}: ${defaultInstallments} (monto ${totalNetoVenta} >= mínimo ${minimo})`
+                                    `💳 [VentasService] Cuotas para venta #${venta.id_venta}: ${defaultInstallments} (monto ${totalNetoVenta} ${cumpleMinimo ? '>= mínimo ' + minimo : ''} ${algunProductoConCuotasForzadas ? '| producto con cuotas habilitadas' : ''})`
                                 );
                             }
                         }
@@ -841,12 +852,13 @@ export class VentasService {
                         pending: pendingUrl,
                     };
 
-                    // Crear preferencia de pago
+                    // Crear preferencia de pago (maxInstallments limita en MP las opciones de cuotas)
                     const preference = await mercadoPagoService.createPreferenceFromVenta({
                         venta,
                         backUrls,
-                        useAutoReturn: shouldUseAutoReturn, // Pasar flag para controlar auto_return
-                        defaultInstallments, // Sugerencia opcional de cuotas (sin limitar)
+                        useAutoReturn: shouldUseAutoReturn,
+                        defaultInstallments,
+                        maxInstallments,
                     });
 
                     // Usar sandbox_init_point en modo test, init_point en producción

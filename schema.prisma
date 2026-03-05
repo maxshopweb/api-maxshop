@@ -327,6 +327,8 @@ model productos {
   lista_precio_activa   String?         @db.VarChar(1)
   precio_editado_manualmente Boolean?   @default(false)
   publicado             Boolean?        @default(false)
+  /** null = usar regla general (monto mínimo), true = siempre ofrecer 3 cuotas, false = no ofrecer cuotas si está en el carrito */
+  cuotas_habilitadas    Boolean?
   categoria             categoria?      @relation(fields: [codi_categoria], references: [codi_categoria])
   grupo                 grupo?          @relation(fields: [codi_grupo], references: [codi_grupo])
   iva                   iva?            @relation(fields: [codi_impuesto], references: [codi_impuesto])

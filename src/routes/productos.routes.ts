@@ -87,6 +87,8 @@ router.patch('/:id/destacado',
 
 // PATCH /api/productos/bulk/publicado: solo admin (debe ir antes de /:id)
 router.patch('/bulk/publicado', adminAuth, productosController.bulkSetPublicado.bind(productosController));
+// PATCH /api/productos/bulk/cuotas: solo admin - body: { ids: number[], cuotas_habilitadas: true | false | null }
+router.patch('/bulk/cuotas', adminAuth, productosController.bulkUpdateCuotas.bind(productosController));
 
 // PATCH /api/productos/:id/publicado: solo admin
 router.patch('/:id/publicado',

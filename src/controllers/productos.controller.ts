@@ -550,6 +550,51 @@ export class ProductosController {
         }
     }
 
+    /** PATCH /api/productos/bulk/cuotas - ids: number[], cuotas_habilitadas: true | false | null */
+    async bulkUpdateCuotas(req: Request, res: Response): Promise<void> {
+        try {
+            const { ids, cuotas_habilitadas } = req.body as { ids?: number[]; cuotas_habilitadas?: boolean | null };
+
+            if (!Array.isArray(ids) || ids.length === 0) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Se requiere un array "ids" no vacío'
+                });
+                return;
+            }
+
+            if (cuotas_habilitadas !== true && cuotas_habilitadas !== false && cuotas_habilitadas !== null) {
+                res.status(400).json({
+                    success: false,
+                    error: 'cuotas_habilitadas debe ser true, false o null (regla general)'
+                });
+                return;
+            }
+
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+            const result = await productosService.bulkUpdateCuotas(ids, cuotas_habilitadas, auditContext);
+
+            const msg = cuotas_habilitadas === null ? 'regla general' : cuotas_habilitadas ? '3 cuotas habilitadas' : '3 cuotas deshabilitadas';
+            res.json({
+                success: true,
+                data: result,
+                message: `${result.updated} producto(s) actualizado(s): ${msg}`
+            });
+        } catch (error) {
+            console.error('Error en bulkUpdateCuotas:', error);
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Error al actualizar cuotas'
+            });
+        }
+    }
+
     async getProductosConImagenes(req: Request, res: Response): Promise<void> {
         try {
             // Parsear filtros, aceptando códigos o IDs
