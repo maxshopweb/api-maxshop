@@ -1,12 +1,13 @@
 /**
  * Servicio de sincronización de facturas
- * 
+ *
  * Responsabilidades:
  * - Obtener ventas pendientes de factura desde la BD
  * - Conectar al FTP y listar facturas en Tekno/Facturas
  * - Buscar facturas por cod_interno (formato: F4-0004-{cod_interno}.pdf)
+ *   → cod_interno es el código de operación (ej. MAX-00000001). Ver docs/FACTURAS_FTP.md
  * - Descargar facturas encontradas
- * - Enviar emails (factura + tracking)
+ * - Enviar emails (factura + tracking) mostrando el número de pedido (cod_interno)
  * - Borrar facturas del FTP
  * - Actualizar estado de venta a "facturado"
  * - Borrar registro de ventas_pendientes_factura
@@ -52,6 +53,15 @@ export class FacturaSyncService {
         return path.join(cwd, 'backend', 'data', 'temp', 'facturas');
     })();
     private readonly MAX_INTENTOS = 100;
+
+    /**
+     * Devuelve el código de operación a mostrar (ej. MAX-00000001).
+     * Usado en emails y nombres de archivo adjunto.
+     */
+    private getNumeroPedidoDisplay(codInterno: string | null | undefined, idVenta: number): string {
+        if (codInterno) return codInterno;
+        return 'MAX-' + idVenta.toString().padStart(8, '0');
+    }
 
     /**
      * Método principal: sincroniza todas las facturas pendientes
@@ -435,6 +445,8 @@ export class FacturaSyncService {
         const totalFormatted = venta.total_neto
             ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(venta.total_neto)
             : '$0';
+        const numeroPedido = this.getNumeroPedidoDisplay(venta.cod_interno ?? null, venta.id_venta);
+        const nombreAdjunto = `Factura_${numeroPedido}.pdf`;
 
         const html = `
             <!DOCTYPE html>
@@ -456,7 +468,7 @@ export class FacturaSyncService {
                     </div>
                     <div class="content">
                         <p>Hola ${nombreCompleto},</p>
-                        <p>Te enviamos la factura de tu pedido <strong>#${venta.id_venta}</strong>.</p>
+                        <p>Te enviamos la factura de tu pedido <strong>${numeroPedido}</strong>.</p>
                         <p><strong>Total:</strong> ${totalFormatted}</p>
                         <p>La factura se encuentra adjunta en este email.</p>
                         <p>Gracias por tu compra.</p>
@@ -471,10 +483,10 @@ export class FacturaSyncService {
 
         await mailService.sendEmailWithAttachment(
             clienteEmail,
-            `Tu factura está lista - Pedido #${venta.id_venta}`,
+            `Tu factura está lista - Pedido ${numeroPedido}`,
             html,
             facturaPath,
-            `Factura_${venta.id_venta}.pdf`,
+            nombreAdjunto,
             {
                 name: nombreCompleto,
                 tags: ['factura', 'pedido'],

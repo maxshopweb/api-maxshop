@@ -506,6 +506,10 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 BT: codigoEnvioAndreani ?? null, // COLUMNA AT Excel: código de envío Andreani
                 BU: sucursalDistribucionAndreani || null, // COLUMNA AU Excel: sucursal de distribución Andreani
                 BV: sucursalRendicionAndreani || null, // COLUMNA AV Excel: sucursal de rendición Andreani
+                // Liquidación y cuotas MP (solo por venta: legacy o cabecera; nunca en filas de producto)
+                BW: pagoMP?.net_received_amount != null ? Number(pagoMP.net_received_amount) : null, // Monto liquidado
+                BX: pagoMP?.money_release_date ? formatFechaVenta(pagoMP.money_release_date) : null,   // Fecha liquidación
+                BY: pagoMP?.installment_amount != null ? Number(pagoMP.installment_amount) : null,   // Monto por cuota
             }) as VentaExcelRow;
 
         // Helpers para columnas O, P, Q (solo filas de artículo): precio neto, IVA monto, % descuento

@@ -63,6 +63,7 @@ interface PaymentDataForPrisma {
     total_paid_amount: number | null;
     net_received_amount: number | null;
     commission_amount: number | null;
+    installment_amount: number | null;
     fee_details: any;
     currency_id: string;
     operation_type: string | null;
@@ -461,6 +462,9 @@ class PaymentWebhookService {
                 ? Number(transactionDetails.net_received_amount) 
                 : null,
             commission_amount: commissionAmount,
+            installment_amount: transactionDetails.installment_amount != null
+                ? Number(transactionDetails.installment_amount)
+                : null,
             fee_details: feeDetails.length > 0 ? feeDetails : null,
             currency_id: fullPaymentData.currency_id || 'ARS',
             operation_type: fullPaymentData.operation_type || null,

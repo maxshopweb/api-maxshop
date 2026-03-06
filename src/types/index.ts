@@ -66,6 +66,7 @@ export interface IUsuarios {
     numero_documento?: string | null;
     token?: string | null;
     token_expira?: Date | null;
+    activo?: boolean | null;
     // Relaciones
     rol?: IRoles | null;
 }
@@ -80,6 +81,8 @@ export interface IAdmin {
 export interface ICliente {
     id_cliente?: string | null;
     id_usuario: string;
+    /** ID numérico único por cliente (gestión / listados) */
+    numero_cliente?: number | null;
     direccion?: string | null;
     altura?: string | null;
     piso?: string | null;
@@ -159,7 +162,7 @@ export interface IDireccionDTO {
 export interface IClienteFilters {
     page?: number;
     limit?: number;
-    order_by?: 'nombre' | 'email' | 'creado_en' | 'ultimo_login';
+    order_by?: 'nombre' | 'email' | 'creado_en' | 'ultimo_login' | 'numero_cliente';
     order?: 'asc' | 'desc';
     busqueda?: string;
     estado?: EstadoGeneral;
@@ -515,6 +518,7 @@ export interface IMercadoPagoPayment {
     total_paid_amount?: number | null;
     net_received_amount?: number | null;
     commission_amount?: number | null;
+    installment_amount?: number | null;
     fee_details?: any;
     
     // Moneda y tipo

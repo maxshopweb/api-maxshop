@@ -11,6 +11,11 @@ export interface VentaExcelRow {
   // - fila cabecera de venta (solo columnas de venta)
   // - filas detalle de producto (solo columnas de producto)
   // Los valores numéricos se escriben como número en Excel (formato decimal)
+  //
+  // Columnas liquidación/cuotas MP (después de BV):
+  // - BW: monto liquidado (net_received_amount)
+  // - BX: fecha liquidación (money_release_date), string formateado
+  // - BY: monto por cuota (installment_amount)
   [key: string]: string | number | null | undefined;
 }
 
@@ -95,7 +100,8 @@ export class ExcelTemplateService {
         throw new Error(`Hoja "${this.SHEET_NAME}" no existe en el Excel`);
       }
 
-      // Mapeo: clave en código (AA=Excel A, BA=Excel AA) → índice 0-based. Columnas hasta AV (índice 47).
+      // Mapeo: clave en código (AA=Excel A, BA=Excel AA) → índice 0-based.
+      // Columnas AA–BV (0–47) existentes; BW–BY (48–50) liquidación y cuotas MP.
       const columnMap: Record<string, number> = {
         'AA': 0, 'AB': 1, 'AC': 2, 'AD': 3, 'AE': 4, 'AF': 5, 'AG': 6,
         'AH': 7, 'AI': 8, 'AJ': 9, 'AK': 10, 'AL': 11, 'AM': 12, 'AN': 13,
@@ -103,13 +109,18 @@ export class ExcelTemplateService {
         'AV': 21, 'AW': 22, 'AX': 23, 'AY': 24, 'AZ': 25, 'BA': 26, 'BB': 27,
         'BC': 28, 'BD': 29, 'BE': 30, 'BF': 31, 'BG': 32, 'BH': 33, 'BI': 34,
         'BJ': 35, 'BK': 36, 'BL': 37, 'BM': 38, 'BN': 39, 'BO': 40, 'BP': 41,
-        'BQ': 42, 'BR': 43, 'BS': 44, 'BT': 45, 'BU': 46, 'BV': 47
+        'BQ': 42, 'BR': 43, 'BS': 44, 'BT': 45, 'BU': 46, 'BV': 47,
+        'BW': 48, 'BX': 49, 'BY': 50
       };
 
       let currentRow = startRow;
 
       // Columnas que se escriben como número en Excel (formato decimal 23000,00)
-      const columnasNumericas = new Set(['AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AO', 'AP', 'AQ', 'AR', 'BN', 'BO', 'BP']);
+      const columnasNumericas = new Set([
+        'AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AO', 'AP', 'AQ', 'AR',
+        'BN', 'BO', 'BP',
+        'BW', 'BY' // BW: monto liquidado, BY: monto por cuota
+      ]);
 
       for (const rowData of ventaRows) {
         // Escribir cada columna de la fila
@@ -131,10 +142,10 @@ export class ExcelTemplateService {
         currentRow++;
       }
 
-      // Actualizar el rango de la hoja (columnas A hasta AV = índice 47)
+      // Actualizar el rango de la hoja (columnas A hasta BY = índice 50)
       worksheet['!ref'] = XLSX.utils.encode_range({
         s: { r: 0, c: 0 },
-        e: { r: currentRow - 1, c: 47 }
+        e: { r: currentRow - 1, c: 50 }
       });
 
       console.log(`✅ [ExcelTemplate] Agregadas ${ventaRows.length} fila(s) desde la fila ${startRow}`);

@@ -1,9 +1,9 @@
 /**
- * Script de migración: Asigna cod_interno a ventas existentes
- * 
- * Este script debe ejecutarse UNA SOLA VEZ después de agregar el campo cod_interno
- * a la tabla venta en Prisma.
- * 
+ * Script de migración: Asigna cod_interno a ventas existentes.
+ * Formato: "MAX-00000001" (prefijo MAX- + id_venta a 8 dígitos).
+ *
+ * Ejecutar UNA VEZ para ventas con cod_interno null.
+ *
  * Uso:
  *   npx ts-node src/scripts/migrate-cod-interno.ts
  */
@@ -42,7 +42,7 @@ async function migrateCodInterno() {
         // Migrar cada venta
         for (const venta of ventasSinCodigo) {
             try {
-                const codInterno = venta.id_venta.toString().padStart(8, '0');
+                const codInterno = 'MAX-' + venta.id_venta.toString().padStart(8, '0');
 
                 await prisma.venta.update({
                     where: { id_venta: venta.id_venta },

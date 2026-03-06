@@ -46,9 +46,10 @@ model categoria {
 }
 
 model cliente {
-  id_cliente String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  id_usuario String   @id @db.VarChar(150)
-  direccion  String?  @db.VarChar(255)
+  id_cliente     String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_usuario     String   @id @db.VarChar(150)
+  numero_cliente Int?     @unique
+  direccion      String?  @db.VarChar(255)
   altura     String?  @db.VarChar(20)
   piso       String?  @db.VarChar(20)
   dpto       String?  @db.VarChar(20)
@@ -302,6 +303,7 @@ model productos {
   id_prod                 Int             @id @default(autoincrement())
   codi_arti               String          @unique @db.VarChar(10)
   nombre                  String?         @db.VarChar(255)
+  modelo                  String?         @db.VarChar(50)
   descripcion             String?
   codi_categoria          String?         @db.VarChar(4)
   codi_marca              String?         @db.VarChar(3)
@@ -413,7 +415,7 @@ model usuarios {
 
 model venta {
   id_venta              Int                     @id @default(autoincrement())
-  cod_interno           String?                 @unique @db.VarChar(8)
+  cod_interno           String?                 @unique @db.VarChar(12)
   id_usuario            String?                 @db.VarChar(150)
   fecha                 DateTime?               @default(now()) @db.Timestamp(6)
   id_cliente            String?                 @db.VarChar(150)
@@ -481,6 +483,7 @@ model mercado_pago_payments {
   total_paid_amount        Decimal?  @db.Decimal(12, 2)
   net_received_amount      Decimal?  @db.Decimal(12, 2)
   commission_amount        Decimal?  @db.Decimal(12, 2)
+  installment_amount       Decimal?  @db.Decimal(12, 2)
   fee_details              Json?
   currency_id              String    @default("ARS") @db.VarChar(3)
   operation_type           String?   @db.VarChar(50)

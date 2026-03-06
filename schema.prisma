@@ -46,9 +46,10 @@ model categoria {
 }
 
 model cliente {
-  id_cliente String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  id_usuario String   @id @db.VarChar(150)
-  direccion  String?  @db.VarChar(255)
+  id_cliente     String?  @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id_usuario     String   @id @db.VarChar(150)
+  numero_cliente Int?     @unique
+  direccion      String?  @db.VarChar(255)
   cod_postal Int?
   ciudad     String?  @db.VarChar(100)
   provincia  String?  @db.VarChar(100)
@@ -301,6 +302,7 @@ model productos {
   id_prod               Int             @id @default(autoincrement())
   codi_arti             String          @unique @db.VarChar(10)
   nombre                String?         @db.VarChar(255)
+  modelo                String?         @db.VarChar(50)
   descripcion           String?
   codi_categoria        String?         @db.VarChar(4)
   codi_marca            String?         @db.VarChar(3)
@@ -431,7 +433,7 @@ model venta {
   factura_url               String?                    @db.VarChar(255)
   creado_en                 DateTime?                  @default(now()) @db.Timestamp(6)
   actualizado_en            DateTime?                  @default(now()) @db.Timestamp(6)
-  cod_interno               String?                    @unique @db.VarChar(8)
+  cod_interno               String?                    @unique @db.VarChar(12)
   direcciones               direcciones[]
   envios                    envios[]
   mercado_pago_payments     mercado_pago_payments[]

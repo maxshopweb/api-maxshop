@@ -467,6 +467,7 @@ export class ProductosService {
     private static readonly PRODUCTO_MAX_LEN = {
         codi_arti: 10,
         nombre: 255,
+        modelo: 50,
         unidad_medida: 3,
         codi_barras: 22,
         img_principal: 120,
@@ -485,6 +486,8 @@ export class ProductosService {
         const listaActiva = rest.lista_precio_activa != null && rest.lista_precio_activa !== ''
             ? (rest.lista_precio_activa as string).toUpperCase().slice(0, 1)
             : null;
+        // IVA por defecto 21% (codi_impuesto '01') si no se envía
+        const codiImpuestoFinal = this.truncateStr(codi_impuesto, 2) ?? '01';
         // Estado: si el cliente envía 1, 2 o 3 usarlo; si no, INACTIVO (2) sin stock en depósito, ACTIVO (1) con stock
         const estadoCreate =
             rest.estado !== undefined && rest.estado !== null && [1, 2, 3].includes(Number(rest.estado))
@@ -496,6 +499,7 @@ export class ProductosService {
             data: {
                 codi_arti: this.truncateStr(rest.codi_arti, L.codi_arti) ?? '',
                 nombre: this.truncateStr(rest.nombre, L.nombre) ?? null,
+                modelo: this.truncateStr(modelo, L.modelo) ?? null,
                 descripcion: rest.descripcion != null && rest.descripcion !== '' ? String(rest.descripcion).trim() : null,
                 precio_venta: rest.precio_venta ?? null,
                 precio_especial: rest.precio_especial ?? null,
@@ -514,7 +518,7 @@ export class ProductosService {
                 codi_categoria: this.truncateStr(codi_categoria, 4) ?? null,
                 codi_marca: this.truncateStr(codi_marca, 3) ?? null,
                 codi_grupo: this.truncateStr(codi_grupo, 4) ?? null,
-                codi_impuesto: this.truncateStr(codi_impuesto, 2) ?? null,
+                codi_impuesto: codiImpuestoFinal,
                 estado: estadoCreate,
                 creado_en: new Date(),
                 actualizado_en: new Date()
@@ -603,6 +607,7 @@ export class ProductosService {
             ...(codi_impuesto !== undefined && { codi_impuesto: codi_impuesto || null }),
             ...(listaActiva !== undefined && { lista_precio_activa: listaActiva }),
             ...(estado !== undefined && estado !== null && { estado: Number(estado) }),
+            ...(data.modelo !== undefined && { modelo: this.truncateStr(data.modelo, ProductosService.PRODUCTO_MAX_LEN.modelo) ?? null }),
             ...(editadoPrecio && { precio_editado_manualmente: true }),
             actualizado_en: new Date()
         };

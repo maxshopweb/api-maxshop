@@ -195,6 +195,44 @@ describe('FacturaSyncService', () => {
       );
     });
 
+    it('encuentra factura por cod_interno en formato MAX-00000001 y envía email con número de pedido', async () => {
+      prisma.ventas_pendientes_factura.findMany.mockResolvedValue([
+        {
+          id: 1,
+          venta_id: 42,
+          venta: { cod_interno: 'MAX-00000042' },
+          estado: 'pendiente',
+          intentos: 0,
+          fecha_creacion: new Date(),
+          fecha_ultimo_intento: null,
+          error_mensaje: null,
+          factura_encontrada: false,
+          factura_nombre_archivo: null,
+          procesado_en: null,
+        },
+      ]);
+      ftpService.listFiles.mockResolvedValue([fileInfo('F4-0004-MAX-00000042.pdf')]);
+      prisma.ventas_pendientes_factura.update.mockResolvedValue({});
+      prisma.venta.findUnique.mockResolvedValue(
+        buildVentaPrisma({ id_venta: 42, cod_interno: 'MAX-00000042' })
+      );
+      ftpService.downloadExcel.mockResolvedValue(undefined);
+      prisma.venta.update.mockResolvedValue({});
+
+      const r = await service.syncFacturasPendientes();
+
+      expect(r.procesadas).toBe(1);
+      expect(ftpService.deleteFile).toHaveBeenCalledWith(expect.stringContaining('F4-0004-MAX-00000042.pdf'));
+      expect(mailService.sendEmailWithAttachment).toHaveBeenCalledWith(
+        expect.any(String),
+        'Tu factura está lista - Pedido MAX-00000042',
+        expect.any(String),
+        expect.any(String),
+        'Factura_MAX-00000042.pdf',
+        expect.any(Object)
+      );
+    });
+
     it('usa id_venta a 8 dígitos cuando cod_interno es null', async () => {
       prisma.ventas_pendientes_factura.findMany.mockResolvedValue([
         {

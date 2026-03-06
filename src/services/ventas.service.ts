@@ -492,8 +492,8 @@ export class VentasService {
                 },
             });
 
-            // 2. Generar cod_interno basado en id_venta (8 dígitos con padding)
-            const codInterno = ventaCreada.id_venta.toString().padStart(8, '0');
+            // 2. Generar cod_interno en formato "MAX-00000001"
+            const codInterno = 'MAX-' + ventaCreada.id_venta.toString().padStart(8, '0');
 
             // 3. Actualizar la venta con cod_interno
             return await tx.venta.update({

@@ -1,6 +1,10 @@
 import { Request, Response } from 'express';
+import * as path from 'path';
+import * as fs from 'fs';
 import { asSingleString } from '../utils/validation.utils';
 import { clientesService } from '../services/clientes.service';
+import { buildClientesExcelBuffer } from '../services/clientes-excel.service';
+import ftpService from '../services/ftp.service';
 import { IClienteFilters, EstadoGeneral, IUpdateClienteDTO } from '../types';
 
 export class ClientesController {
@@ -100,6 +104,48 @@ export class ClientesController {
             res.status(error.message === 'Cliente no encontrado' ? 404 : 500).json({
                 success: false,
                 error: error.message || 'Error al actualizar cliente',
+            });
+        }
+    }
+
+    /**
+     * Exporta todos los clientes a Excel, sube el archivo al FTP y lo devuelve para descarga.
+     */
+    async exportExcel(req: Request, res: Response) {
+        const TEMP_DIR = path.join(process.cwd(), 'backend', 'data', 'temp');
+        const REMOTE_PATH = '/Tekno/Pedido/Clientes.xlsx';
+        const FILENAME = 'Clientes.xlsx';
+
+        try {
+            const clientes = await clientesService.getAllForExport();
+            const buffer = buildClientesExcelBuffer(clientes);
+
+            const localPath = path.join(TEMP_DIR, FILENAME);
+            if (!fs.existsSync(TEMP_DIR)) {
+                fs.mkdirSync(TEMP_DIR, { recursive: true });
+            }
+            fs.writeFileSync(localPath, buffer);
+
+            try {
+                await ftpService.connect();
+                await ftpService.uploadExcel(localPath, REMOTE_PATH);
+                console.log(`✅ [Clientes] Excel exportado y subido a FTP: ${REMOTE_PATH}`);
+            } finally {
+                await ftpService.disconnect();
+            }
+
+            res.setHeader(
+                'Content-Type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            );
+            res.setHeader('Content-Disposition', `attachment; filename="${FILENAME}"`);
+            res.setHeader('Content-Length', buffer.length);
+            res.send(buffer);
+        } catch (error: any) {
+            console.error('❌ Error en export Excel clientes:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message || 'Error al exportar clientes a Excel',
             });
         }
     }

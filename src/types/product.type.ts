@@ -17,6 +17,7 @@ export interface IProductos {
     codi_grupo?: string | null;
     codi_impuesto?: string | null;
     nombre?: string | null;
+    modelo?: string | null;
     descripcion?: string | null;
     precio_venta?: number | null;
     precio_especial?: number | null;
@@ -93,6 +94,7 @@ export interface ICreateProductoDTO {
     codi_grupo?: string;
     codi_impuesto?: string;
     nombre: string;
+    modelo?: string | null;
     descripcion?: string;
     precio_venta?: number | null;
     precio_especial?: number | null;

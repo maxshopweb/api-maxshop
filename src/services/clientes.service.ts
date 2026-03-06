@@ -95,6 +95,8 @@ export class ClientesService {
             orderByClause.usuarios = { creado_en: order };
         } else if (order_by === 'ultimo_login') {
             orderByClause.usuarios = { ultimo_login: order };
+        } else if (order_by === 'numero_cliente') {
+            orderByClause.numero_cliente = order;
         } else {
             orderByClause.usuarios = { creado_en: 'desc' };
         }
@@ -119,6 +121,7 @@ export class ClientesService {
         const formattedClientes: ICliente[] = clientes.map((cliente: any) => ({
             id_cliente: cliente.id_cliente,
             id_usuario: cliente.id_usuario,
+            numero_cliente: cliente.numero_cliente != null ? Number(cliente.numero_cliente) : null,
             direccion: cliente.direccion,
             cod_postal: cliente.cod_postal,
             ciudad: cliente.ciudad,
@@ -162,6 +165,58 @@ export class ClientesService {
         return response;
     }
 
+    /**
+     * Obtiene todos los clientes sin paginación (para exportación Excel).
+     * Orden por numero_cliente ascendente.
+     */
+    async getAllForExport(): Promise<ICliente[]> {
+        const clientes = await prisma.cliente.findMany({
+            where: {
+                usuarios: {
+                    admin: null,
+                },
+            },
+            include: {
+                usuarios: true,
+            },
+            orderBy: { numero_cliente: 'asc' },
+        });
+
+        return clientes.map((cliente: any) => ({
+            id_cliente: cliente.id_cliente,
+            id_usuario: cliente.id_usuario,
+            numero_cliente: cliente.numero_cliente != null ? Number(cliente.numero_cliente) : null,
+            direccion: cliente.direccion,
+            cod_postal: cliente.cod_postal,
+            ciudad: cliente.ciudad,
+            provincia: cliente.provincia,
+            altura: cliente.altura,
+            piso: cliente.piso,
+            dpto: cliente.dpto,
+            usuario: cliente.usuarios
+                ? {
+                      id_usuario: cliente.usuarios.id_usuario,
+                      nombre: cliente.usuarios.nombre,
+                      apellido: cliente.usuarios.apellido,
+                      email: cliente.usuarios.email,
+                      telefono: cliente.usuarios.telefono,
+                      username: cliente.usuarios.username,
+                      id_rol: cliente.usuarios.id_rol,
+                      estado: cliente.usuarios.estado as any,
+                      creado_en: cliente.usuarios.creado_en,
+                      actualizado_en: cliente.usuarios.actualizado_en,
+                      ultimo_login: cliente.usuarios.ultimo_login,
+                      login_ip: cliente.usuarios.login_ip,
+                      img: cliente.usuarios.img,
+                      nacimiento: cliente.usuarios.nacimiento,
+                      numero_documento: cliente.usuarios.numero_documento,
+                      tipo_documento: cliente.usuarios.tipo_documento,
+                      activo: cliente.usuarios.activo,
+                  }
+                : undefined,
+        }));
+    }
+
     async getById(id: string): Promise<ICliente> {
         const cacheKey = `cliente:${id}`;
         
@@ -198,6 +253,7 @@ export class ClientesService {
         const formattedCliente: ICliente = {
             id_cliente: cliente.id_cliente,
             id_usuario: cliente.id_usuario,
+            numero_cliente: cliente.numero_cliente != null ? Number(cliente.numero_cliente) : null,
             direccion: cliente.direccion,
             cod_postal: cliente.cod_postal,
             ciudad: cliente.ciudad,
@@ -225,6 +281,7 @@ export class ClientesService {
             } : undefined,
             ventas: cliente.venta.map((venta: any) => ({
                 id_venta: venta.id_venta,
+                cod_interno: venta.cod_interno ?? null,
                 fecha: venta.fecha,
                 total_neto: Number(venta.total_neto),
                 estado_pago: venta.estado_pago as any,
@@ -305,6 +362,7 @@ export class ClientesService {
 
         const formattedVentas = ventas.map((venta: any) => ({
             id_venta: venta.id_venta,
+            cod_interno: venta.cod_interno ?? null,
             fecha: venta.fecha,
             total_neto: Number(venta.total_neto),
             estado_pago: venta.estado_pago,

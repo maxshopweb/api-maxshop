@@ -13,7 +13,8 @@ const router = Router();
 // Middleware de autenticación para todas las rutas
 router.use(authenticatedRateLimiter, verifyFirebaseToken, requireAuthenticatedUser, loadUserFromDatabase);
 
-// Rutas
+// Rutas (export antes de /:id para que no se interprete "export" como id)
+router.get('/export', clientesController.exportExcel.bind(clientesController));
 router.get('/', cacheMiddleware(1800), clientesController.getAll.bind(clientesController));
 router.get('/:id', cacheMiddleware(3600), clientesController.getById.bind(clientesController));
 router.get('/:id/stats', cacheMiddleware(600), clientesController.getStats.bind(clientesController));

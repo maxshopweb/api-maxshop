@@ -1247,7 +1247,6 @@ export class CSVImporterService {
         if (!codiarti) continue;
 
         const codi_arti_truncado = codiarti.substring(0, 10);
-        const nombre = this.truncarString(this.limpiarCampo(row[indices['DESCARTI'] ?? 3]), 255);
         const codigrar = this.truncarString(this.limpiarCampo(row[indices['CODIGRAR'] ?? 2]), 4);
         const codicate = this.truncarString(this.limpiarCampo(row[indices['CODICATE'] ?? -1] || ''), 4);
         const codimarc = this.truncarString(this.limpiarCampo(row[indices['CODIMARC'] ?? -1] || ''), 3);
@@ -1273,10 +1272,10 @@ export class CSVImporterService {
           imageUpdates.push({ codi_arti: codi_arti_truncado, imgPath: parsedCsvImage.value });
         }
 
+        // No actualizar nombre en updates: solo se setea en el primer insert (create). Evita que el sync pise nombres editados en el panel.
         const result = await prisma.productos.updateMany({
           where: { codi_arti: codi_arti_truncado },
           data: {
-            nombre,
             codi_grupo,
             codi_categoria,
             codi_marca,
@@ -1322,6 +1321,7 @@ export class CSVImporterService {
       const col = this.limpiarCampo(headerRow[i]).toUpperCase();
       if (col.includes('CODIARTI')) indices['CODIARTI'] = i;
       else if (col.includes('DESCARTI')) indices['DESCARTI'] = i;
+      else if (col.includes('COPRARTI')) indices['COPRARTI'] = i;
       else if (col.includes('CODIGRAR')) indices['CODIGRAR'] = i;
       else if (col.includes('CODICATE')) indices['CODICATE'] = i;
       else if (col.includes('CODIMARC')) indices['CODIMARC'] = i;
@@ -1425,6 +1425,10 @@ export class CSVImporterService {
             this.limpiarCampo(row[indices['DESCARTI'] ?? 3]),
             255
           );
+          const modelo = this.truncarString(
+            this.limpiarCampo(row[indices['COPRARTI'] ?? -1] || ''),
+            50
+          ) || null;
           const codigrar = this.truncarString(
             this.limpiarCampo(row[indices['CODIGRAR'] ?? 2]),
             4
@@ -1513,6 +1517,7 @@ export class CSVImporterService {
           const producto = {
             codi_arti: codi_arti_truncado,
             nombre: nombre,
+            modelo,
             codi_grupo,
             codi_categoria,
             codi_marca,
@@ -1589,8 +1594,8 @@ export class CSVImporterService {
         });
 
         const noPisarPrecios = existente?.precio_editado_manualmente === true;
+        // No actualizar nombre en updates: solo se setea en el primer insert (create). Evita que la importación pise nombres editados en el panel.
         const updateData: Record<string, unknown> = {
-          nombre: producto.nombre,
           codi_grupo: producto.codi_grupo,
           codi_categoria: producto.codi_categoria,
           codi_marca: producto.codi_marca,
@@ -1667,6 +1672,7 @@ export class CSVImporterService {
           create: {
             codi_arti: producto.codi_arti,
             nombre: producto.nombre,
+            modelo: producto.modelo ?? null,
             codi_grupo: producto.codi_grupo,
             codi_categoria: producto.codi_categoria,
             codi_marca: producto.codi_marca,
