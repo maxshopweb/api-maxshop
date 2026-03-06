@@ -116,7 +116,6 @@ export interface ICreateProductoDTO {
     id_iva?: number;
     cod_sku?: string;
     id_interno?: string;
-    modelo?: string;
     precio_mayorista?: number | null;
     precio_minorista?: number | null;
     precio_evento?: number | null;
