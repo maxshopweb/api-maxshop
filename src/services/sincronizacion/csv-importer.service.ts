@@ -1258,6 +1258,7 @@ export class CSVImporterService {
         const unmearti = this.truncarString(this.limpiarCampo(row[indices['UNMEARTI'] ?? 4] || ''), 3);
         const unenarti = this.parsearNumero(row[indices['UNENARTI'] ?? 6]);
         const partarti = this.truncarString(this.limpiarCampo(row[indices['PARTARTI'] ?? 35] || ''), 22);
+        const modelo = this.truncarString(this.limpiarCampo(row[indices['COPRARTI'] ?? -1] || ''), 50) || null;
 
         const codi_grupo = codigrar && gruposSet.has(codigrar) ? codigrar : null;
         const codi_categoria = codicate && categoriasSet.has(codicate) ? codicate : null;
@@ -1280,6 +1281,7 @@ export class CSVImporterService {
             codi_categoria,
             codi_marca,
             codi_impuesto,
+            modelo,
             unidad_medida: unmearti || null,
             unidades_por_producto: unenarti != null ? unenarti : null,
             codi_barras: partarti || null,
@@ -1600,6 +1602,7 @@ export class CSVImporterService {
           codi_categoria: producto.codi_categoria,
           codi_marca: producto.codi_marca,
           codi_impuesto: producto.codi_impuesto,
+          modelo: producto.modelo ?? null,
           ...(noPisarPrecios
             ? {}
             : {
