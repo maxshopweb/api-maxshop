@@ -1,6 +1,6 @@
 # Integración con Andreani
 
-Esta documentación describe la integración completa con la API de Andreani para la gestión de envíos.
+Esta documentación describe la integración completa con la API de Andreani para la gestión de envíos..
 
 ## 📋 Índice
 
