@@ -88,4 +88,36 @@ export class ListasPrecioController {
             });
         }
     }
+
+    async updateActivo(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido'
+                });
+                return;
+            }
+            const activo = (req.body as { activo?: boolean }).activo;
+            if (typeof activo !== 'boolean') {
+                res.status(400).json({
+                    success: false,
+                    error: 'Body debe incluir activo (boolean)'
+                });
+                return;
+            }
+            const lista = await listasPrecioService.updateActivo(id, activo);
+            res.json({
+                success: true,
+                data: lista
+            });
+        } catch (error) {
+            console.error('Error en updateActivo listas precio:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al actualizar estado de la lista de precio'
+            });
+        }
+    }
 }

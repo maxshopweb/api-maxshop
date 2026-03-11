@@ -25,4 +25,12 @@ export class ListasPrecioService {
         });
         return lista as IListaPrecio | null;
     }
+
+    async updateActivo(id_lista: number, activo: boolean): Promise<IListaPrecio> {
+        const lista = await prisma.lista_precio.update({
+            where: { id_lista },
+            data: { activo }
+        });
+        return lista as IListaPrecio;
+    }
 }

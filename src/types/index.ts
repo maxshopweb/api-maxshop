@@ -182,7 +182,7 @@ export interface IClienteStats {
     productosComprados: number;
 }
 
-/** DTO para actualizar datos editables del cliente (teléfono, DNI, domicilio) */
+/** DTO para actualizar datos editables del cliente (teléfono, DNI, domicilio, activo) */
 export interface IUpdateClienteDTO {
     telefono?: string | null;
     numero_documento?: string | null;
@@ -194,6 +194,8 @@ export interface IUpdateClienteDTO {
     ciudad?: string | null;
     provincia?: string | null;
     cod_postal?: number | null;
+    /** Si false, el cliente no puede iniciar sesión ni realizar compras */
+    activo?: boolean | null;
 }
 
 export interface IIva {

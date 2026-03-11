@@ -170,6 +170,13 @@ export const loadUserFromDatabase = async (req: Request, res: Response, next: Ne
       }
     }
 
+    if (userRecord.activo === false) {
+      return res.status(403).json({
+        success: false,
+        error: 'Tu cuenta está inactiva o suspendida. Contactá al administrador.'
+      });
+    }
+
     req.authenticatedUser = buildAuthenticatedUser(userRecord);
     return next();
   } catch (error) {

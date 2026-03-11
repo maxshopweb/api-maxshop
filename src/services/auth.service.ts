@@ -196,6 +196,11 @@ export class AuthService {
       }
     }
 
+    // Si la cuenta está inactiva (suspendida por admin), rechazar login
+    if (userRecord.activo === false) {
+      throw new Error('Tu cuenta está inactiva. Contactá al administrador.');
+    }
+
     // Si el email no está verificado, rechazar login
     if (!isEmailVerified) {
       throw new Error('Debes verificar tu email antes de continuar. Revisa tu bandeja de entrada.');

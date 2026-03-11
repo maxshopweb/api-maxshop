@@ -135,6 +135,7 @@ export class ClientesService {
                 username: cliente.usuarios.username,
                 id_rol: cliente.usuarios.id_rol,
                 estado: cliente.usuarios.estado as any,
+                activo: cliente.usuarios.activo,
                 creado_en: cliente.usuarios.creado_en,
                 actualizado_en: cliente.usuarios.actualizado_en,
                 ultimo_login: cliente.usuarios.ultimo_login,
@@ -270,6 +271,7 @@ export class ClientesService {
                 username: cliente.usuarios.username,
                 id_rol: cliente.usuarios.id_rol,
                 estado: cliente.usuarios.estado as any,
+                activo: cliente.usuarios.activo,
                 creado_en: cliente.usuarios.creado_en,
                 actualizado_en: cliente.usuarios.actualizado_en,
                 ultimo_login: cliente.usuarios.ultimo_login,
@@ -394,6 +396,7 @@ export class ClientesService {
         if (data.telefono !== undefined) usuarioData.telefono = data.telefono;
         if (data.numero_documento !== undefined) usuarioData.numero_documento = data.numero_documento;
         if (data.tipo_documento !== undefined) usuarioData.tipo_documento = data.tipo_documento;
+        if (data.activo !== undefined) usuarioData.activo = data.activo;
 
         if (Object.keys(usuarioData).length > 0) {
             usuarioData.actualizado_en = new Date();

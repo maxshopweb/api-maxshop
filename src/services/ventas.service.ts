@@ -468,6 +468,18 @@ export class VentasService {
             }
         }
 
+        // Si la venta es para un cliente (usuario), verificar que esté activo
+        const idUsuarioVenta = idClienteFinal || idUsuario;
+        if (idUsuarioVenta) {
+            const usuarioVenta = await prisma.usuarios.findUnique({
+                where: { id_usuario: idUsuarioVenta },
+                select: { activo: true },
+            });
+            if (usuarioVenta?.activo === false) {
+                throw new Error('No se pueden realizar compras con una cuenta inactiva. Contactá al administrador.');
+            }
+        }
+
         // Crear venta con cod_interno automático usando transacción
         const venta = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             // 1. Crear la venta (sin cod_interno aún)
