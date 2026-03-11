@@ -424,7 +424,62 @@ export class ClientesService {
 
         await cacheService.delete(`cliente:${id}`);
         await cacheService.deletePattern('clientes:*');
-        return this.getById(id);
+
+        // Lectura fresca desde DB (sin cache) para devolver siempre datos actualizados (incl. activo)
+        const fresh = await prisma.cliente.findUnique({
+            where: { id_usuario: id },
+            include: {
+                usuarios: true,
+                venta: {
+                    orderBy: { fecha: 'desc' },
+                    take: 10,
+                    include: { venta_detalle: { include: { productos: true } } },
+                },
+            },
+        });
+        if (!fresh) throw new Error('Cliente no encontrado');
+        const formatted: ICliente = {
+            id_cliente: fresh.id_cliente,
+            id_usuario: fresh.id_usuario,
+            numero_cliente: fresh.numero_cliente != null ? Number(fresh.numero_cliente) : null,
+            direccion: fresh.direccion,
+            cod_postal: fresh.cod_postal,
+            ciudad: fresh.ciudad,
+            provincia: fresh.provincia,
+            altura: (fresh as any).altura,
+            piso: (fresh as any).piso,
+            dpto: (fresh as any).dpto,
+            usuario: fresh.usuarios ? {
+                id_usuario: fresh.usuarios.id_usuario,
+                nombre: fresh.usuarios.nombre,
+                apellido: fresh.usuarios.apellido,
+                email: fresh.usuarios.email,
+                telefono: fresh.usuarios.telefono,
+                username: fresh.usuarios.username,
+                id_rol: fresh.usuarios.id_rol,
+                estado: fresh.usuarios.estado as any,
+                activo: fresh.usuarios.activo,
+                creado_en: fresh.usuarios.creado_en,
+                actualizado_en: fresh.usuarios.actualizado_en,
+                ultimo_login: fresh.usuarios.ultimo_login,
+                login_ip: fresh.usuarios.login_ip,
+                img: fresh.usuarios.img,
+                nacimiento: fresh.usuarios.nacimiento,
+                numero_documento: fresh.usuarios.numero_documento,
+                tipo_documento: fresh.usuarios.tipo_documento,
+            } : undefined,
+            ventas: fresh.venta.map((v: any) => ({
+                id_venta: v.id_venta,
+                cod_interno: v.cod_interno ?? null,
+                fecha: v.fecha,
+                total_neto: Number(v.total_neto),
+                estado_pago: v.estado_pago as any,
+                estado_envio: v.estado_envio as any,
+                metodo_pago: v.metodo_pago as any,
+            })) as any,
+        };
+        await cacheService.set(`cliente:${id}`, formatted, this.TTL_CLIENTE);
+        return formatted;
     }
 }
 
