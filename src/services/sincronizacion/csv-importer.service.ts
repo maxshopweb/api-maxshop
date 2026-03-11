@@ -1161,7 +1161,9 @@ export class CSVImporterService {
   /**
    * Etapa 3: Actualiza solo precios en productos desde maesprec.csv.
    * No toca stock ni datos maestros. Reutiliza cargarPrecios().
-   * No actualiza productos con precio_editado_manualmente = true (precios editados en el panel).
+   * Actualiza precio_venta, precio_especial, precio_pvp, precio_campanya en TODOS los productos
+   * (incluidos los que tienen lista E). No toca precio_manual ni lista_precio_activa:
+   * los productos con precio manual (lista E) mantienen su precio_manual.
    */
   async actualizarSoloPrecios(csvDir: string): Promise<{ actualizados: number }> {
     const csvPath = path.join(csvDir, 'maesprec.csv');
@@ -1175,10 +1177,7 @@ export class CSVImporterService {
       const codi_arti_truncado = codiarti.trim().substring(0, 10);
       try {
         const result = await prisma.productos.updateMany({
-          where: {
-            codi_arti: codi_arti_truncado,
-            precio_editado_manualmente: { not: true },
-          },
+          where: { codi_arti: codi_arti_truncado },
           data: {
             precio_venta: precios.precioVenta ?? null,
             precio_especial: precios.precioEspecial ?? null,
@@ -1592,26 +1591,22 @@ export class CSVImporterService {
       try {
         const existente = await prisma.productos.findUnique({
           where: { codi_arti: producto.codi_arti },
-          select: { img_principal: true, precio_editado_manualmente: true },
+          select: { img_principal: true },
         });
 
-        const noPisarPrecios = existente?.precio_editado_manualmente === true;
-        // No actualizar nombre en updates: solo se setea en el primer insert (create). Evita que la importación pise nombres editados en el panel.
+        // Actualizar siempre las listas V,O,P,Q desde CSV. No tocamos precio_manual ni lista_precio_activa:
+        // los productos con lista E (precio manual) mantienen su precio_manual.
         const updateData: Record<string, unknown> = {
           codi_grupo: producto.codi_grupo,
           codi_categoria: producto.codi_categoria,
           codi_marca: producto.codi_marca,
           codi_impuesto: producto.codi_impuesto,
           modelo: producto.modelo ?? null,
-          ...(noPisarPrecios
-            ? {}
-            : {
-                precio_venta: producto.precio_venta,
-                precio_especial: producto.precio_especial,
-                precio_pvp: producto.precio_pvp,
-                precio_campanya: producto.precio_campanya,
-              }),
-          // No actualizar lista_precio_activa: el usuario puede haberla cambiado manualmente; el cron no la pisa
+          precio_venta: producto.precio_venta,
+          precio_especial: producto.precio_especial,
+          precio_pvp: producto.precio_pvp,
+          precio_campanya: producto.precio_campanya,
+          // No actualizar lista_precio_activa ni precio_manual: el usuario puede tener lista E
           unidad_medida: producto.unidad_medida,
           unidades_por_producto: producto.unidades_por_producto,
           codi_barras: producto.codi_barras,

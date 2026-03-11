@@ -132,19 +132,20 @@ export class ProductosController {
                 data.precio_venta = (data as any).precio;
             }
 
-            const tienePrecio = data.precio_venta != null || data.precio_especial != null || data.precio_pvp != null || data.precio_campanya != null;
+            const tienePrecio = data.precio_venta != null || data.precio_especial != null || data.precio_pvp != null || data.precio_campanya != null
+                || ((data.lista_precio_activa as string)?.toUpperCase() === 'E' && data.precio_manual != null);
             if (!data.nombre || !tienePrecio) {
                 res.status(400).json({
                     success: false,
-                    error: 'Nombre y al menos un precio por lista (precio_venta/V, precio_especial/O, precio_pvp/P, precio_campanya/Q) son requeridos'
+                    error: 'Nombre y al menos un precio por lista (precio_venta/V, precio_especial/O, precio_pvp/P, precio_campanya/Q, o lista E con precio_manual) son requeridos'
                 });
                 return;
             }
-            const listasValidas = ['V', 'O', 'P', 'Q'];
+            const listasValidas = ['V', 'O', 'P', 'Q', 'E'];
             if (data.lista_precio_activa != null && data.lista_precio_activa !== '' && !listasValidas.includes((data.lista_precio_activa as string).toUpperCase())) {
                 res.status(400).json({
                     success: false,
-                    error: 'lista_precio_activa debe ser uno de: V, O, P, Q'
+                    error: 'lista_precio_activa debe ser uno de: V, O, P, Q, E'
                 });
                 return;
             }
@@ -210,11 +211,11 @@ export class ProductosController {
                 });
                 return;
             }
-            const listasValidas = ['V', 'O', 'P', 'Q'];
+            const listasValidas = ['V', 'O', 'P', 'Q', 'E'];
             if (data.lista_precio_activa != null && data.lista_precio_activa !== '' && !listasValidas.includes((data.lista_precio_activa as string).toUpperCase())) {
                 res.status(400).json({
                     success: false,
-                    error: 'lista_precio_activa debe ser uno de: V, O, P, Q'
+                    error: 'lista_precio_activa debe ser uno de: V, O, P, Q, E'
                 });
                 return;
             }

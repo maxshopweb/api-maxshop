@@ -252,6 +252,42 @@ export class VentasController {
     }
 
     /**
+     * Actualiza datos de envío de una venta (número de seguimiento, empresa de transporte).
+     * PATCH /ventas/:id/envio body: { cod_seguimiento?, empresa_envio? }
+     */
+    async updateEnvio(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            const { cod_seguimiento, empresa_envio } = req.body || {};
+
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID de venta inválido',
+                });
+                return;
+            }
+
+            const venta = await ventasService.updateEnvio(id, {
+                cod_seguimiento: cod_seguimiento !== undefined ? cod_seguimiento : undefined,
+                empresa_envio: empresa_envio !== undefined ? empresa_envio : undefined,
+            });
+
+            res.json({
+                success: true,
+                data: venta,
+                message: 'Envío actualizado correctamente',
+            });
+        } catch (error: any) {
+            console.error('Error en updateEnvio:', error);
+            res.status(400).json({
+                success: false,
+                error: error.message || 'Error al actualizar envío',
+            });
+        }
+    }
+
+    /**
      * Obtiene los pedidos del usuario autenticado
      * Requiere autenticación
      */

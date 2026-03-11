@@ -315,6 +315,10 @@ export interface IVenta {
     factura_url?: string | null;
     creado_en?: Date | null;
     actualizado_en?: Date | null;
+    /** Referencia de pago manual (ej. número de operación) cuando no viene de Mercado Pago. */
+    referencia_pago_manual?: string | null;
+    /** Referencia de facturación (ej. número de comprobante externo). */
+    referencia_facturacion?: string | null;
     // Relaciones
     usuario?: IUsuarios | null;
     cliente?: ICliente | null;
@@ -334,6 +338,8 @@ export interface IVentaDetalle {
     sub_total?: number | null;
     evento_aplicado?: number | null;
     tipo_descuento?: TipoDescuento | null;
+    /** Código de bonificación a aplicar en esta línea (para Excel/export). */
+    codi_bonificacion?: string | null;
     // Relaciones
     venta?: IVenta | null;
     producto?: IProductos | null;
@@ -404,6 +410,8 @@ export interface IVentaDetalleDTO {
     precio_unitario: number;
     descuento_aplicado?: number;
     evento_aplicado?: number;
+    /** Código de bonificación a aplicar en esta línea. Si no se envía, se usa el del producto. */
+    codi_bonificacion?: string | null;
 }
 
 // =======================================
@@ -475,6 +483,10 @@ export interface IUpdateVentaDTO {
     metodo_pago?: MetodoPago;
     observaciones?: string;
     id_envio?: string;
+    /** Referencia de pago manual (ej. número de operación bancaria). */
+    referencia_pago_manual?: string | null;
+    /** Referencia de facturación (ej. número de comprobante). */
+    referencia_facturacion?: string | null;
 }
 
 // =======================================

@@ -488,7 +488,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 BE: direccionEnvio?.pais || 'ARGENTINA', // País
                 BF: construirTransporte(), // COLUMNA AF: "C3" si Andreani, vacío si retiro en local
                 BG: codigoPlataformaPago, // COLUMNA AG: "MP" si MercadoPago, vacío si no
-                BH: pagoMP?.payment_id || null, // ID del pago
+                BH: pagoMP?.payment_id || (venta as any).referencia_pago_manual || null, // Referencia pago: MP o manual (admin)
                 BI: pagoMP?.status_mp ? mapMPStatusToSpanish(pagoMP.status_mp) : null, // Estado del pago
                 BJ: pagoMP?.status_detail ? mapMPStatusDetailToSpanish(pagoMP.status_detail) : null, // Detalle del pago
                 BK: pagoMP?.payment_method_id ? mapPaymentMethodToSpanish(pagoMP.payment_method_id) : null, // Forma de pago
@@ -528,6 +528,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
 
         const buildProductoRow = (detalle: any): VentaExcelRow => {
             const producto = detalle.producto;
+            const codiBonificacion = detalle.codi_bonificacion ?? producto?.codi_bonificacion ?? '';
             return ({
                 AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // A
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // B
@@ -537,7 +538,8 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AP: ivaLinea(detalle, producto), // P: IVA del artículo (monto)
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0, // R (número)
-                AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea
+                AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea (V|O|P|Q|E)
+                AT: codiBonificacion, // T: bonificación a aplicar (código)
             }) as VentaExcelRow;
         };
 
@@ -547,6 +549,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             const detalle = venta.detalles[i];
             const producto = detalle.producto;
 
+            const codiBonificacionLegacy = detalle.codi_bonificacion ?? producto?.codi_bonificacion ?? '';
             const legacyRow: VentaExcelRow = {
                 ...buildVentaBaseRow(),
                 AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1,
@@ -557,7 +560,8 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AP: ivaLinea(detalle, producto), // P: IVA del artículo (monto)
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0,
-                AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea
+                AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea (V|O|P|Q|E)
+                AT: codiBonificacionLegacy, // T: bonificación a aplicar (código)
             };
 
             rows.push(legacyRow);

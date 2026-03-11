@@ -326,6 +326,10 @@ model productos {
   precio_especial       Decimal?        @db.Decimal(19, 6)
   precio_pvp            Decimal?        @db.Decimal(19, 6)
   precio_campanya       Decimal?        @db.Decimal(19, 6)
+  /** Precio cuando lista_precio_activa = 'E' (Precio especial). No se sobreescribe por sync. */
+  precio_manual         Decimal?        @db.Decimal(19, 6)
+  /** Código de bonificación a aplicar (para Excel/export). */
+  codi_bonificacion     String?         @db.VarChar(10)
   lista_precio_activa   String?         @db.VarChar(1)
   precio_editado_manualmente Boolean?   @default(false)
   publicado             Boolean?        @default(false)
@@ -434,6 +438,10 @@ model venta {
   creado_en                 DateTime?                  @default(now()) @db.Timestamp(6)
   actualizado_en            DateTime?                  @default(now()) @db.Timestamp(6)
   cod_interno               String?                    @unique @db.VarChar(12)
+  /** Referencia de pago manual (ej. número de operación bancaria) cuando no viene de Mercado Pago. */
+  referencia_pago_manual    String?                    @db.VarChar(100)
+  /** Referencia de facturación (ej. número de comprobante externo). */
+  referencia_facturacion     String?                    @db.VarChar(100)
   direcciones               direcciones[]
   envios                    envios[]
   mercado_pago_payments     mercado_pago_payments[]
@@ -458,6 +466,8 @@ model venta_detalle {
   sub_total          Decimal?   @db.Decimal(10, 2)
   evento_aplicado    Int?
   tipo_descuento     String?    @db.VarChar(50)
+  /** Código de bonificación a aplicar para esta línea (para Excel/export). */
+  codi_bonificacion  String?    @db.VarChar(10)
   eventos            eventos?   @relation(fields: [evento_aplicado], references: [id_evento], onDelete: NoAction, onUpdate: NoAction, map: "Venta-detalle_evento_aplicado_fkey")
   productos          productos? @relation(fields: [id_prod], references: [id_prod], onDelete: NoAction, onUpdate: NoAction, map: "Venta-detalle_id_prod_fkey")
   venta              venta?     @relation(fields: [id_venta], references: [id_venta], onDelete: NoAction, onUpdate: NoAction, map: "Venta-detalle_id_venta_fkey")

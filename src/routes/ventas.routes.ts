@@ -47,9 +47,10 @@ router.post('/', ventasController.create.bind(ventasController));
 router.put('/:id', ventasController.update.bind(ventasController));
 router.delete('/:id', ventasController.delete.bind(ventasController));
 
-// Rutas para actualizar estados
+// Rutas para actualizar estados y envío
 router.patch('/:id/estado-pago', ventasController.updateEstadoPago.bind(ventasController));
 router.patch('/:id/estado-envio', ventasController.updateEstadoEnvio.bind(ventasController));
+router.patch('/:id/envio', ventasController.updateEnvio.bind(ventasController));
 
 export default router;
 

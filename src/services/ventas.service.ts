@@ -245,6 +245,7 @@ export class VentasService {
                     },
                 },
                 envios: true,
+                direcciones: true,
                 mercado_pago_payments: true,
             },
         });
@@ -305,6 +306,7 @@ export class VentasService {
                     ? `/api/andreani/envios/${(venta as any).envios[0].cod_seguimiento}/trazas`
                     : null,
             } : null,
+            direcciones: (venta as any).direcciones || [],
             mercado_pago_payments: (venta as any).mercado_pago_payments || undefined,
         };
 
@@ -410,19 +412,23 @@ export class VentasService {
     }
 
     async create(data: ICreateVentaDTO, idUsuario?: string): Promise<IVenta> {
-        // Calcular totales
+        // Calcular totales y guardar productos para codi_bonificacion por línea
         let totalSinIva = 0;
         let totalConIva = 0;
         let descuentoTotal = 0;
+        const productosPorId = new Map<number, { codi_bonificacion: string | null }>();
 
         for (const detalle of data.detalles) {
             const producto = await prisma.productos.findUnique({
                 where: { id_prod: detalle.id_prod },
+                select: { codi_bonificacion: true },
             });
 
             if (!producto) {
                 throw new Error(`Producto ${detalle.id_prod} no encontrado`);
             }
+
+            productosPorId.set(detalle.id_prod, { codi_bonificacion: producto.codi_bonificacion ?? null });
 
             const precioUnitario = detalle.precio_unitario;
             const cantidad = detalle.cantidad;
@@ -498,14 +504,19 @@ export class VentasService {
                     tipo_venta: data.tipo_venta,
                     observaciones: data.observaciones || null,
                     venta_detalle: {
-                        create: data.detalles.map((detalle) => ({
-                            id_prod: detalle.id_prod,
-                            cantidad: detalle.cantidad,
-                            precio_unitario: detalle.precio_unitario,
-                            descuento_aplicado: detalle.descuento_aplicado || 0,
-                            sub_total: detalle.precio_unitario * detalle.cantidad - (detalle.descuento_aplicado || 0),
-                            evento_aplicado: detalle.evento_aplicado || null,
-                        })),
+                        create: data.detalles.map((detalle) => {
+                            const producto = productosPorId.get(detalle.id_prod);
+                            const codiBonificacion = detalle.codi_bonificacion ?? producto?.codi_bonificacion ?? null;
+                            return {
+                                id_prod: detalle.id_prod,
+                                cantidad: detalle.cantidad,
+                                precio_unitario: detalle.precio_unitario,
+                                descuento_aplicado: detalle.descuento_aplicado || 0,
+                                sub_total: detalle.precio_unitario * detalle.cantidad - (detalle.descuento_aplicado || 0),
+                                evento_aplicado: detalle.evento_aplicado || null,
+                                codi_bonificacion: codiBonificacion,
+                            };
+                        }),
                     },
                 },
             });
@@ -1181,6 +1192,8 @@ export class VentasService {
                 if (data.id_envio !== undefined && data.id_envio !== ventaConfirmada.id_envio) {
                     camposAdicionales.id_envio = data.id_envio;
                 }
+                if (data.referencia_pago_manual !== undefined) camposAdicionales.referencia_pago_manual = data.referencia_pago_manual;
+                if (data.referencia_facturacion !== undefined) camposAdicionales.referencia_facturacion = data.referencia_facturacion;
 
                 // Si hay campos adicionales, actualizarlos
                 if (Object.keys(camposAdicionales).length > 0) {
@@ -1217,6 +1230,8 @@ export class VentasService {
             id_envio: data.id_envio,
             actualizado_en: new Date(),
         };
+        if (data.referencia_pago_manual !== undefined) updateData.referencia_pago_manual = data.referencia_pago_manual;
+        if (data.referencia_facturacion !== undefined) updateData.referencia_facturacion = data.referencia_facturacion;
         
         // Solo actualizar estado_envio si no hay envío de Andreani
         if (data.estado_envio && !ventaActual.id_envio) {
@@ -1324,6 +1339,50 @@ export class VentasService {
 
     async updateEstadoEnvio(id: number, estado: string): Promise<IVenta> {
         return this.update(id, { estado_envio: estado as any });
+    }
+
+    /**
+     * Actualiza los datos de envío de una venta (número de seguimiento y/o empresa de transporte).
+     * Si la venta ya tiene un registro en envios, lo actualiza; si no, crea uno nuevo.
+     * Referencia: cod_seguimiento = número de seguimiento del correo; empresa_envio = nombre del transporte.
+     */
+    async updateEnvio(
+        idVenta: number,
+        data: { cod_seguimiento?: string | null; empresa_envio?: string | null }
+    ): Promise<IVenta> {
+        const venta = await this.getById(idVenta);
+        if (!venta) throw new Error('Venta no encontrada');
+
+        const payload: { cod_seguimiento?: string | null; empresa_envio?: string | null } = {};
+        if (data.cod_seguimiento !== undefined) payload.cod_seguimiento = data.cod_seguimiento || null;
+        if (data.empresa_envio !== undefined) payload.empresa_envio = data.empresa_envio || null;
+        if (Object.keys(payload).length === 0) return venta;
+
+        const envioExistente = venta.envio;
+        if (envioExistente?.id_envio) {
+            await prisma.envios.update({
+                where: { id_envio: envioExistente.id_envio },
+                data: payload,
+            });
+        } else {
+            const created = await prisma.envios.create({
+                data: {
+                    id_venta: idVenta,
+                    empresa_envio: payload.empresa_envio ?? null,
+                    cod_seguimiento: payload.cod_seguimiento ?? null,
+                    estado_envio: venta.estado_envio ?? 'pendiente',
+                    fecha_envio: new Date(),
+                },
+            });
+            await prisma.venta.update({
+                where: { id_venta: idVenta },
+                data: { id_envio: created.id_envio, actualizado_en: new Date() },
+            });
+        }
+
+        await cacheService.delete(`venta:${idVenta}`);
+        await cacheService.deletePattern('ventas:*');
+        return this.getById(idVenta);
     }
 
     /**

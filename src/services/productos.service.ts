@@ -24,6 +24,7 @@ export class ProductosService {
 
     /**
      * Obtiene el precio de la lista activa (sin IVA) según lista_precio_activa.
+     * Lista E (Precio especial): usa precio_manual, no se sobreescribe por sync.
      */
     private getPrecioListaActiva(producto: any): number | null {
         const lista = (producto.lista_precio_activa || 'V').toUpperCase();
@@ -31,11 +32,13 @@ export class ProductosService {
         const pe = producto.precio_especial != null ? Number(producto.precio_especial) : null;
         const pp = producto.precio_pvp != null ? Number(producto.precio_pvp) : null;
         const pc = producto.precio_campanya != null ? Number(producto.precio_campanya) : null;
+        const pm = producto.precio_manual != null ? Number(producto.precio_manual) : null;
+        if (lista === 'E') return pm;
         if (lista === 'V') return pv;
         if (lista === 'O') return pe;
         if (lista === 'P') return pp;
         if (lista === 'Q') return pc;
-        return pv ?? pe ?? pp ?? pc;
+        return pv ?? pe ?? pp ?? pc ?? pm;
     }
 
     /**
@@ -75,15 +78,15 @@ export class ProductosService {
         return map;
     }
 
-    /** Solo flags para UI (oferta/campaña). No exponer nombre ni datos internos de lista. */
-    private buildListaActivaInfo(lista: IListaPrecio | undefined): IListaActivaInfo | null {
-        if (!lista) return null;
-        const codi = (lista.codi_lista || '').toUpperCase();
-        const tipo = (lista.tipo_lista || '').toUpperCase();
+    /** Solo flags para UI (oferta/campaña/precio especial E). No exponer nombre ni datos internos de lista. */
+    private buildListaActivaInfo(lista: IListaPrecio | undefined, codiListaOverride?: string): IListaActivaInfo | null {
+        const codi = (lista?.codi_lista ?? codiListaOverride ?? '').toUpperCase();
+        if (!codi) return null;
+        const tipo = (lista?.tipo_lista || '').toUpperCase();
         return {
             codi_lista: codi,
-            tipo_lista: lista.tipo_lista ?? null,
-            es_oferta: codi === 'O' || tipo === 'O',
+            tipo_lista: lista?.tipo_lista ?? null,
+            es_oferta: codi === 'O' || codi === 'E' || tipo === 'O' || tipo === 'E',
             es_campanya: codi === 'Q' || tipo === 'Q'
         };
     }
@@ -100,7 +103,7 @@ export class ProductosService {
     private normalizeProducto(producto: any, listasMap?: Map<string, IListaPrecio>): IProductos {
         const codiLista = (producto.lista_precio_activa || 'V').toUpperCase();
         const lista = listasMap?.get(codiLista);
-        const lista_activa = listasMap ? this.buildListaActivaInfo(lista) : null;
+        const lista_activa = listasMap ? this.buildListaActivaInfo(lista, codiLista) : (codiLista ? this.buildListaActivaInfo(undefined, codiLista) : null);
 
         const defaultStock = this.getDefaultStock();
         const precioActivo = this.calcularPrecioConIva(producto);
@@ -277,6 +280,7 @@ export class ProductosService {
                 { lista_precio_activa: 'O', ...cond('precio_especial') },
                 { lista_precio_activa: 'P', ...cond('precio_pvp') },
                 { lista_precio_activa: 'Q', ...cond('precio_campanya') },
+                { lista_precio_activa: 'E', ...cond('precio_manual') },
                 { lista_precio_activa: null, ...cond('precio_venta') }
             ].filter((o: any) => Object.keys(o).length > 1);
             if (priceOr.length > 0) {
@@ -494,6 +498,10 @@ export class ProductosService {
                 : (rest.stock ?? 0) > 0
                     ? 1
                     : 2;
+        const esListaE = listaActiva === 'E';
+        const precioManual = esListaE && rest.precio_manual != null ? Number(rest.precio_manual) : null;
+        const codiBonificacion = rest.codi_bonificacion != null && String(rest.codi_bonificacion).trim() !== '' ? this.truncateStr(String(rest.codi_bonificacion).trim(), 10) : null;
+
         const nuevoProducto = await prisma.productos.create({
             data: {
                 codi_arti: this.truncateStr(rest.codi_arti, L.codi_arti) ?? '',
@@ -504,7 +512,10 @@ export class ProductosService {
                 precio_especial: rest.precio_especial ?? null,
                 precio_pvp: rest.precio_pvp ?? null,
                 precio_campanya: rest.precio_campanya ?? null,
+                precio_manual: precioManual,
+                codi_bonificacion: codiBonificacion,
                 lista_precio_activa: listaActiva,
+                precio_editado_manualmente: esListaE,
                 stock: rest.stock ?? null,
                 stock_min: rest.stock_min ?? null,
                 codi_barras: this.truncateStr(rest.codi_barras, L.codi_barras),
@@ -595,8 +606,17 @@ export class ProductosService {
             precio_venta_referencia,
             ...updateData
         } = cleanDataForUpdate;
-        const precioFields = ['precio_venta', 'precio_especial', 'precio_pvp', 'precio_campanya'] as const;
+        const precioFields = ['precio_venta', 'precio_especial', 'precio_pvp', 'precio_campanya', 'precio_manual'] as const;
         const editadoPrecio = precioFields.some((f) => data[f] !== undefined);
+        const esListaE = listaActiva === 'E';
+        const precioManualUpdate = listaActiva !== undefined
+            ? (esListaE
+                ? (data.precio_manual !== undefined ? (data.precio_manual != null ? Number(data.precio_manual) : null) : undefined)
+                : null)
+            : undefined;
+        const codiBonificacionUpdate = data.codi_bonificacion !== undefined
+            ? (data.codi_bonificacion != null && String(data.codi_bonificacion).trim() !== '' ? this.truncateStr(String(data.codi_bonificacion).trim(), 10) : null)
+            : undefined;
         const updatePayload = {
             ...updateData,
             nombre: updateData.nombre ? updateData.nombre.toUpperCase() : updateData.nombre,
@@ -605,6 +625,8 @@ export class ProductosService {
             ...(codi_grupo !== undefined && { codi_grupo: codi_grupo || null }),
             ...(codi_impuesto !== undefined && { codi_impuesto: codi_impuesto || null }),
             ...(listaActiva !== undefined && { lista_precio_activa: listaActiva }),
+            ...(precioManualUpdate !== undefined && { precio_manual: precioManualUpdate }),
+            ...(codiBonificacionUpdate !== undefined && { codi_bonificacion: codiBonificacionUpdate }),
             ...(estado !== undefined && estado !== null && { estado: Number(estado) }),
             ...(data.modelo !== undefined && { modelo: this.truncateStr(data.modelo, ProductosService.PRODUCTO_MAX_LEN.modelo) ?? null }),
             ...(editadoPrecio && { precio_editado_manualmente: true }),
@@ -717,7 +739,12 @@ export class ProductosService {
         }
         await prisma.productos.update({
             where: { id_prod: id },
-            data: { precio_editado_manualmente: false, actualizado_en: new Date() } as Prisma.productosUpdateInput,
+            data: {
+                precio_editado_manualmente: false,
+                precio_manual: null,
+                lista_precio_activa: 'V',
+                actualizado_en: new Date()
+            } as Prisma.productosUpdateInput,
         });
         await cacheService.deletePattern('productos:*');
         await cacheService.delete(`producto:${id}`);
@@ -1299,6 +1326,7 @@ export class ProductosService {
                 { lista_precio_activa: 'O', ...cond('precio_especial') },
                 { lista_precio_activa: 'P', ...cond('precio_pvp') },
                 { lista_precio_activa: 'Q', ...cond('precio_campanya') },
+                { lista_precio_activa: 'E', ...cond('precio_manual') },
                 { lista_precio_activa: null, ...cond('precio_venta') }
             ].filter((o: any) => Object.keys(o).length > 1);
             if (priceOr.length > 0) {
@@ -1326,7 +1354,8 @@ export class ProductosService {
                     WHEN 'O' THEN p.precio_especial
                     WHEN 'P' THEN p.precio_pvp
                     WHEN 'Q' THEN p.precio_campanya
-                    ELSE COALESCE(p.precio_venta, p.precio_especial, p.precio_pvp, p.precio_campanya)
+                    WHEN 'E' THEN p.precio_manual
+                    ELSE COALESCE(p.precio_venta, p.precio_especial, p.precio_pvp, p.precio_campanya, p.precio_manual)
                 END) * (1 + COALESCE(i.porcentaje, 0)::numeric / 100)
             `;
             const conditions: Prisma.Sql[] = [
@@ -1352,18 +1381,21 @@ export class ProductosService {
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'O' AND p.precio_especial >= ${gte} AND p.precio_especial <= ${lte})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'P' AND p.precio_pvp >= ${gte} AND p.precio_pvp <= ${lte})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'Q' AND p.precio_campanya >= ${gte} AND p.precio_campanya <= ${lte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'E' AND p.precio_manual >= ${gte} AND p.precio_manual <= ${lte})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa IS NULL AND p.precio_venta >= ${gte} AND p.precio_venta <= ${lte})`);
                 } else if (gte !== null) {
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'V' AND p.precio_venta >= ${gte})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'O' AND p.precio_especial >= ${gte})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'P' AND p.precio_pvp >= ${gte})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'Q' AND p.precio_campanya >= ${gte})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'E' AND p.precio_manual >= ${gte})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa IS NULL AND p.precio_venta >= ${gte})`);
                 } else {
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'V' AND p.precio_venta <= ${lte!})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'O' AND p.precio_especial <= ${lte!})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'P' AND p.precio_pvp <= ${lte!})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'Q' AND p.precio_campanya <= ${lte!})`);
+                    priceConditions.push(Prisma.sql`(p.lista_precio_activa = 'E' AND p.precio_manual <= ${lte!})`);
                     priceConditions.push(Prisma.sql`(p.lista_precio_activa IS NULL AND p.precio_venta <= ${lte!})`);
                 }
                 conditions.push(Prisma.sql`(${Prisma.join(priceConditions, ' OR ')})`);

@@ -400,6 +400,8 @@ Convierte un usuario invitado a usuario completo.
 
 ## Productos
 
+**Listas de precio y bonificación:** Los productos tienen `lista_precio_activa` con valores `V` | `O` | `P` | `Q` | `E`. Con **E** (Precio especial) se usa el campo `precio_manual`, que no se sobreescribe por sincronización CSV. El campo opcional `codi_bonificacion` (máx. 10 caracteres) se envía en el Excel de ventas. En ventas, cada detalle puede incluir `codi_bonificacion`; si no se envía, se usa el del producto.
+
 ### GET /api/productos
 
 Lista productos con filtros y paginación.
