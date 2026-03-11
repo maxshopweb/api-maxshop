@@ -47,17 +47,23 @@ export class VentasService {
 
         const whereClause: any = {};
 
-        // Búsqueda por ID de venta o cliente
+        // Búsqueda por ID de venta, cliente (nombre, email) o DNI/CUIT (numero_documento)
         if (busqueda) {
+            const term = busqueda.trim();
+            const onlyDigits = term.replace(/\D/g, '');
+            const docConditions: any[] = [];
+            if (term.length > 0) docConditions.push({ numero_documento: { contains: term, mode: 'insensitive' as const } });
+            if (onlyDigits.length > 0 && onlyDigits !== term) docConditions.push({ numero_documento: { contains: onlyDigits, mode: 'insensitive' as const } });
             whereClause.OR = [
-                { id_venta: { equals: parseInt(busqueda) || -1 } },
+                { id_venta: { equals: parseInt(term) || -1 } },
                 {
                     cliente: {
                         usuarios: {
                             OR: [
-                                { nombre: { contains: busqueda, mode: 'insensitive' } },
-                                { apellido: { contains: busqueda, mode: 'insensitive' } },
-                                { email: { contains: busqueda, mode: 'insensitive' } },
+                                { nombre: { contains: term, mode: 'insensitive' } },
+                                { apellido: { contains: term, mode: 'insensitive' } },
+                                { email: { contains: term, mode: 'insensitive' } },
+                                ...docConditions,
                             ],
                         },
                     },
@@ -1499,17 +1505,23 @@ export class VentasService {
 
         const whereClause: any = {};
 
-        // Búsqueda por ID de venta o cliente
+        // Búsqueda por ID de venta, cliente (nombre, email) o DNI/CUIT (numero_documento)
         if (busqueda) {
+            const term = busqueda.trim();
+            const onlyDigits = term.replace(/\D/g, '');
+            const docConditions: any[] = [];
+            if (term.length > 0) docConditions.push({ numero_documento: { contains: term, mode: 'insensitive' as const } });
+            if (onlyDigits.length > 0 && onlyDigits !== term) docConditions.push({ numero_documento: { contains: onlyDigits, mode: 'insensitive' as const } });
             whereClause.OR = [
-                { id_venta: { equals: parseInt(busqueda) || -1 } },
+                { id_venta: { equals: parseInt(term) || -1 } },
                 {
                     cliente: {
                         usuarios: {
                             OR: [
-                                { nombre: { contains: busqueda, mode: 'insensitive' } },
-                                { apellido: { contains: busqueda, mode: 'insensitive' } },
-                                { email: { contains: busqueda, mode: 'insensitive' } },
+                                { nombre: { contains: term, mode: 'insensitive' } },
+                                { apellido: { contains: term, mode: 'insensitive' } },
+                                { email: { contains: term, mode: 'insensitive' } },
+                                ...docConditions,
                             ],
                         },
                     },

@@ -64,7 +64,6 @@ export interface ICrearProductoContenido {
 }
 
 export interface IProductoFilters {
-    id_subcat?: number; // Deprecated - mantener por compatibilidad
     id_cat?: number | string; // Puede ser ID o código
     id_marca?: number | string; // Puede ser ID o código
     codi_grupo?: string; // Código de grupo
@@ -111,7 +110,6 @@ export interface ICreateProductoDTO {
     destacado?: boolean;
     financiacion?: boolean;
     id_cat?: number;
-    id_subcat?: number;
     id_marca?: number;
     id_iva?: number;
     cod_sku?: string;

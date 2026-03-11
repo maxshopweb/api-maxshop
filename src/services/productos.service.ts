@@ -160,7 +160,6 @@ export class ProductosService {
             estado,
             activo,
             busqueda,
-            id_subcat,
             id_cat,
             id_marca,
             precio_min,
@@ -480,7 +479,7 @@ export class ProductosService {
     }
 
     async create(data: ICreateProductoDTO, auditContext?: ProductoAuditContext): Promise<IProductos> {
-        const { id_cat, id_subcat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...rest } = data;
+        const { id_cat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...rest } = data;
         const L = ProductosService.PRODUCTO_MAX_LEN;
 
         const listaActiva = rest.lista_precio_activa != null && rest.lista_precio_activa !== ''
@@ -561,7 +560,7 @@ export class ProductosService {
     }
 
     async update(id: number, data: IUpdateProductoDTO, auditContext?: ProductoAuditContext): Promise<IProductos> {
-        const { id_cat, id_subcat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, estado, ...cleanData } = data;
+        const { id_cat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, estado, ...cleanData } = data;
         
         // Obtener producto antes de actualizar (cache + auditoría)
         const productoAntes = await prisma.productos.findUnique({
