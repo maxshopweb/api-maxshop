@@ -4,7 +4,7 @@ import cacheService from './cache.service';
 
 export class ClientesService {
     private TTL_CLIENTE = 3600; // 1 hora
-    private TTL_LISTA = 1800; // 30 minutos
+    private TTL_LISTA = 60; // 1 minuto (listado se invalida al actualizar; TTL corto por si falla el deletePattern)
 
     async getAll(filters: IClienteFilters): Promise<IPaginatedResponse<ICliente>> {
         const cacheKey = `clientes:all:${JSON.stringify(filters)}`;
