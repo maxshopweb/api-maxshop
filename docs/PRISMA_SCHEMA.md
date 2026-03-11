@@ -15,7 +15,7 @@ Resumen del modelo de datos y migraciones recientes para que el equipo pueda apl
   - `precio_campanya` (DECIMAL) — lista Q
   - `lista_precio_activa` (VARCHAR(1)) — `"V"` | `"O"` | `"P"` | `"Q"` | `"E"`
   - `precio_manual` (DECIMAL) — precio cuando lista E (no se sobreescribe por sync)
-  - `codi_bonificacion` (VARCHAR(10)) — código de bonificación (productos y venta_detalle)
+  - `bonificacion_porcentaje` (DECIMAL) — bonificación porcentual 0-100 (productos y venta_detalle)
 
 - **Migración de datos:** El antiguo `precio` se copió a `precio_venta` y `lista_precio_activa` se fijó en `'V'` por defecto.
 
@@ -52,6 +52,6 @@ Las relaciones con **productos** siguen siendo por códigos: `codi_categoria`, `
 ## Resumen para el equipo
 
 - Después de hacer pull: ejecutar `npx prisma migrate deploy` (o `migrate dev` en desarrollo) para aplicar la migración de listas de precio.
-- Crear/actualizar productos requiere al menos uno de: `precio_venta`, `precio_especial`, `precio_pvp`, `precio_campanya`, o lista E con `precio_manual`. Opcional: `codi_bonificacion`. Ver `docs/API_DOCUMENTATION.md` (Productos).
+- Crear/actualizar productos requiere al menos uno de: `precio_venta`, `precio_especial`, `precio_pvp`, `precio_campanya`, o lista E con `precio_manual`. Opcional: `bonificacion_porcentaje` (0-100). Ver `docs/API_DOCUMENTATION.md` (Productos).
 
 **Última actualización:** 2026-02-03

@@ -329,8 +329,8 @@ model productos {
   precio_venta            Decimal?        @db.Decimal(19, 6)
   /** Precio cuando lista_precio_activa = 'E' (Precio especial). No se sobreescribe por sync. */
   precio_manual            Decimal?        @db.Decimal(19, 6)
-  /** Código de bonificación a aplicar (para Excel/export). */
-  codi_bonificacion       String?         @db.VarChar(10)
+  /** Bonificación porcentual por defecto del producto (0-100). */
+  bonificacion_porcentaje Decimal?        @db.Decimal(5, 2)
   publicado               Boolean?        @default(false)
   precio_editado_manualmente Boolean?     @default(false)
   categoria               categoria?      @relation(fields: [codi_categoria], references: [codi_categoria])
@@ -462,8 +462,8 @@ model venta_detalle {
   sub_total          Decimal?   @db.Decimal(10, 2)
   evento_aplicado    Int?
   tipo_descuento     String?    @db.VarChar(50)
-  /** Código de bonificación a aplicar para esta línea (para Excel/export). */
-  codi_bonificacion  String?    @db.VarChar(10)
+  /** Bonificación porcentual aplicada en esta línea (0-100). */
+  bonificacion_porcentaje Decimal? @db.Decimal(5, 2)
   eventos            eventos?   @relation(fields: [evento_aplicado], references: [id_evento], onDelete: NoAction, onUpdate: NoAction, map: "Venta-detalle_evento_aplicado_fkey")
   productos          productos? @relation(fields: [id_prod], references: [id_prod], onDelete: NoAction, onUpdate: NoAction, map: "Venta-detalle_id_prod_fkey")
   venta              venta?     @relation(fields: [id_venta], references: [id_venta], onDelete: NoAction, onUpdate: NoAction, map: "Venta-detalle_id_venta_fkey")

@@ -173,6 +173,7 @@ export class VentasService {
                 precio_unitario: detalle.precio_unitario ? Number(detalle.precio_unitario) : null,
                 descuento_aplicado: detalle.descuento_aplicado ? Number(detalle.descuento_aplicado) : null,
                 sub_total: detalle.sub_total ? Number(detalle.sub_total) : null,
+                bonificacion_porcentaje: detalle.bonificacion_porcentaje ? Number(detalle.bonificacion_porcentaje) : null,
                 tipo_descuento: detalle.tipo_descuento as any,
                 producto: detalle.productos ? {
                     ...detalle.productos,
@@ -280,6 +281,7 @@ export class VentasService {
                 precio_unitario: detalle.precio_unitario ? Number(detalle.precio_unitario) : null,
                 descuento_aplicado: detalle.descuento_aplicado ? Number(detalle.descuento_aplicado) : null,
                 sub_total: detalle.sub_total ? Number(detalle.sub_total) : null,
+                bonificacion_porcentaje: detalle.bonificacion_porcentaje ? Number(detalle.bonificacion_porcentaje) : null,
                 tipo_descuento: detalle.tipo_descuento as any,
                 producto: detalle.productos ? {
                     ...detalle.productos,
@@ -361,6 +363,7 @@ export class VentasService {
                 ...d,
                 precio_unitario: d.precio_unitario ? Number(d.precio_unitario) : null,
                 sub_total: d.sub_total ? Number(d.sub_total) : null,
+                bonificacion_porcentaje: d.bonificacion_porcentaje ? Number(d.bonificacion_porcentaje) : null,
                 producto: d.productos || null,
             })),
             envio: null,
@@ -412,27 +415,35 @@ export class VentasService {
     }
 
     async create(data: ICreateVentaDTO, idUsuario?: string): Promise<IVenta> {
-        // Calcular totales y guardar productos para codi_bonificacion por línea
+        // Calcular totales y guardar bonificación porcentual por línea
         let totalSinIva = 0;
         let totalConIva = 0;
         let descuentoTotal = 0;
-        const productosPorId = new Map<number, { codi_bonificacion: string | null }>();
+        const productosPorId = new Map<number, { bonificacion_porcentaje: number | null }>();
 
         for (const detalle of data.detalles) {
             const producto = await prisma.productos.findUnique({
                 where: { id_prod: detalle.id_prod },
-                select: { codi_bonificacion: true },
+                select: { bonificacion_porcentaje: true },
             });
 
             if (!producto) {
                 throw new Error(`Producto ${detalle.id_prod} no encontrado`);
             }
 
-            productosPorId.set(detalle.id_prod, { codi_bonificacion: producto.codi_bonificacion ?? null });
+            const boniProducto = producto.bonificacion_porcentaje != null ? Number(producto.bonificacion_porcentaje) : null;
+            productosPorId.set(detalle.id_prod, { bonificacion_porcentaje: boniProducto });
 
             const precioUnitario = detalle.precio_unitario;
             const cantidad = detalle.cantidad;
-            const descuento = detalle.descuento_aplicado || 0;
+            const baseLinea = precioUnitario * cantidad;
+            const bonificacionPctRaw = (detalle as any).bonificacion_porcentaje ?? boniProducto ?? null;
+            const bonificacionPct = bonificacionPctRaw != null
+                ? Math.max(0, Math.min(100, Number(bonificacionPctRaw)))
+                : null;
+            const descuentoBonificacion = bonificacionPct != null ? (baseLinea * bonificacionPct) / 100 : 0;
+            const descuentoManual = detalle.descuento_aplicado || 0;
+            const descuento = descuentoManual + descuentoBonificacion;
             const subtotal = precioUnitario * cantidad - descuento;
 
             totalSinIva += subtotal;
@@ -506,15 +517,22 @@ export class VentasService {
                     venta_detalle: {
                         create: data.detalles.map((detalle) => {
                             const producto = productosPorId.get(detalle.id_prod);
-                            const codiBonificacion = detalle.codi_bonificacion ?? producto?.codi_bonificacion ?? null;
+                            const baseLinea = detalle.precio_unitario * detalle.cantidad;
+                            const bonificacionPctRaw = (detalle as any).bonificacion_porcentaje ?? producto?.bonificacion_porcentaje ?? null;
+                            const bonificacionPct = bonificacionPctRaw != null
+                                ? Math.max(0, Math.min(100, Number(bonificacionPctRaw)))
+                                : null;
+                            const descuentoBonificacion = bonificacionPct != null ? (baseLinea * bonificacionPct) / 100 : 0;
+                            const descuentoManual = detalle.descuento_aplicado || 0;
+                            const descuentoLinea = descuentoManual + descuentoBonificacion;
                             return {
                                 id_prod: detalle.id_prod,
                                 cantidad: detalle.cantidad,
                                 precio_unitario: detalle.precio_unitario,
-                                descuento_aplicado: detalle.descuento_aplicado || 0,
-                                sub_total: detalle.precio_unitario * detalle.cantidad - (detalle.descuento_aplicado || 0),
+                                descuento_aplicado: descuentoLinea,
+                                sub_total: detalle.precio_unitario * detalle.cantidad - descuentoLinea,
                                 evento_aplicado: detalle.evento_aplicado || null,
-                                codi_bonificacion: codiBonificacion,
+                                bonificacion_porcentaje: bonificacionPct,
                             };
                         }),
                     },
@@ -594,6 +612,7 @@ export class VentasService {
                 cantidad: number;
                 precio_unitario: number;
                 descuento_aplicado?: number;
+                bonificacion_porcentaje?: number;
             }>;
             observaciones?: string;
             costo_envio?: number; // Costo del envío calculado desde cotización
@@ -752,6 +771,7 @@ export class VentasService {
                     cantidad: detalle.cantidad,
                     precio_unitario: detalle.precio_unitario,
                     descuento_aplicado: detalle.descuento_aplicado || 0,
+                    bonificacion_porcentaje: detalle.bonificacion_porcentaje,
                 })),
             };
 

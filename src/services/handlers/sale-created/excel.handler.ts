@@ -528,7 +528,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
 
         const buildProductoRow = (detalle: any): VentaExcelRow => {
             const producto = detalle.producto;
-            const codiBonificacion = detalle.codi_bonificacion ?? producto?.codi_bonificacion ?? '';
+            const bonificacionPct = detalle.bonificacion_porcentaje ?? producto?.bonificacion_porcentaje ?? null;
             return ({
                 AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // A
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // B
@@ -539,7 +539,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0, // R (número)
                 AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea (V|O|P|Q|E)
-                AT: codiBonificacion, // T: bonificación a aplicar (código)
+                AT: bonificacionPct != null ? Number(bonificacionPct) : null, // T: bonificación a aplicar (%)
             }) as VentaExcelRow;
         };
 
@@ -549,7 +549,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             const detalle = venta.detalles[i];
             const producto = detalle.producto;
 
-            const codiBonificacionLegacy = detalle.codi_bonificacion ?? producto?.codi_bonificacion ?? '';
+            const bonificacionPctLegacy = detalle.bonificacion_porcentaje ?? producto?.bonificacion_porcentaje ?? null;
             const legacyRow: VentaExcelRow = {
                 ...buildVentaBaseRow(),
                 AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1,
@@ -561,7 +561,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0,
                 AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea (V|O|P|Q|E)
-                AT: codiBonificacionLegacy, // T: bonificación a aplicar (código)
+                AT: bonificacionPctLegacy != null ? Number(bonificacionPctLegacy) : null, // T: bonificación a aplicar (%)
             };
 
             rows.push(legacyRow);

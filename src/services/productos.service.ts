@@ -111,6 +111,7 @@ export class ProductosService {
         const normalized: any = {
             ...producto,
             nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
+            bonificacion_porcentaje: producto.bonificacion_porcentaje != null ? Number(producto.bonificacion_porcentaje) : null,
             precio: precioActivo,
             precio_sin_iva: this.getPrecioListaActiva(producto),
             lista_activa: lista_activa ?? undefined,
@@ -482,6 +483,15 @@ export class ProductosService {
         return s.length > max ? s.slice(0, max) : s || null;
     }
 
+    private normalizePorcentajeBonificacion(value: unknown): number | null {
+        if (value == null || value === '') return null;
+        const n = Number(value);
+        if (!Number.isFinite(n)) return null;
+        if (n < 0) return 0;
+        if (n > 100) return 100;
+        return Math.round(n * 100) / 100;
+    }
+
     async create(data: ICreateProductoDTO, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const { id_cat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...rest } = data;
         const L = ProductosService.PRODUCTO_MAX_LEN;
@@ -500,7 +510,7 @@ export class ProductosService {
                     : 2;
         const esListaE = listaActiva === 'E';
         const precioManual = esListaE && rest.precio_manual != null ? Number(rest.precio_manual) : null;
-        const codiBonificacion = rest.codi_bonificacion != null && String(rest.codi_bonificacion).trim() !== '' ? this.truncateStr(String(rest.codi_bonificacion).trim(), 10) : null;
+        const bonificacionPorcentaje = this.normalizePorcentajeBonificacion((rest as any).bonificacion_porcentaje);
 
         const nuevoProducto = await prisma.productos.create({
             data: {
@@ -513,7 +523,7 @@ export class ProductosService {
                 precio_pvp: rest.precio_pvp ?? null,
                 precio_campanya: rest.precio_campanya ?? null,
                 precio_manual: precioManual,
-                codi_bonificacion: codiBonificacion,
+                bonificacion_porcentaje: bonificacionPorcentaje,
                 lista_precio_activa: listaActiva,
                 precio_editado_manualmente: esListaE,
                 stock: rest.stock ?? null,
@@ -614,8 +624,8 @@ export class ProductosService {
                 ? (data.precio_manual !== undefined ? (data.precio_manual != null ? Number(data.precio_manual) : null) : undefined)
                 : null)
             : undefined;
-        const codiBonificacionUpdate = data.codi_bonificacion !== undefined
-            ? (data.codi_bonificacion != null && String(data.codi_bonificacion).trim() !== '' ? this.truncateStr(String(data.codi_bonificacion).trim(), 10) : null)
+        const bonificacionPorcentajeUpdate = (data as any).bonificacion_porcentaje !== undefined
+            ? this.normalizePorcentajeBonificacion((data as any).bonificacion_porcentaje)
             : undefined;
         const updatePayload = {
             ...updateData,
@@ -626,7 +636,7 @@ export class ProductosService {
             ...(codi_impuesto !== undefined && { codi_impuesto: codi_impuesto || null }),
             ...(listaActiva !== undefined && { lista_precio_activa: listaActiva }),
             ...(precioManualUpdate !== undefined && { precio_manual: precioManualUpdate }),
-            ...(codiBonificacionUpdate !== undefined && { codi_bonificacion: codiBonificacionUpdate }),
+            ...(bonificacionPorcentajeUpdate !== undefined && { bonificacion_porcentaje: bonificacionPorcentajeUpdate }),
             ...(estado !== undefined && estado !== null && { estado: Number(estado) }),
             ...(data.modelo !== undefined && { modelo: this.truncateStr(data.modelo, ProductosService.PRODUCTO_MAX_LEN.modelo) ?? null }),
             ...(editadoPrecio && { precio_editado_manualmente: true }),

@@ -25,8 +25,8 @@ export interface IProductos {
     precio_campanya?: number | null;
     /** Precio cuando lista_precio_activa = 'E' (Precio especial). No se sobreescribe por sync. */
     precio_manual?: number | null;
-    /** Código de bonificación a aplicar (para Excel/export). */
-    codi_bonificacion?: string | null;
+    /** Bonificación porcentual por defecto del producto (0-100). */
+    bonificacion_porcentaje?: number | null;
     lista_precio_activa?: string | null; // V|O|P|Q|E
     /** Lista activa resuelta (nombre, tipo) para que el front distinga oferta/campaña/normal */
     lista_activa?: IListaActivaInfo | null;
@@ -105,8 +105,8 @@ export interface ICreateProductoDTO {
     precio_campanya?: number | null;
     /** Precio cuando lista_precio_activa = 'E'. Obligatorio si lista es E. */
     precio_manual?: number | null;
-    /** Código de bonificación a aplicar. */
-    codi_bonificacion?: string | null;
+    /** Bonificación porcentual por defecto del producto (0-100). */
+    bonificacion_porcentaje?: number | null;
     lista_precio_activa?: string | null; // V|O|P|Q|E
     stock?: number;
     stock_min?: number | null;
