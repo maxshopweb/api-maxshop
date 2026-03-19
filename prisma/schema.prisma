@@ -299,6 +299,13 @@ model negocio {
   cuotas_sin_interes        Decimal? @db.Decimal(12, 2)
   cuotas_sin_interes_activo Boolean  @default(true)
   cuotas_sin_interes_minimo Decimal? @db.Decimal(12, 2)
+  // Datos bancarios (transferencia / efectivo)
+  banco                     String?  @db.VarChar(100)
+  tipo_cuenta               String?  @db.VarChar(50)
+  numero_cuenta             String?  @db.VarChar(50)
+  cbu                       String?  @db.VarChar(22)
+  alias                     String?  @db.VarChar(50)
+  instrucciones             String?  @db.VarChar(500)
 }
 
 model productos {
