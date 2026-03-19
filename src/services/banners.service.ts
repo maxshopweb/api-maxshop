@@ -16,6 +16,42 @@ import {
 } from '../config/upload.config';
 import { getMimeAndExtensionFromBuffer } from '../utils/upload.utils';
 
+function normalizeInternalBannerLink(raw?: string): string | null {
+  if (raw === undefined || raw === null) return null;
+
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // Acepta URL completa http(s) y persiste solo path+query+hash
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/';
+    } catch {
+      const err = new Error('URL de banner inválida.');
+      (err as any).statusCode = 400;
+      throw err;
+    }
+  }
+
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) || trimmed.includes('://')) {
+    const err = new Error('El link debe ser una ruta interna o una URL http(s).');
+    (err as any).statusCode = 400;
+    throw err;
+  }
+
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+
+  try {
+    const parsed = new URL(withSlash, 'http://local.maxshop');
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    const err = new Error('Link de banner inválido.');
+    (err as any).statusCode = 400;
+    throw err;
+  }
+}
+
 export class BannersService {
   /** Lista banners públicos: solo activos con imagen, ordenados por posición. */
   async getPublicBanners(tipo?: string) {
@@ -73,7 +109,12 @@ export class BannersService {
     }
 
     const banner = await prisma.banners.create({
-      data: { orden: data.orden, tipo: data.tipo, link: data.link ?? null, activo: false },
+      data: {
+        orden: data.orden,
+        tipo: data.tipo,
+        link: normalizeInternalBannerLink(data.link),
+        activo: false,
+      },
     });
 
     await auditService.record({
@@ -231,7 +272,7 @@ export class BannersService {
       where: { id },
       data: {
         ...(data.orden !== undefined ? { orden: data.orden } : {}),
-        ...(data.link !== undefined ? { link: data.link } : {}),
+        ...(data.link !== undefined ? { link: normalizeInternalBannerLink(data.link) } : {}),
         actualizado_en: new Date(),
       },
     });

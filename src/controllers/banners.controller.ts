@@ -56,7 +56,7 @@ export const bannersController = {
         return;
       }
       const data = await bannersService.createBanner(
-        { orden: Number(orden), tipo: String(tipo), link: link ? String(link) : undefined },
+        { orden: Number(orden), tipo: String(tipo), link: link !== undefined ? String(link) : undefined },
         userId
       );
       res.status(201).json({ success: true, data: addUrl(data as unknown as Record<string, unknown>) });
