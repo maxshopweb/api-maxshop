@@ -7,7 +7,9 @@ const configTiendaService = new ConfigTiendaService();
 
 const ALLOWED_KEYS: (keyof IUpdateConfigTiendaDTO)[] = [
   'envio_gratis_minimo',
+  'envio_gratis_activo',
   'cuotas_sin_interes',
+  'cuotas_sin_interes_activo',
   'cuotas_sin_interes_minimo',
   'datos_bancarios',
 ];
@@ -18,8 +20,12 @@ function toUpdateDto(body: unknown): IUpdateConfigTiendaDTO {
   const dto: IUpdateConfigTiendaDTO = {};
   if ('envio_gratis_minimo' in src && src.envio_gratis_minimo !== undefined)
     dto.envio_gratis_minimo = Number(src.envio_gratis_minimo);
+  if ('envio_gratis_activo' in src && src.envio_gratis_activo !== undefined)
+    dto.envio_gratis_activo = Boolean(src.envio_gratis_activo);
   if ('cuotas_sin_interes' in src && src.cuotas_sin_interes !== undefined)
     dto.cuotas_sin_interes = Number(src.cuotas_sin_interes);
+  if ('cuotas_sin_interes_activo' in src && src.cuotas_sin_interes_activo !== undefined)
+    dto.cuotas_sin_interes_activo = Boolean(src.cuotas_sin_interes_activo);
   if ('cuotas_sin_interes_minimo' in src && src.cuotas_sin_interes_minimo !== undefined)
     dto.cuotas_sin_interes_minimo = Number(src.cuotas_sin_interes_minimo);
   if ('datos_bancarios' in src) dto.datos_bancarios = src.datos_bancarios as IUpdateConfigTiendaDTO['datos_bancarios'];

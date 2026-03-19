@@ -14,14 +14,18 @@ export type AuditContext = {
 
 const DEFAULTS: IConfigTienda = {
   envio_gratis_minimo: 100000,
+  envio_gratis_activo: true,
   cuotas_sin_interes: 3,
+  cuotas_sin_interes_activo: true,
   cuotas_sin_interes_minimo: 80000,
   datos_bancarios: null,
 };
 
 type NegocioRow = {
   envio_gratis_minimo: unknown;
+  envio_gratis_activo: boolean | null;
   cuotas_sin_interes: unknown;
+  cuotas_sin_interes_activo: boolean | null;
   cuotas_sin_interes_minimo: unknown;
   nombre?: string | null;
   cuit?: string | null;
@@ -77,7 +81,9 @@ function mapToDatosBancarios(row: NegocioRow | null): IDatosBancarios | null {
 function fromDb(row: NegocioRow): IConfigTienda {
   return {
     envio_gratis_minimo: row.envio_gratis_minimo != null ? Number(row.envio_gratis_minimo) : null,
+    envio_gratis_activo: row.envio_gratis_activo ?? true,
     cuotas_sin_interes: row.cuotas_sin_interes != null ? Number(row.cuotas_sin_interes) : null,
+    cuotas_sin_interes_activo: row.cuotas_sin_interes_activo ?? true,
     cuotas_sin_interes_minimo:
       row.cuotas_sin_interes_minimo != null ? Number(row.cuotas_sin_interes_minimo) : null,
     datos_bancarios: mapToDatosBancarios(row),
@@ -93,7 +99,9 @@ export class ConfigTiendaService {
   private static readonly CONFIG_SELECT = {
     id_neg: true,
     envio_gratis_minimo: true,
+    envio_gratis_activo: true,
     cuotas_sin_interes: true,
+    cuotas_sin_interes_activo: true,
     cuotas_sin_interes_minimo: true,
     ...BANK_SELECT,
   } as const;
@@ -108,7 +116,9 @@ export class ConfigTiendaService {
     const config = fromDb(negocio as NegocioRow);
     return {
       envio_gratis_minimo: config.envio_gratis_minimo ?? DEFAULTS.envio_gratis_minimo,
+      envio_gratis_activo: config.envio_gratis_activo ?? DEFAULTS.envio_gratis_activo,
       cuotas_sin_interes: config.cuotas_sin_interes ?? DEFAULTS.cuotas_sin_interes,
+      cuotas_sin_interes_activo: config.cuotas_sin_interes_activo ?? DEFAULTS.cuotas_sin_interes_activo,
       cuotas_sin_interes_minimo:
         config.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo,
       datos_bancarios: config.datos_bancarios,
@@ -138,23 +148,36 @@ export class ConfigTiendaService {
 
     const current = fromDb(negocio as NegocioRow);
     const envio = dto.envio_gratis_minimo ?? current.envio_gratis_minimo ?? DEFAULTS.envio_gratis_minimo;
+    const envioActivo = dto.envio_gratis_activo ?? current.envio_gratis_activo ?? DEFAULTS.envio_gratis_activo;
     const cuotas = dto.cuotas_sin_interes ?? current.cuotas_sin_interes ?? DEFAULTS.cuotas_sin_interes;
+    const cuotasActivo =
+      dto.cuotas_sin_interes_activo ??
+      current.cuotas_sin_interes_activo ??
+      DEFAULTS.cuotas_sin_interes_activo;
     const cuotasMin =
       dto.cuotas_sin_interes_minimo ?? current.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo;
     const envioNum = Number(envio);
     const cuotasNum = Number(cuotas);
     const cuotasMinNum = Number(cuotasMin);
     const currentEnvio = current.envio_gratis_minimo ?? DEFAULTS.envio_gratis_minimo;
+    const currentEnvioActivo = current.envio_gratis_activo ?? DEFAULTS.envio_gratis_activo;
     const currentCuotas = current.cuotas_sin_interes ?? DEFAULTS.cuotas_sin_interes;
+    const currentCuotasActivo = current.cuotas_sin_interes_activo ?? DEFAULTS.cuotas_sin_interes_activo;
     const currentCuotasMin = current.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo;
     const reglasUnchanged =
-      envioNum === currentEnvio && cuotasNum === currentCuotas && cuotasMinNum === currentCuotasMin;
+      envioNum === currentEnvio &&
+      envioActivo === currentEnvioActivo &&
+      cuotasNum === currentCuotas &&
+      cuotasActivo === currentCuotasActivo &&
+      cuotasMinNum === currentCuotasMin;
     const noBankUpdate = dto.datos_bancarios === undefined;
     if (reglasUnchanged && noBankUpdate) return current;
 
     const updateData: Record<string, unknown> = {
       envio_gratis_minimo: String(envioNum),
+      envio_gratis_activo: envioActivo,
       cuotas_sin_interes: String(cuotasNum),
+      cuotas_sin_interes_activo: cuotasActivo,
       cuotas_sin_interes_minimo: String(cuotasMinNum),
     };
 
@@ -185,7 +208,7 @@ export class ConfigTiendaService {
       data: updateData as Parameters<typeof prisma.negocio.update>[0]['data'],
     });
 
-    const result = fromDb(updated as NegocioRow);
+    const result = fromDb(updated as unknown as NegocioRow);
     if (auditContext) {
       await auditService.record({
         action: 'CONFIG_TIENDA_UPDATE',
@@ -209,7 +232,9 @@ export class ConfigTiendaService {
   ): Promise<NegocioRow> {
     const data: Record<string, unknown> = {
       envio_gratis_minimo: String(dto.envio_gratis_minimo ?? 100000),
+      envio_gratis_activo: dto.envio_gratis_activo ?? true,
       cuotas_sin_interes: String(dto.cuotas_sin_interes ?? 3),
+      cuotas_sin_interes_activo: dto.cuotas_sin_interes_activo ?? true,
       cuotas_sin_interes_minimo: String(dto.cuotas_sin_interes_minimo ?? 80000),
     };
     if (dto.datos_bancarios && typeof dto.datos_bancarios === 'object') {
@@ -227,7 +252,7 @@ export class ConfigTiendaService {
       data: data as Parameters<typeof prisma.negocio.create>[0]['data'],
     });
     if (auditContext) {
-      const result = fromDb(created as NegocioRow);
+      const result = fromDb(created as unknown as NegocioRow);
       await auditService.record({
         action: 'CONFIG_TIENDA_UPDATE',
         table: 'negocio',
@@ -241,7 +266,7 @@ export class ConfigTiendaService {
         adminAudit: true,
       });
     }
-    return created as NegocioRow;
+    return created as unknown as NegocioRow;
   }
 
   async getPaymentInstallmentsConfig(): Promise<IPaymentInstallmentsConfig> {

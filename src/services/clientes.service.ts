@@ -42,15 +42,32 @@ export class ClientesService {
             whereClause.usuarios.estado = estado;
         }
 
-        // Búsqueda por nombre, email, teléfono
+        // Búsqueda por nombre, email, teléfono y documento (DNI)
         if (busqueda) {
-            whereClause.usuarios.OR = [
-                { nombre: { contains: busqueda, mode: 'insensitive' } },
-                { apellido: { contains: busqueda, mode: 'insensitive' } },
-                { email: { contains: busqueda, mode: 'insensitive' } },
-                { telefono: { contains: busqueda, mode: 'insensitive' } },
-                { username: { contains: busqueda, mode: 'insensitive' } },
+            const busquedaNormalizada = busqueda.trim();
+            const busquedaSoloDigitos = busquedaNormalizada.replace(/\D/g, '');
+            const esDniProbable =
+                /^\d+$/.test(busquedaSoloDigitos) &&
+                busquedaSoloDigitos.length >= 7 &&
+                busquedaSoloDigitos.length <= 8;
+
+            const orConditions: any[] = [
+                { nombre: { contains: busquedaNormalizada, mode: 'insensitive' } },
+                { apellido: { contains: busquedaNormalizada, mode: 'insensitive' } },
+                { email: { contains: busquedaNormalizada, mode: 'insensitive' } },
+                { telefono: { contains: busquedaNormalizada, mode: 'insensitive' } },
+                { username: { contains: busquedaNormalizada, mode: 'insensitive' } },
+                { numero_documento: { contains: busquedaNormalizada, mode: 'insensitive' } },
             ];
+
+            // Si parece DNI, también buscar por la versión solo numérica (ej. "12.345.678" -> "12345678")
+            if (esDniProbable && busquedaSoloDigitos !== busquedaNormalizada) {
+                orConditions.push({
+                    numero_documento: { contains: busquedaSoloDigitos, mode: 'insensitive' },
+                });
+            }
+
+            whereClause.usuarios.OR = orConditions;
         }
 
         // Filtro por ciudad

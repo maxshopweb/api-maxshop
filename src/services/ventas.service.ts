@@ -833,12 +833,22 @@ export class VentasService {
                         throw new Error('Mercado Pago no está configurado. Verifica las credenciales en .env');
                     }
 
-                    // Cuotas sin interés: regla global (monto mínimo) + override por producto (cuotas_habilitadas).
-                    // Si algún producto tiene cuotas_habilitadas=false → no ofrecer cuotas.
-                    // Si total >= mínimo O algún producto tiene cuotas_habilitadas=true → ofrecer N cuotas (y limitar en MP con installments).
+                    // Cuotas sin interés:
+                    // - Si la regla global está desactivada, forzar 1 cuota.
+                    // - Si está activa, mantener la lógica actual de umbral global + override por producto.
                     let defaultInstallments: number | undefined;
                     let maxInstallments: number | undefined;
                     try {
+                        const configTienda = await configTiendaService.getConfig();
+                        const cuotasSinInteresActiva = configTienda.cuotas_sin_interes_activo === true;
+
+                        if (!cuotasSinInteresActiva) {
+                            defaultInstallments = undefined;
+                            maxInstallments = 1;
+                            console.log(
+                                `💳 [VentasService] Venta #${venta.id_venta}: cuotas sin interés desactivadas globalmente (se limita a 1 cuota)`
+                            );
+                        } else {
                         const installmentsConfig = await configTiendaService.getPaymentInstallmentsConfig();
                         const totalNetoVenta = Number(venta.total_neto || 0);
                         const cuotas = installmentsConfig.cuotasSinInteres;
@@ -861,6 +871,7 @@ export class VentasService {
                                     `💳 [VentasService] Cuotas para venta #${venta.id_venta}: ${defaultInstallments} (monto ${totalNetoVenta} ${cumpleMinimo ? '>= mínimo ' + minimo : ''} ${algunProductoConCuotasForzadas ? '| producto con cuotas habilitadas' : ''})`
                                 );
                             }
+                        }
                         }
                     } catch (configError: any) {
                         console.warn(`⚠️ [VentasService] No se pudo evaluar regla de cuotas sin interés: ${configError.message}`);

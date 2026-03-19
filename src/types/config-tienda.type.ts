@@ -15,14 +15,18 @@ export interface IDatosBancarios {
 
 export interface IConfigTienda {
   envio_gratis_minimo: number | null;
+  envio_gratis_activo: boolean;
   cuotas_sin_interes: number | null;
+  cuotas_sin_interes_activo: boolean;
   cuotas_sin_interes_minimo: number | null;
   datos_bancarios: IDatosBancarios | null;
 }
 
 export interface IUpdateConfigTiendaDTO {
   envio_gratis_minimo?: number;
+  envio_gratis_activo?: boolean;
   cuotas_sin_interes?: number;
+  cuotas_sin_interes_activo?: boolean;
   cuotas_sin_interes_minimo?: number;
   datos_bancarios?: Partial<IDatosBancarios> | null;
 }

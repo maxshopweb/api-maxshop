@@ -295,7 +295,9 @@ model negocio {
   token_envio               String?  @db.Text
   // Promos / reglas de negocio (admin)
   envio_gratis_minimo       Decimal? @db.Decimal(12, 2)
+  envio_gratis_activo       Boolean  @default(true)
   cuotas_sin_interes        Decimal? @db.Decimal(12, 2)
+  cuotas_sin_interes_activo Boolean  @default(true)
   cuotas_sin_interes_minimo Decimal? @db.Decimal(12, 2)
 }
 

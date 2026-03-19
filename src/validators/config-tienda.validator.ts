@@ -22,11 +22,21 @@ export function configTiendaUpdateValidators(): ValidationChain[] {
       .isNumeric()
       .withMessage('envio_gratis_minimo debe ser numérico')
       .toFloat(),
+    body('envio_gratis_activo')
+      .optional()
+      .isBoolean()
+      .withMessage('envio_gratis_activo debe ser booleano')
+      .toBoolean(),
     body('cuotas_sin_interes')
       .optional()
       .isInt({ min: 0, max: 24 })
       .withMessage('cuotas_sin_interes debe ser entero entre 0 y 24')
       .toInt(),
+    body('cuotas_sin_interes_activo')
+      .optional()
+      .isBoolean()
+      .withMessage('cuotas_sin_interes_activo debe ser booleano')
+      .toBoolean(),
     body('cuotas_sin_interes_minimo')
       .optional()
       .isNumeric()

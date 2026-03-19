@@ -303,13 +303,15 @@ export class AndreaniController {
                 return;
             }
 
-            // Envío gratis: si el carrito alcanza el mínimo configurado, no cotizar con Andreani
+            // Envío gratis: solo aplica si la regla está activa y se alcanza el mínimo configurado.
             const config = await configTiendaService.getConfig();
+            const envioGratisActivo = config.envio_gratis_activo === true;
             const minimoEnvioGratis = config.envio_gratis_minimo ?? null;
             const subtotal =
                 typeof subtotalCarrito === 'number' && !Number.isNaN(subtotalCarrito) ? subtotalCarrito : null;
 
             if (
+                envioGratisActivo &&
                 minimoEnvioGratis != null &&
                 minimoEnvioGratis > 0 &&
                 subtotal != null &&
