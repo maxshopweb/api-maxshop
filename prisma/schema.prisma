@@ -334,6 +334,8 @@ model productos {
   /** Bonificación porcentual por defecto del producto (0-100). */
   bonificacion_porcentaje Decimal?        @db.Decimal(5, 2)
   publicado               Boolean?        @default(false)
+  /** null = usar regla general (monto mínimo), true = siempre ofrecer 3 cuotas, false = no ofrecer cuotas si está en el carrito */
+  cuotas_habilitadas      Boolean?
   precio_editado_manualmente Boolean?     @default(false)
   categoria               categoria?      @relation(fields: [codi_categoria], references: [codi_categoria])
   grupo                   grupo?         @relation(fields: [codi_grupo], references: [codi_grupo])
