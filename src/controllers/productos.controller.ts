@@ -538,9 +538,17 @@ export class ProductosController {
             res.json(response);
         } catch (error) {
             logServerError('ProductosController.toggleDestacado', error);
-            res.status(500).json({
+            const message = toPublicErrorMessage(
+                error,
+                'No pudimos actualizar el destacado. Intentá de nuevo.'
+            );
+            const isClientError =
+                error instanceof Error &&
+                (error.message === ProductosService.ERR_TOGGLE_DESTACADO_NOT_FOUND ||
+                    error.message === ProductosService.ERR_TOGGLE_DESTACADO_INACTIVE);
+            res.status(isClientError ? 400 : 500).json({
                 success: false,
-                error: toPublicErrorMessage(error, 'No pudimos actualizar el destacado. Intentá de nuevo.')
+                error: message
             });
         }
     }

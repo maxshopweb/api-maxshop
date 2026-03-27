@@ -19,6 +19,10 @@ export type ProductoAuditContext = {
 
 export class ProductosService {
 
+    static readonly ERR_TOGGLE_DESTACADO_NOT_FOUND = 'Producto no encontrado';
+    static readonly ERR_TOGGLE_DESTACADO_INACTIVE =
+        'El producto está inactivo; no se puede marcar como destacado';
+
     private TTL_PRODUCTO = 3600;      // 1 hora
     private TTL_CATALOGO = 1800;      // 30 minutos
     private TTL_DESTACADOS = 900;     // 15 minutos
@@ -1066,14 +1070,15 @@ export class ProductosService {
 
     async toggleDestacado(id: number, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const producto = await prisma.productos.findFirst({
-            where: {
-                id_prod: id,
-                estado: 1 // Solo productos activos pueden ser destacados
-            }
+            where: { id_prod: id }
         });
 
         if (!producto) {
-            throw new Error('Producto no encontrado o inactivo');
+            throw new Error(ProductosService.ERR_TOGGLE_DESTACADO_NOT_FOUND);
+        }
+
+        if (producto.estado !== 1) {
+            throw new Error(ProductosService.ERR_TOGGLE_DESTACADO_INACTIVE);
         }
 
         const nuevoEstadoDestacado = !producto.destacado;

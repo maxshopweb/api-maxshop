@@ -15,7 +15,8 @@ router.use(authenticatedRateLimiter, verifyFirebaseToken, requireAuthenticatedUs
 
 // Rutas (export antes de /:id para que no se interprete "export" como id)
 router.get('/export', clientesController.exportExcel.bind(clientesController));
-router.get('/', cacheMiddleware(1800), clientesController.getAll.bind(clientesController));
+// Sin cacheMiddleware: muchos query params (activo, búsqueda, paginación); getAll ya cachea en Redis (TTL corto).
+router.get('/', clientesController.getAll.bind(clientesController));
 router.get('/:id', cacheMiddleware(3600), clientesController.getById.bind(clientesController));
 router.get('/:id/stats', cacheMiddleware(600), clientesController.getStats.bind(clientesController));
 router.get('/:id/ventas', cacheMiddleware(1800), clientesController.getVentas.bind(clientesController));

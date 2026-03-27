@@ -2,6 +2,13 @@ import { prisma } from '../index';
 import { ICliente, IClienteFilters, IPaginatedResponse, IClienteStats, IUpdateClienteDTO } from '../types';
 import cacheService from './cache.service';
 
+/** Normaliza activo por si llega como string u otro tipo (query / proxies). */
+function normalizeActivoClienteFilter(v: unknown): boolean | undefined {
+    if (v === true || v === 'true' || v === 1 || v === '1') return true;
+    if (v === false || v === 'false' || v === 0 || v === '0') return false;
+    return undefined;
+}
+
 export class ClientesService {
     private TTL_CLIENTE = 3600; // 1 hora
     private TTL_LISTA = 60; // 1 minuto (listado se invalida al actualizar; TTL corto por si falla el deletePattern)
@@ -20,7 +27,7 @@ export class ClientesService {
             limit = 25,
             order_by = 'creado_en',
             order = 'desc',
-            activo: activoFilter,
+            activo: activoRaw,
             busqueda,
             ciudad,
             provincia,
@@ -30,14 +37,17 @@ export class ClientesService {
             ultimo_login_hasta,
         } = filters;
 
+        const activoFilter = normalizeActivoClienteFilter(activoRaw);
+
         const whereClause: any = {};
 
         // Condiciones sobre la relación usuarios (admin + activo + búsqueda sin pisarse)
         const usuariosAnd: any[] = [
             { admin: null }, // solo clientes (no admins)
         ];
+        // Misma noción que la UI: activo !== false → NOT { activo: false } en SQL
         if (activoFilter === true) {
-            usuariosAnd.push({ OR: [{ activo: true }, { activo: null }] });
+            usuariosAnd.push({ NOT: { activo: false } });
         } else if (activoFilter === false) {
             usuariosAnd.push({ activo: false });
         }
@@ -473,7 +483,7 @@ export class ClientesService {
 
         await cacheService.delete(`cliente:${id}`);
         await cacheService.deletePattern('clientes:*');
-        // Respuestas GET cacheadas por cacheMiddleware (clave endpoint:...) — sin esto el refetch tras PUT devuelve JSON viejo
+        // Rutas con cacheMiddleware (p. ej. GET /:id) usan clave endpoint:... en Redis
         await cacheService.deletePattern('endpoint:/clientes*');
 
         // Lectura fresca desde DB (sin cache) para devolver siempre datos actualizados (incl. activo)
