@@ -24,7 +24,7 @@ export function configTiendaUpdateValidators(): ValidationChain[] {
       .toFloat(),
     body('envio_gratis_activo')
       .optional()
-      .isBoolean()
+      .isBoolean({ strict: true })
       .withMessage('envio_gratis_activo debe ser booleano')
       .toBoolean(),
     body('cuotas_sin_interes')
@@ -34,7 +34,7 @@ export function configTiendaUpdateValidators(): ValidationChain[] {
       .toInt(),
     body('cuotas_sin_interes_activo')
       .optional()
-      .isBoolean()
+      .isBoolean({ strict: true })
       .withMessage('cuotas_sin_interes_activo debe ser booleano')
       .toBoolean(),
     body('cuotas_sin_interes_minimo')

@@ -72,10 +72,21 @@ router.patch('/:id/stock',
     productosController.updateStock.bind(productosController)
 );
 
-// PATCH restaurar precios desde Excel: solo admin (limpia flag; próxima sync traerá precios del CSV)
+// POST restaurar desde ERP: solo admin (lee CSV locales y aplica stock/precios/maestros para este producto)
+router.post('/:id/restaurar-desde-erp',
+    adminAuth,
+    productosController.restaurarProductoDesdeErp.bind(productosController)
+);
+
+// PATCH reanudar sync ERP: solo admin (limpia precio_editado_manualmente; próxima sync actualiza el producto)
+router.patch('/:id/reanudar-sync-erp',
+    adminAuth,
+    productosController.reanudarSincronizacionErp.bind(productosController)
+);
+// Compatibilidad: mismo comportamiento que reanudar-sync-erp
 router.patch('/:id/restaurar-precios-excel',
     adminAuth,
-    productosController.restaurarPreciosDesdeExcel.bind(productosController)
+    productosController.reanudarSincronizacionErp.bind(productosController)
 );
 
 // PATCH /api/productos/:id/destacado: solo admin

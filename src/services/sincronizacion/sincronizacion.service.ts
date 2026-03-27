@@ -58,6 +58,9 @@ const KEY_TO_CSV_FILE: Record<ImportSelectivoKey, string> = {
   maestros: 'MAESARTI.csv',
 };
 
+/** DBF necesarios para stock, precios y maestros de productos (restauración puntual). */
+const DBF_PRODUCTOS_ERP = ['MAESARTI.DBF', 'MAESSTOK.DBF', 'MAESPREC.DBF'] as const;
+
 export class SincronizacionService {
   /**
    * Indica si existe un manifest previo (sync completa ya ejecutada al menos una vez).
@@ -312,6 +315,75 @@ export class SincronizacionService {
     console.log(`📋 Manifest actualizado (${procesadosOk.length}/${archivosCambiados.length} archivo(s))`);
 
     this.limpiarDirectorioTemporal();
+  }
+
+  /**
+   * Descarga desde FTP MAESARTI, MAESSTOK y MAESPREC y los convierte a CSV en data/csv.
+   * No importa a la base de datos. Usado para restauración puntual de un producto.
+   */
+  async descargarCsvProductosDesdeFtp(): Promise<void> {
+    this.asegurarDirectorios();
+    await ftpService.connect();
+    try {
+      const ftpFiles = await ftpService.listDBFFiles();
+      const toDownload: string[] = [];
+      for (const req of DBF_PRODUCTOS_ERP) {
+        const match = ftpFiles.find((f) => f.name.toUpperCase() === req);
+        if (!match) {
+          throw new Error(
+            `No se encontró ${req} en el servidor FTP. Verifique que el archivo esté publicado en el directorio remoto.`
+          );
+        }
+        toDownload.push(match.name);
+      }
+      await this.descargarYConvertirSoloCambiados(toDownload, ftpFiles);
+      this.normalizeMaesprecCsvFilename();
+      this.assertCsvProductosErpGenerados();
+    } finally {
+      await ftpService.disconnect();
+    }
+  }
+
+  /** Comprueba que los tres CSV de producto existan tras FTP+conversión (falla si hubo error silencioso). */
+  private assertCsvProductosErpGenerados(): void {
+    const arti = path.join(CSV_OUTPUT_DIR, 'MAESARTI.csv');
+    const stok = path.join(CSV_OUTPUT_DIR, 'MAESSTOK.csv');
+    const precLower = path.join(CSV_OUTPUT_DIR, 'maesprec.csv');
+    const precUpper = path.join(CSV_OUTPUT_DIR, 'MAESPREC.csv');
+    if (!fs.existsSync(arti)) {
+      throw new Error(
+        'Tras la descarga FTP no se generó MAESARTI.csv. Revise la conversión DBF→CSV o permisos en data/csv.'
+      );
+    }
+    if (!fs.existsSync(stok)) {
+      throw new Error(
+        'Tras la descarga FTP no se generó MAESSTOK.csv. Revise la conversión DBF→CSV o permisos en data/csv.'
+      );
+    }
+    if (!fs.existsSync(precLower) && !fs.existsSync(precUpper)) {
+      throw new Error(
+        'Tras la descarga FTP no se generó el CSV de precios (maesprec). Revise la conversión DBF→CSV.'
+      );
+    }
+    if (!fs.existsSync(precLower) && fs.existsSync(precUpper)) {
+      fs.copyFileSync(precUpper, precLower);
+    }
+  }
+
+  /**
+   * Tras convertir MAESPREC.DBF, en sistemas con FS case-sensitive el CSV puede ser MAESPREC.csv;
+   * el importador usa maesprec.csv.
+   */
+  private normalizeMaesprecCsvFilename(): void {
+    const upper = path.join(CSV_OUTPUT_DIR, 'MAESPREC.csv');
+    const lower = path.join(CSV_OUTPUT_DIR, 'maesprec.csv');
+    try {
+      if (fs.existsSync(upper) && !fs.existsSync(lower)) {
+        fs.copyFileSync(upper, lower);
+      }
+    } catch {
+      // FS sin distinción de mayúsculas: pueden ser el mismo path
+    }
   }
 
   /**

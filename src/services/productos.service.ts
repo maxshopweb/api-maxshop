@@ -8,6 +8,8 @@ import { ICrearProductoContenido, ICreateProductoDTO, IProductoFilters, IProduct
 import fs from 'fs';
 import path from 'path';
 import cacheService from './cache.service';
+import csvImporterService from './sincronizacion/csv-importer.service';
+import sincronizacionService from './sincronizacion/sincronizacion.service';
 
 export type ProductoAuditContext = {
     userId: string;
@@ -492,6 +494,15 @@ export class ProductosService {
         return Math.round(n * 100) / 100;
     }
 
+    /**
+     * Activa flag manual solo para cambios originados desde endpoints de productos del panel.
+     * Evita marcar como manual updates internos (p. ej. ventas/automatismos sin endpoint de productos).
+     */
+    private shouldMarkManualEdit(auditContext?: ProductoAuditContext): boolean {
+        const endpoint = auditContext?.endpoint?.toLowerCase() ?? '';
+        return endpoint.includes('/productos');
+    }
+
     async create(data: ICreateProductoDTO, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const { id_cat, id_marca, id_iva, codi_categoria, codi_marca, codi_grupo, codi_impuesto, cod_sku, id_interno, modelo, precio_mayorista, precio_minorista, precio_evento, stock_mayorista, ...rest } = data;
         const L = ProductosService.PRODUCTO_MAX_LEN;
@@ -511,12 +522,7 @@ export class ProductosService {
         const esListaE = listaActiva === 'E';
         const precioManual = esListaE && rest.precio_manual != null ? Number(rest.precio_manual) : null;
         const bonificacionPorcentaje = this.normalizePorcentajeBonificacion((rest as any).bonificacion_porcentaje);
-        /** Alineado con update(): marcar si hubo precios explícitos en alta o lista E (sync no debe pisar). */
-        const precioEditadoManualCreate =
-            esListaE ||
-            [rest.precio_venta, rest.precio_especial, rest.precio_pvp, rest.precio_campanya, rest.precio_manual].some(
-                (v) => v !== undefined && v !== null
-            );
+        const manualEditCreate = this.shouldMarkManualEdit(auditContext);
 
         const nuevoProducto = await prisma.productos.create({
             data: {
@@ -531,7 +537,7 @@ export class ProductosService {
                 precio_manual: precioManual,
                 bonificacion_porcentaje: bonificacionPorcentaje,
                 lista_precio_activa: listaActiva,
-                precio_editado_manualmente: precioEditadoManualCreate,
+                precio_editado_manualmente: manualEditCreate,
                 stock: rest.stock ?? null,
                 stock_min: rest.stock_min ?? null,
                 codi_barras: this.truncateStr(rest.codi_barras, L.codi_barras),
@@ -622,8 +628,7 @@ export class ProductosService {
             precio_venta_referencia,
             ...updateData
         } = cleanDataForUpdate;
-        const precioFields = ['precio_venta', 'precio_especial', 'precio_pvp', 'precio_campanya', 'precio_manual'] as const;
-        const editadoPrecio = precioFields.some((f) => data[f] !== undefined);
+        const manualEditUpdate = this.shouldMarkManualEdit(auditContext);
         const esListaE = listaActiva === 'E';
         const precioManualUpdate = listaActiva !== undefined
             ? (esListaE
@@ -645,7 +650,7 @@ export class ProductosService {
             ...(bonificacionPorcentajeUpdate !== undefined && { bonificacion_porcentaje: bonificacionPorcentajeUpdate }),
             ...(estado !== undefined && estado !== null && { estado: Number(estado) }),
             ...(data.modelo !== undefined && { modelo: this.truncateStr(data.modelo, ProductosService.PRODUCTO_MAX_LEN.modelo) ?? null }),
-            ...(editadoPrecio && { precio_editado_manualmente: true }),
+            ...(manualEditUpdate && { precio_editado_manualmente: true }),
             actualizado_en: new Date()
         };
         const productoActualizado = await prisma.productos.update({
@@ -742,10 +747,12 @@ export class ProductosService {
     }
 
     /**
-     * Restaura el flag de precios para que la próxima sync (cron o manual) vuelva a traer
-     * los precios del CSV/Excel. No lee el CSV; solo pone precio_editado_manualmente en false.
+     * Quita el bloqueo de sincronización ERP: pone `precio_editado_manualmente` en false para que
+     * stock, precios, maestros e importación completa desde FTP/CSV vuelvan a actualizar el producto.
+     * También resetea lista E (`precio_manual` null, lista `V`) para alinear con datos del ERP.
+     * No ejecuta la sync ni lee CSV; solo actualiza flags en BD.
      */
-    async restaurarPreciosDesdeExcel(id: number): Promise<IProductos> {
+    async reanudarSincronizacionErp(id: number): Promise<IProductos> {
         const existente = await prisma.productos.findUnique({
             where: { id_prod: id },
             select: { id_prod: true, codi_arti: true },
@@ -781,6 +788,88 @@ export class ProductosService {
         }
         const listasMap = await this.getListasMap();
         return this.normalizeProducto(producto, listasMap);
+    }
+
+    /** @deprecated Usar `reanudarSincronizacionErp` (misma implementación). */
+    async restaurarPreciosDesdeExcel(id: number): Promise<IProductos> {
+        return this.reanudarSincronizacionErp(id);
+    }
+
+    /**
+     * Etapa 4: descarga los últimos MAESARTI / MAESSTOK / MAESPREC desde FTP, convierte a CSV,
+     * quita el bloqueo manual y aplica stock, precios y maestros solo para este `codi_arti`.
+     * Idempotente respecto al estado del ERP en el servidor FTP.
+     */
+    async restaurarProductoDesdeErp(id: number): Promise<IProductos> {
+        const existente = await prisma.productos.findUnique({
+            where: { id_prod: id },
+            select: { id_prod: true, codi_arti: true },
+        });
+        if (!existente) {
+            throw new Error('Producto no encontrado');
+        }
+        const codiRaw = existente.codi_arti != null ? String(existente.codi_arti).trim() : '';
+        if (!codiRaw) {
+            throw new Error('El producto no tiene codi_arti; no se puede actualizar desde ERP');
+        }
+
+        await sincronizacionService.descargarCsvProductosDesdeFtp();
+
+        const csvDir = path.join(__dirname, '../../data/csv');
+
+        await prisma.productos.update({
+            where: { id_prod: id },
+            data: {
+                precio_editado_manualmente: false,
+                precio_manual: null,
+                lista_precio_activa: 'V',
+                actualizado_en: new Date(),
+            } as Prisma.productosUpdateInput,
+        });
+
+        await csvImporterService.aplicarErpCsvSoloCodigo(codiRaw, csvDir);
+
+        await cacheService.deletePattern('productos:*');
+        await cacheService.delete(`producto:${id}`);
+        await cacheService.delete(`producto:codigo:${codiRaw}`);
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.delete('productos:stock-bajo');
+        await cacheService.deletePattern('productos:con-imagenes:*');
+        await cacheService.deletePattern('ventas:*');
+        await cacheService.deletePattern('venta:*');
+
+        const producto = await prisma.productos.findUnique({
+            where: { id_prod: id },
+            include: { categoria: true, marca: true, grupo: true, iva: true },
+        });
+        if (!producto) {
+            throw new Error('Producto no encontrado');
+        }
+        const listasMap = await this.getListasMap();
+        return this.normalizeProducto(producto, listasMap);
+    }
+
+    /**
+     * Etapa 5: reset masivo de flags ERP en todos los productos para que import/sync completo
+     * pueda sobreescribir el catálogo (uso con `force_overwrite` + confirmación en API sincronización).
+     */
+    async resetFlagsErpMasivoParaSyncTotal(): Promise<{ filasActualizadas: number }> {
+        const result = await prisma.productos.updateMany({
+            data: {
+                precio_editado_manualmente: false,
+                precio_manual: null,
+                lista_precio_activa: 'V',
+                actualizado_en: new Date(),
+            } as Prisma.productosUpdateInput,
+        });
+        await cacheService.deletePattern('productos:*');
+        await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.delete('productos:stock-bajo');
+        await cacheService.deletePattern('productos:con-imagenes:*');
+        await cacheService.deletePattern('productos:tienda:*');
+        await cacheService.deletePattern('ventas:*');
+        await cacheService.deletePattern('venta:*');
+        return { filasActualizadas: result.count };
     }
 
     async exists(id: number): Promise<boolean> {

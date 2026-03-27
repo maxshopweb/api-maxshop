@@ -3,7 +3,7 @@
  * Importa todas las tablas de referencia y productos
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ImportResult, ImportSummary, ImportDependencies, PrecioData, StockData } from '../../types/sincronizacion.types';
@@ -27,6 +27,40 @@ type ImportImageStats = {
 
 export class CSVImporterService {
   private readonly importImageValidationCache = new Map<string, boolean>();
+
+  /**
+   * `precio_editado_manualmente` actúa como flag global de “producto editado en panel”:
+   * mientras sea true, la sync FTP/CSV no debe modificar ese registro.
+   */
+  private whereProductoPermiteSyncErp(): Prisma.productosWhereInput {
+    return {
+      OR: [{ precio_editado_manualmente: false }, { precio_editado_manualmente: null }],
+    };
+  }
+
+
+  private buscarStockEnMapaPorCodigoTruncado(map: Map<string, StockData>, codi10: string): StockData | undefined {
+    for (const [k, v] of map) {
+      if (k.trim().substring(0, 10) === codi10) return v;
+    }
+    return undefined;
+  }
+
+  private buscarPreciosEnMapaPorCodigoTruncado(map: Map<string, PrecioData>, codi10: string): PrecioData | undefined {
+    for (const [k, v] of map) {
+      if (k.trim().substring(0, 10) === codi10) return v;
+    }
+    return undefined;
+  }
+
+  /** maesprec.csv vs MAESPREC.csv según cómo el conversor nombró el archivo. */
+  private resolveMaesprecCsvPath(csvDir: string): string | null {
+    for (const name of ['maesprec.csv', 'MAESPREC.csv']) {
+      const p = path.join(csvDir, name);
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
 
   /**
    * Parsea un CSV simple (maneja comillas y comas)
@@ -1142,7 +1176,7 @@ export class CSVImporterService {
       const codi_arti_truncado = codiarti.trim().substring(0, 10);
       try {
         const result = await prisma.productos.updateMany({
-          where: { codi_arti: codi_arti_truncado },
+          where: { codi_arti: codi_arti_truncado, ...this.whereProductoPermiteSyncErp() },
           data: {
             stock,
             stock_min: stock_min != null ? Math.round(stock_min) : null,
@@ -1161,8 +1195,7 @@ export class CSVImporterService {
   /**
    * Etapa 3: Actualiza solo precios en productos desde maesprec.csv.
    * No toca stock ni datos maestros. Reutiliza cargarPrecios().
-   * Actualiza precio_venta, precio_especial, precio_pvp, precio_campanya solo si
-   * precio_editado_manualmente no es true (panel marcó edición manual de precios).
+   * No actualiza si precio_editado_manualmente es true (producto bajo edición manual en panel).
    * No toca precio_manual ni lista_precio_activa.
    */
   async actualizarSoloPrecios(csvDir: string): Promise<{ actualizados: number }> {
@@ -1179,7 +1212,7 @@ export class CSVImporterService {
         const result = await prisma.productos.updateMany({
           where: {
             codi_arti: codi_arti_truncado,
-            OR: [{ precio_editado_manualmente: false }, { precio_editado_manualmente: null }],
+            ...this.whereProductoPermiteSyncErp(),
           },
           data: {
             precio_venta: precios.precioVenta ?? null,
@@ -1277,7 +1310,7 @@ export class CSVImporterService {
 
         // No actualizar nombre en updates: solo se setea en el primer insert (create). Evita que el sync pise nombres editados en el panel.
         const result = await prisma.productos.updateMany({
-          where: { codi_arti: codi_arti_truncado },
+          where: { codi_arti: codi_arti_truncado, ...this.whereProductoPermiteSyncErp() },
           data: {
             codi_grupo,
             codi_categoria,
@@ -1302,8 +1335,11 @@ export class CSVImporterService {
       try {
         await prisma.productos.updateMany({
           where: {
-            codi_arti,
-            OR: [{ img_principal: null }, { img_principal: '' }],
+            AND: [
+              { codi_arti },
+              this.whereProductoPermiteSyncErp(),
+              { OR: [{ img_principal: null }, { img_principal: '' }] },
+            ],
           },
           data: { img_principal: imgPath, actualizado_en: new Date() },
         });
@@ -1315,6 +1351,178 @@ export class CSVImporterService {
     console.log(`📝 [actualizarSoloDatosMaestrosProductos] ${actualizados} producto(s) actualizado(s)`);
     return { actualizados };
   }
+
+  /**
+   * Etapa 4: aplica stock, precios y maestros desde los CSV en `csvDir` solo para `codi_arti`
+   * (10 caracteres). Requiere que el producto en BD tenga `precio_editado_manualmente` en false
+   * para que los `updateMany` apliquen (el llamador debe limpiar el flag antes).
+   *
+   * @throws Error si faltan archivos CSV, MAESARTI no contiene el código, o el CSV está corrupto.
+   */
+  async aplicarErpCsvSoloCodigo(codi_arti: string, csvDir: string): Promise<void> {
+    const codi = codi_arti.trim().substring(0, 10);
+    if (!codi) {
+      throw new Error('codi_arti inválido');
+    }
+
+    const maesArtiPath = path.join(csvDir, 'MAESARTI.csv');
+    const maesStokPath = path.join(csvDir, 'MAESSTOK.csv');
+    const maesprecPath = this.resolveMaesprecCsvPath(csvDir);
+
+    if (!fs.existsSync(maesArtiPath)) {
+      throw new Error('No existe MAESARTI.csv en el directorio de CSV indicado.');
+    }
+    if (!fs.existsSync(maesStokPath)) {
+      throw new Error('No existe MAESSTOK.csv en el directorio de CSV indicado.');
+    }
+    if (!maesprecPath) {
+      throw new Error('No existe el CSV de precios (maesprec) en el directorio de CSV indicado.');
+    }
+
+    const contenidoArti = fs.readFileSync(maesArtiPath, 'utf-8');
+    const registrosArti = this.parsearCSV(contenidoArti);
+    const headerArti = registrosArti[0];
+    if (!headerArti) {
+      throw new Error('MAESARTI.csv está vacío o no tiene cabecera.');
+    }
+    const indices = this.obtenerIndicesColumnas(headerArti);
+    if (indices['CODIARTI'] === undefined) {
+      throw new Error('MAESARTI.csv: no se encontró la columna CODIARTI.');
+    }
+
+    let rowMaestro: string[] | null = null;
+    for (let rowNum = 1; rowNum < registrosArti.length; rowNum++) {
+      const row = registrosArti[rowNum];
+      if (!row) continue;
+      const rawCod = this.limpiarCampo(row[indices['CODIARTI'] ?? 1]).trim();
+      if (!rawCod) continue;
+      if (rawCod.substring(0, 10) === codi) {
+        rowMaestro = row;
+        break;
+      }
+    }
+
+    if (!rowMaestro) {
+      throw new Error(
+        `El código "${codi}" no está en el CSV actual (MAESARTI). Sincronice desde FTP o compruebe que el artículo existe en el ERP.`
+      );
+    }
+
+    const stockMap = this.cargarStock(maesStokPath);
+    const stockEntry = this.buscarStockEnMapaPorCodigoTruncado(stockMap, codi);
+    const overrideEnv = process.env.IMPORT_STOCK_OVERRIDE;
+    if (stockEntry) {
+      let stock = stockEntry.stock;
+      let stock_min = stockEntry.stock_min;
+      if (overrideEnv !== undefined && overrideEnv !== '') {
+        const override = parseInt(overrideEnv, 10);
+        if (!isNaN(override) && override >= 0) {
+          stock = override;
+        }
+      }
+      await prisma.productos.updateMany({
+        where: { codi_arti: codi, ...this.whereProductoPermiteSyncErp() },
+        data: {
+          stock,
+          stock_min: stock_min != null ? Math.round(stock_min) : null,
+          actualizado_en: new Date(),
+        },
+      });
+    }
+
+    const preciosMap = this.cargarPrecios(maesprecPath);
+    const precios = this.buscarPreciosEnMapaPorCodigoTruncado(preciosMap, codi);
+    if (precios) {
+      await prisma.productos.updateMany({
+        where: { codi_arti: codi, ...this.whereProductoPermiteSyncErp() },
+        data: {
+          precio_venta: precios.precioVenta ?? null,
+          precio_especial: precios.precioEspecial ?? null,
+          precio_pvp: precios.precioPvp ?? null,
+          precio_campanya: precios.precioCampanya ?? null,
+          actualizado_en: new Date(),
+        },
+      });
+    }
+
+    const categoriasSet = new Set<string>(
+      (await prisma.categoria.findMany({ select: { codi_categoria: true } })).map(
+        (c: { codi_categoria: string | null }) => c.codi_categoria
+      ).filter((x: string | null): x is string => x != null)
+    );
+    const marcasSet = new Set<string>(
+      (await prisma.marca.findMany({ select: { codi_marca: true } })).map(
+        (m: { codi_marca: string }) => m.codi_marca
+      )
+    );
+    const gruposSet = new Set<string>(
+      (await prisma.grupo.findMany({ select: { codi_grupo: true } })).map(
+        (g: { codi_grupo: string }) => g.codi_grupo
+      )
+    );
+    const impuestosKeys = new Set<string>(
+      (await prisma.iva.findMany({ select: { codi_impuesto: true } })).map(
+        (i: { codi_impuesto: string }) => i.codi_impuesto
+      )
+    );
+
+    const row = rowMaestro;
+    const codi_arti_truncado = codi;
+    const codigrar = this.truncarString(this.limpiarCampo(row[indices['CODIGRAR'] ?? 2]), 4);
+    const codicate = this.truncarString(this.limpiarCampo(row[indices['CODICATE'] ?? -1] || ''), 4);
+    const codimarc = this.truncarString(this.limpiarCampo(row[indices['CODIMARC'] ?? -1] || ''), 3);
+    const codiimp1 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP1'] ?? 7]), 2);
+    const codiimp2 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP2'] ?? 8]), 2);
+    const codiimp3 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP3'] ?? -1] || ''), 2);
+    const actiarti = this.truncarString(this.limpiarCampo(row[indices['ACTIARTI'] ?? -1] || ''), 1);
+    const imagarti = this.limpiarCampo(row[indices['IMAGARTI'] ?? -1] || '');
+    const unmearti = this.truncarString(this.limpiarCampo(row[indices['UNMEARTI'] ?? 4] || ''), 3);
+    const unenarti = this.parsearNumero(row[indices['UNENARTI'] ?? 6]);
+    const partarti = this.truncarString(this.limpiarCampo(row[indices['PARTARTI'] ?? 35] || ''), 22);
+    const modelo = this.truncarString(this.limpiarCampo(row[indices['COPRARTI'] ?? -1] || ''), 50) || null;
+
+    const codi_grupo = codigrar && gruposSet.has(codigrar) ? codigrar : null;
+    const codi_categoria = codicate && categoriasSet.has(codicate) ? codicate : null;
+    const codi_marca = codimarc && marcasSet.has(codimarc) ? codimarc : null;
+    let codi_impuesto: string | null = null;
+    if (codiimp1 && impuestosKeys.has(codiimp1)) codi_impuesto = codiimp1;
+    else if (codiimp2 && impuestosKeys.has(codiimp2)) codi_impuesto = codiimp2;
+    else if (codiimp3 && impuestosKeys.has(codiimp3)) codi_impuesto = codiimp3;
+
+    await prisma.productos.updateMany({
+      where: { codi_arti: codi_arti_truncado, ...this.whereProductoPermiteSyncErp() },
+      data: {
+        codi_grupo,
+        codi_categoria,
+        codi_marca,
+        codi_impuesto,
+        modelo,
+        unidad_medida: unmearti || null,
+        unidades_por_producto: unenarti != null ? unenarti : null,
+        codi_barras: partarti || null,
+        activo: actiarti === 'A' ? 'A' : (actiarti || 'I'),
+        estado: actiarti === 'A' ? 1 : 0,
+        actualizado_en: new Date(),
+      },
+    });
+
+    const parsedCsvImage = this.parseCsvImagePath(imagarti);
+    if (parsedCsvImage.status === 'ok' && this.validateImportedPathExists(parsedCsvImage.value)) {
+      await prisma.productos.updateMany({
+        where: {
+          AND: [
+            { codi_arti: codi_arti_truncado },
+            this.whereProductoPermiteSyncErp(),
+            { OR: [{ img_principal: null }, { img_principal: '' }] },
+          ],
+        },
+        data: { img_principal: parsedCsvImage.value, actualizado_en: new Date() },
+      });
+    }
+
+    console.log(`✅ [aplicarErpCsvSoloCodigo] Actualizado codi_arti=${codi} desde CSV local`);
+  }
+
 
   /**
    * Obtiene índices de columnas del header de MAESARTI
@@ -1597,7 +1805,11 @@ export class CSVImporterService {
           select: { img_principal: true, precio_editado_manualmente: true },
         });
 
-        // Listas V,O,P,Q desde CSV salvo si el panel marcó edición manual de precios.
+        if (existente?.precio_editado_manualmente === true) {
+          continue;
+        }
+
+        // Listas V,O,P,Q desde CSV (producto no está en modo edición manual).
         // No tocamos precio_manual ni lista_precio_activa (lista E u otras elecciones del usuario).
         const updateData: Record<string, unknown> = {
           codi_grupo: producto.codi_grupo,
@@ -1665,13 +1877,6 @@ export class CSVImporterService {
           } else {
             stats.sinPath++;
           }
-        }
-
-        if (existente?.precio_editado_manualmente === true) {
-          delete updateData.precio_venta;
-          delete updateData.precio_especial;
-          delete updateData.precio_pvp;
-          delete updateData.precio_campanya;
         }
 
         await prisma.productos.upsert({

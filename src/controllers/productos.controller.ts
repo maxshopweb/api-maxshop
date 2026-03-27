@@ -369,11 +369,11 @@ export class ProductosController {
     }
 
     /**
-     * PATCH /api/productos/:id/restaurar-precios-excel
-     * Limpia precio_editado_manualmente para que la próxima sync traiga precios del CSV.
-     * No lee el CSV; solo actualiza el flag. Solo admin.
+     * PATCH /api/productos/:id/reanudar-sync-erp
+     * Quita el bloqueo manual (`precio_editado_manualmente`) para que la próxima sync FTP/CSV
+     * vuelva a actualizar stock, precios y maestros de este producto. Solo admin.
      */
-    async restaurarPreciosDesdeExcel(req: Request, res: Response): Promise<void> {
+    async reanudarSincronizacionErp(req: Request, res: Response): Promise<void> {
         try {
             const id = parseInt(asSingleString(req.params.id));
             if (isNaN(id)) {
@@ -383,11 +383,12 @@ export class ProductosController {
                 });
                 return;
             }
-            const producto = await productosService.restaurarPreciosDesdeExcel(id);
+            const producto = await productosService.reanudarSincronizacionErp(id);
             res.json({
                 success: true,
                 data: producto,
-                message: 'Los precios de este producto se actualizarán en la próxima sincronización con el FTP/CSV.'
+                message:
+                    'La sincronización con FTP/CSV volverá a actualizar este producto (stock, precios y datos maestros) en la próxima ejecución.'
             });
         } catch (error) {
             if (error instanceof Error && error.message === 'Producto no encontrado') {
@@ -397,10 +398,86 @@ export class ProductosController {
                 });
                 return;
             }
-            console.error('Error en restaurarPreciosDesdeExcel:', error);
+            console.error('Error en reanudarSincronizacionErp:', error);
             res.status(500).json({
                 success: false,
-                error: error instanceof Error ? error.message : 'Error al restaurar precios desde Excel'
+                error: error instanceof Error ? error.message : 'Error al reanudar sincronización ERP'
+            });
+        }
+    }
+
+    /**
+     * POST /api/productos/:id/restaurar-desde-erp
+     * Descarga MAESARTI/MAESSTOK/MAESPREC por FTP, convierte a CSV y aplica solo este producto. Solo admin.
+     */
+    async restaurarProductoDesdeErp(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido',
+                });
+                return;
+            }
+            const producto = await productosService.restaurarProductoDesdeErp(id);
+            res.json({
+                success: true,
+                data: producto,
+                message:
+                    'Producto actualizado desde el ERP: últimos datos descargados por FTP y aplicados a este artículo.',
+            });
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            if (msg === 'Producto no encontrado') {
+                res.status(404).json({ success: false, error: msg });
+                return;
+            }
+            if (msg.includes('no tiene codi_arti')) {
+                res.status(422).json({ success: false, error: msg });
+                return;
+            }
+            if (msg.includes('no está en el CSV actual')) {
+                res.status(422).json({ success: false, error: msg });
+                return;
+            }
+            if (
+                msg.includes('Error de conexión FTP')
+                || msg.includes('Error al listar archivos')
+                || msg.includes('Error al descargar archivo')
+            ) {
+                res.status(503).json({ success: false, error: msg });
+                return;
+            }
+            if (msg.includes('No se encontró') && msg.includes('.DBF') && msg.includes('FTP')) {
+                res.status(400).json({ success: false, error: msg });
+                return;
+            }
+            if (msg.includes('Tras la descarga FTP')) {
+                res.status(502).json({ success: false, error: msg });
+                return;
+            }
+            if (
+                msg.includes('No existe MAESARTI.csv')
+                || msg.includes('No existe MAESSTOK.csv')
+                || msg.includes('maesprec')
+                || msg.includes('CSV de precios')
+            ) {
+                res.status(400).json({ success: false, error: msg });
+                return;
+            }
+            if (
+                msg === 'codi_arti inválido'
+                || msg.includes('MAESARTI.csv está vacío')
+                || msg.includes('no se encontró la columna CODIARTI')
+            ) {
+                res.status(400).json({ success: false, error: msg });
+                return;
+            }
+            console.error('Error en restaurarProductoDesdeErp:', error);
+            res.status(500).json({
+                success: false,
+                error: msg,
             });
         }
     }
