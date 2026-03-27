@@ -1,6 +1,7 @@
 import '../types/express';
 import { Request, Response } from 'express';
 import { authService } from '../services/auth.service';
+import { logServerError, toPublicErrorMessage } from '../utils/publicError';
 
 export class AuthController {
   async loginWithFirebaseToken(req: Request, res: Response): Promise<void> {
@@ -17,10 +18,13 @@ export class AuthController {
         data: result
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al iniciar sesión';
+      logServerError('AuthController.loginWithFirebaseToken', error);
       res.status(400).json({
         success: false,
-        error: message
+        error: toPublicErrorMessage(
+          error,
+          'No pudimos iniciar sesión. Verificá tus datos e intentá de nuevo.'
+        )
       });
     }
   }
@@ -41,10 +45,10 @@ export class AuthController {
         message: result.created ? 'Usuario registrado exitosamente' : 'Usuario actualizado exitosamente'
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al registrar usuario';
+      logServerError('AuthController.registerWithFirebase', error);
       res.status(400).json({
         success: false,
-        error: message
+        error: toPublicErrorMessage(error, 'No pudimos registrar tu cuenta. Intentá de nuevo.')
       });
     }
   }
@@ -77,10 +81,10 @@ export class AuthController {
         message: 'Perfil completado exitosamente'
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al completar el perfil';
+      logServerError('AuthController.completeProfile', error);
       res.status(400).json({
         success: false,
-        error: message
+        error: toPublicErrorMessage(error, 'No pudimos guardar tu perfil. Intentá de nuevo.')
       });
     }
   }
@@ -117,10 +121,10 @@ export class AuthController {
         }
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al verificar el email';
+      logServerError('AuthController.checkEmail', error);
       res.status(400).json({
         success: false,
-        error: message
+        error: toPublicErrorMessage(error, 'No pudimos verificar el email. Intentá de nuevo.')
       });
     }
   }
@@ -141,10 +145,10 @@ export class AuthController {
         message: result.created ? 'Usuario invitado registrado exitosamente' : 'Usuario invitado actualizado exitosamente'
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al registrar usuario invitado';
+      logServerError('AuthController.registerGuest', error);
       res.status(400).json({
         success: false,
-        error: message
+        error: toPublicErrorMessage(error, 'No pudimos completar el registro como invitado. Intentá de nuevo.')
       });
     }
   }
@@ -163,10 +167,10 @@ export class AuthController {
         message: 'Usuario convertido exitosamente'
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al convertir usuario invitado';
+      logServerError('AuthController.convertGuest', error);
       res.status(400).json({
         success: false,
-        error: message
+        error: toPublicErrorMessage(error, 'No pudimos convertir tu cuenta. Intentá de nuevo.')
       });
     }
   }

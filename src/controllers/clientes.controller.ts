@@ -5,7 +5,15 @@ import { asSingleString } from '../utils/validation.utils';
 import { clientesService } from '../services/clientes.service';
 import { buildClientesExcelBuffer } from '../services/clientes-excel.service';
 import ftpService from '../services/ftp.service';
-import { IClienteFilters, EstadoGeneral, IUpdateClienteDTO } from '../types';
+import { IClienteFilters, IUpdateClienteDTO } from '../types';
+
+function parseActivoQuery(value: unknown): boolean | undefined {
+    if (value === undefined || value === null || value === '') return undefined;
+    const v = String(Array.isArray(value) ? value[0] : value).toLowerCase();
+    if (v === 'true' || v === '1') return true;
+    if (v === 'false' || v === '0') return false;
+    return undefined;
+}
 
 export class ClientesController {
     async getAll(req: Request, res: Response) {
@@ -16,7 +24,7 @@ export class ClientesController {
                 order_by: req.query.order_by as any,
                 order: req.query.order as 'asc' | 'desc',
                 busqueda: req.query.busqueda as string,
-                estado: req.query.estado ? (Number(req.query.estado) as EstadoGeneral) : undefined,
+                activo: parseActivoQuery(req.query.activo),
                 ciudad: req.query.ciudad as string,
                 provincia: req.query.provincia as string,
                 creado_desde: req.query.creado_desde as string,
@@ -101,9 +109,16 @@ export class ClientesController {
             });
         } catch (error: any) {
             console.error('❌ Error en update cliente:', error);
-            res.status(error.message === 'Cliente no encontrado' ? 404 : 500).json({
+            const msg = error?.message || '';
+            const status =
+                msg === 'Cliente no encontrado'
+                    ? 404
+                    : msg.includes('Ya existe otro usuario con ese número de documento')
+                      ? 409
+                      : 500;
+            res.status(status).json({
                 success: false,
-                error: error.message || 'Error al actualizar cliente',
+                error: msg || 'Error al actualizar cliente',
             });
         }
     }

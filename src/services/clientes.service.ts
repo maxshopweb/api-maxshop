@@ -16,11 +16,11 @@ export class ClientesService {
 
 
         const {
-            page = 1,
+            page: pageRaw = 1,
             limit = 25,
             order_by = 'creado_en',
             order = 'desc',
-            estado,
+            activo: activoFilter,
             busqueda,
             ciudad,
             provincia,
@@ -30,16 +30,16 @@ export class ClientesService {
             ultimo_login_hasta,
         } = filters;
 
-        const whereClause: any = {
-            usuarios: {
-                // Solo clientes (no admins)
-                admin: null,
-            },
-        };
+        const whereClause: any = {};
 
-        // Filtro por estado
-        if (estado !== undefined) {
-            whereClause.usuarios.estado = estado;
+        // Condiciones sobre la relación usuarios (admin + activo + búsqueda sin pisarse)
+        const usuariosAnd: any[] = [
+            { admin: null }, // solo clientes (no admins)
+        ];
+        if (activoFilter === true) {
+            usuariosAnd.push({ OR: [{ activo: true }, { activo: null }] });
+        } else if (activoFilter === false) {
+            usuariosAnd.push({ activo: false });
         }
 
         // Búsqueda por nombre, email, teléfono y documento (DNI)
@@ -60,15 +60,17 @@ export class ClientesService {
                 { numero_documento: { contains: busquedaNormalizada, mode: 'insensitive' } },
             ];
 
-            // Si parece DNI, también buscar por la versión solo numérica (ej. "12.345.678" -> "12345678")
             if (esDniProbable && busquedaSoloDigitos !== busquedaNormalizada) {
                 orConditions.push({
                     numero_documento: { contains: busquedaSoloDigitos, mode: 'insensitive' },
                 });
             }
 
-            whereClause.usuarios.OR = orConditions;
+            usuariosAnd.push({ OR: orConditions });
         }
+
+        whereClause.usuarios =
+            usuariosAnd.length === 1 ? usuariosAnd[0] : { AND: usuariosAnd };
 
         // Filtro por ciudad
         if (ciudad) {
@@ -123,6 +125,14 @@ export class ClientesService {
             where: whereClause,
         });
 
+        const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+        let page =
+            Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1;
+        if (total > 0 && totalPages > 0) {
+            page = Math.min(page, totalPages);
+            page = Math.max(1, page);
+        }
+
         // Obtener clientes
         const clientes = await prisma.cliente.findMany({
             where: whereClause,
@@ -166,8 +176,6 @@ export class ClientesService {
             piso: (cliente as any).piso,
             dpto: (cliente as any).dpto,
         }));
-
-        const totalPages = Math.ceil(total / limit);
 
         const response: IPaginatedResponse<ICliente> = {
             data: formattedClientes,
@@ -411,7 +419,31 @@ export class ClientesService {
 
         const usuarioData: Record<string, unknown> = {};
         if (data.telefono !== undefined) usuarioData.telefono = data.telefono;
-        if (data.numero_documento !== undefined) usuarioData.numero_documento = data.numero_documento;
+        if (data.numero_documento !== undefined) {
+            const trimmed =
+                data.numero_documento === null ||
+                String(data.numero_documento).trim() === ''
+                    ? null
+                    : String(data.numero_documento).trim();
+            if (trimmed) {
+                const duplicado = await prisma.usuarios.findFirst({
+                    where: {
+                        id_usuario: { not: id },
+                        numero_documento: {
+                            equals: trimmed,
+                            mode: 'insensitive',
+                        },
+                    },
+                    select: { id_usuario: true },
+                });
+                if (duplicado) {
+                    throw new Error(
+                        'Ya existe otro usuario con ese número de documento.'
+                    );
+                }
+            }
+            usuarioData.numero_documento = trimmed;
+        }
         if (data.tipo_documento !== undefined) usuarioData.tipo_documento = data.tipo_documento;
         if (data.activo !== undefined) usuarioData.activo = data.activo;
 
@@ -441,6 +473,8 @@ export class ClientesService {
 
         await cacheService.delete(`cliente:${id}`);
         await cacheService.deletePattern('clientes:*');
+        // Respuestas GET cacheadas por cacheMiddleware (clave endpoint:...) — sin esto el refetch tras PUT devuelve JSON viejo
+        await cacheService.deletePattern('endpoint:/clientes*');
 
         // Lectura fresca desde DB (sin cache) para devolver siempre datos actualizados (incl. activo)
         const fresh = await prisma.cliente.findUnique({

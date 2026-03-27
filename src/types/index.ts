@@ -12,7 +12,7 @@ export type EstadoPago = 'pendiente' | 'aprobado' | 'rechazado' | 'cancelado';
 
 export type EstadoEnvio = 'pendiente' | 'preparando' | 'enviado' | 'en_transito' | 'entregado' | 'cancelado';
 
-export type TipoVenta = 'presencial' | 'online' | 'telefono';
+export type TipoVenta = 'presencial' | 'online' | 'otro';
 
 export type MetodoPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'mercadopago' | 'otro';
 
@@ -165,7 +165,8 @@ export interface IClienteFilters {
     order_by?: 'nombre' | 'email' | 'creado_en' | 'ultimo_login' | 'numero_cliente';
     order?: 'asc' | 'desc';
     busqueda?: string;
-    estado?: EstadoGeneral;
+    /** Cuenta activa (login/compras): true = activo o activo null; false = solo explícitamente inactivo */
+    activo?: boolean;
     ciudad?: string;
     provincia?: string;
     creado_desde?: string;

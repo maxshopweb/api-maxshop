@@ -1,9 +1,45 @@
 // src/services/marcas.service.ts
+import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
 import { IMarca, ICreateMarcaDTO, IUpdateMarcaDTO } from '../types';
+import type { AdminAuditContext } from '../types/auth.type';
+import { auditService } from './audit.service';
+import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
 
 export class MarcasService {
     
+    async getPaginated(
+        page: number,
+        limit: number,
+        busqueda: string
+    ): Promise<{ data: IMarca[]; pagination: AdminPaginationMeta }> {
+        const where: Prisma.marcaWhereInput = busqueda
+            ? {
+                OR: [
+                    { codi_marca: { contains: busqueda, mode: 'insensitive' } },
+                    { nombre: { contains: busqueda, mode: 'insensitive' } },
+                ],
+            }
+            : {};
+
+        const total = await prisma.marca.count({ where });
+        const pagination = buildPaginationMeta(total, page, limit);
+
+        const marcas = await prisma.marca.findMany({
+            where,
+            orderBy: { nombre: 'asc' },
+            skip: (pagination.page - 1) * limit,
+            take: limit,
+        });
+
+        const data = marcas.map((marca: IMarca) => ({
+            ...marca,
+            nombre: marca.nombre ? marca.nombre.toUpperCase() : marca.nombre,
+        })) as IMarca[];
+
+        return { data, pagination };
+    }
+
     async getAll(): Promise<IMarca[]> {
         const marcas = await prisma.marca.findMany({
             orderBy: {
@@ -38,7 +74,7 @@ export class MarcasService {
         } as IMarca;
     }
 
-    async create(data: ICreateMarcaDTO): Promise<IMarca> {
+    async create(data: ICreateMarcaDTO, ctx?: AdminAuditContext): Promise<IMarca> {
         const nuevaMarca = await prisma.marca.create({
             data: {
                 codi_marca: data.codi_marca,
@@ -46,10 +82,25 @@ export class MarcasService {
                 descripcion: data.descripcion 
             }
         });
+        if (ctx) {
+            await auditService.record({
+                action: 'MARCA_CREATE',
+                table: 'marcas',
+                description: `Marca creada: ${nuevaMarca.codi_marca} — ${nuevaMarca.nombre ?? ''}`,
+                previousData: null,
+                currentData: nuevaMarca as unknown as Record<string, unknown>,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
         return nuevaMarca as IMarca;
     }
 
-    async update(id: number, data: IUpdateMarcaDTO): Promise<IMarca> {
+    async update(id: number, data: IUpdateMarcaDTO, ctx?: AdminAuditContext): Promise<IMarca> {
+        const anterior = await prisma.marca.findUnique({ where: { id_marca: id } });
         const marcaActualizada = await prisma.marca.update({
             where: { id_marca: id },
             data: {
@@ -57,10 +108,24 @@ export class MarcasService {
                 descripcion: data.descripcion  
             }
         });
+        if (ctx) {
+            await auditService.record({
+                action: 'MARCA_UPDATE',
+                table: 'marcas',
+                description: `Marca actualizada: ${marcaActualizada.codi_marca} — ${marcaActualizada.nombre ?? ''}`,
+                previousData: anterior ? (anterior as unknown as Record<string, unknown>) : null,
+                currentData: marcaActualizada as unknown as Record<string, unknown>,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
         return marcaActualizada as IMarca;
     }
 
-    async delete(id: number): Promise<void> {
+    async delete(id: number, ctx?: AdminAuditContext): Promise<void> {
         // Verificar si hay productos usando esta marca
         const marca = await prisma.marca.findUnique({
             where: { id_marca: id }
@@ -81,6 +146,20 @@ export class MarcasService {
         await prisma.marca.delete({
             where: { id_marca: id }
         });
+        if (ctx) {
+            await auditService.record({
+                action: 'MARCA_DELETE',
+                table: 'marcas',
+                description: `Marca eliminada: ${marca.codi_marca} — ${marca.nombre ?? ''}`,
+                previousData: marca as unknown as Record<string, unknown>,
+                currentData: null,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
     }
 
     async exists(id: number): Promise<boolean> {

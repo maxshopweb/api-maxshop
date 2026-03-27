@@ -1,4 +1,8 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
+import type { AdminAuditContext } from '../types/auth.type';
+import { auditService } from './audit.service';
+import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
 
 export interface IGrupo {
     id_grupo: number;
@@ -24,6 +28,38 @@ export interface IUpdateGrupoDTO {
 
 export class GruposService {
     
+    async getPaginated(
+        page: number,
+        limit: number,
+        busqueda: string
+    ): Promise<{ data: IGrupo[]; pagination: AdminPaginationMeta }> {
+        const where: Prisma.grupoWhereInput = busqueda
+            ? {
+                OR: [
+                    { codi_grupo: { contains: busqueda, mode: 'insensitive' } },
+                    { nombre: { contains: busqueda, mode: 'insensitive' } },
+                ],
+            }
+            : {};
+
+        const total = await prisma.grupo.count({ where });
+        const pagination = buildPaginationMeta(total, page, limit);
+
+        const grupos = await prisma.grupo.findMany({
+            where,
+            orderBy: { nombre: 'asc' },
+            skip: (pagination.page - 1) * limit,
+            take: limit,
+        });
+
+        const data = grupos.map((grupo: IGrupo) => ({
+            ...grupo,
+            nombre: grupo.nombre ? grupo.nombre.toUpperCase() : grupo.nombre,
+        })) as IGrupo[];
+
+        return { data, pagination };
+    }
+
     async getAll(): Promise<IGrupo[]> {
         const grupos = await prisma.grupo.findMany({
             orderBy: {
@@ -58,7 +94,7 @@ export class GruposService {
         } as IGrupo;
     }
 
-    async create(data: ICreateGrupoDTO): Promise<IGrupo> {
+    async create(data: ICreateGrupoDTO, ctx?: AdminAuditContext): Promise<IGrupo> {
         const nuevoGrupo = await prisma.grupo.create({
             data: {
                 codi_grupo: data.codi_grupo,
@@ -67,10 +103,25 @@ export class GruposService {
                 activo: true
             }
         });
+        if (ctx) {
+            await auditService.record({
+                action: 'GRUPO_CREATE',
+                table: 'grupos',
+                description: `Grupo creado: ${nuevoGrupo.codi_grupo} — ${nuevoGrupo.nombre ?? ''}`,
+                previousData: null,
+                currentData: nuevoGrupo as unknown as Record<string, unknown>,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
         return nuevoGrupo as IGrupo;
     }
 
-    async update(id: number, data: IUpdateGrupoDTO): Promise<IGrupo> {
+    async update(id: number, data: IUpdateGrupoDTO, ctx?: AdminAuditContext): Promise<IGrupo> {
+        const anterior = await prisma.grupo.findUnique({ where: { id_grupo: id } });
         const grupoActualizado = await prisma.grupo.update({
             where: { id_grupo: id },
             data: {
@@ -80,6 +131,20 @@ export class GruposService {
                 actualizado_en: new Date()
             }
         });
+        if (ctx) {
+            await auditService.record({
+                action: 'GRUPO_UPDATE',
+                table: 'grupos',
+                description: `Grupo actualizado: ${grupoActualizado.codi_grupo} — ${grupoActualizado.nombre ?? ''}`,
+                previousData: anterior ? (anterior as unknown as Record<string, unknown>) : null,
+                currentData: grupoActualizado as unknown as Record<string, unknown>,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
         return grupoActualizado as IGrupo;
     }
 
@@ -96,27 +161,37 @@ export class GruposService {
         return grupoActualizado as IGrupo;
     }
 
-    async delete(id: number): Promise<void> {
-        // Verificar si hay productos usando este grupo
-        const productosCount = await prisma.productos.count({
-            where: { codi_grupo: { not: null } }
+    async delete(id: number, ctx?: AdminAuditContext): Promise<void> {
+        const grupo = await prisma.grupo.findUnique({ where: { id_grupo: id } });
+        if (!grupo) {
+            throw new Error('Grupo no encontrado');
+        }
+
+        const productosConGrupo = await prisma.productos.count({
+            where: { codi_grupo: grupo.codi_grupo }
         });
 
-        // Obtener el grupo para verificar
-        const grupo = await this.getById(id);
-        if (grupo) {
-            const productosConGrupo = await prisma.productos.count({
-                where: { codi_grupo: grupo.codi_grupo }
-            });
-
-            if (productosConGrupo > 0) {
-                throw new Error(`No se puede eliminar el grupo porque tiene ${productosConGrupo} producto(s) asociado(s)`);
-            }
+        if (productosConGrupo > 0) {
+            throw new Error(`No se puede eliminar el grupo porque tiene ${productosConGrupo} producto(s) asociado(s)`);
         }
 
         await prisma.grupo.delete({
             where: { id_grupo: id }
         });
+        if (ctx) {
+            await auditService.record({
+                action: 'GRUPO_DELETE',
+                table: 'grupos',
+                description: `Grupo eliminado: ${grupo.codi_grupo} — ${grupo.nombre ?? ''}`,
+                previousData: grupo as unknown as Record<string, unknown>,
+                currentData: null,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
     }
 
     async exists(id: number): Promise<boolean> {

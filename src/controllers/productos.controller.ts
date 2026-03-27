@@ -1,10 +1,13 @@
 import { Request, Response } from 'express';
+import { logServerError, toPublicErrorMessage } from '../utils/publicError';
 import { asSingleString } from '../utils/validation.utils';
 import { ProductosService } from '../services/productos.service';
+import { ConfigTiendaService } from '../services/config-tienda.service';
 import { IApiResponse } from '../types';
 import { IProductoFilters, ICreateProductoDTO, IUpdateProductoDTO } from '../types/product.type';
 
 const productosService = new ProductosService();
+const configTiendaService = new ConfigTiendaService();
 
 export class ProductosController {
 
@@ -360,10 +363,10 @@ export class ProductosController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error en updateStock:', error);
+            logServerError('ProductosController.updateStock', error);
             res.status(500).json({
                 success: false,
-                error: error instanceof Error ? error.message : 'Error al actualizar stock'
+                error: toPublicErrorMessage(error, 'No pudimos actualizar el stock. Intentá de nuevo.')
             });
         }
     }
@@ -398,10 +401,10 @@ export class ProductosController {
                 });
                 return;
             }
-            console.error('Error en reanudarSincronizacionErp:', error);
+            logServerError('ProductosController.reanudarSincronizacionErp', error);
             res.status(500).json({
                 success: false,
-                error: error instanceof Error ? error.message : 'Error al reanudar sincronización ERP'
+                error: toPublicErrorMessage(error, 'No pudimos reanudar la sincronización con el ERP. Intentá de nuevo.')
             });
         }
     }
@@ -474,10 +477,10 @@ export class ProductosController {
                 res.status(400).json({ success: false, error: msg });
                 return;
             }
-            console.error('Error en restaurarProductoDesdeErp:', error);
+            logServerError('ProductosController.restaurarProductoDesdeErp', error);
             res.status(500).json({
                 success: false,
-                error: msg,
+                error: toPublicErrorMessage(error, 'No pudimos restaurar el producto desde el ERP. Intentá de nuevo.'),
             });
         }
     }
@@ -534,10 +537,10 @@ export class ProductosController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error en toggleDestacado:', error);
+            logServerError('ProductosController.toggleDestacado', error);
             res.status(500).json({
                 success: false,
-                error: error instanceof Error ? error.message : 'Error al cambiar estado destacado'
+                error: toPublicErrorMessage(error, 'No pudimos actualizar el destacado. Intentá de nuevo.')
             });
         }
     }
@@ -575,10 +578,10 @@ export class ProductosController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error en togglePublicado:', error);
+            logServerError('ProductosController.togglePublicado', error);
             res.status(500).json({
                 success: false,
-                error: error instanceof Error ? error.message : 'Error al cambiar estado publicado'
+                error: toPublicErrorMessage(error, 'No pudimos cambiar el estado de publicación. Intentá de nuevo.')
             });
         }
     }
@@ -620,10 +623,10 @@ export class ProductosController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error en bulkSetPublicado:', error);
+            logServerError('ProductosController.bulkSetPublicado', error);
             res.status(500).json({
                 success: false,
-                error: error instanceof Error ? error.message : 'Error al actualizar estado publicado'
+                error: toPublicErrorMessage(error, 'No pudimos actualizar la publicación de los productos. Intentá de nuevo.')
             });
         }
     }
@@ -658,17 +661,24 @@ export class ProductosController {
                 : undefined;
             const result = await productosService.bulkUpdateCuotas(ids, cuotas_habilitadas, auditContext);
 
-            const msg = cuotas_habilitadas === null ? 'regla general' : cuotas_habilitadas ? '3 cuotas habilitadas' : '3 cuotas deshabilitadas';
+            const config = await configTiendaService.getConfig();
+            const numCuotas = Math.max(1, Math.trunc(Number(config.cuotas_sin_interes ?? 3)));
+            const msg =
+                cuotas_habilitadas === null
+                    ? 'regla general'
+                    : cuotas_habilitadas
+                      ? `${numCuotas} cuotas habilitadas`
+                      : `${numCuotas} cuotas deshabilitadas`;
             res.json({
                 success: true,
                 data: result,
                 message: `${result.updated} producto(s) actualizado(s): ${msg}`
             });
         } catch (error) {
-            console.error('Error en bulkUpdateCuotas:', error);
+            logServerError('ProductosController.bulkUpdateCuotas', error);
             res.status(500).json({
                 success: false,
-                error: error instanceof Error ? error.message : 'Error al actualizar cuotas'
+                error: toPublicErrorMessage(error, 'No pudimos actualizar las cuotas. Intentá de nuevo.')
             });
         }
     }

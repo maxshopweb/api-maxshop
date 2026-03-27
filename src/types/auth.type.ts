@@ -39,6 +39,13 @@ export type LoginWithTokenInput = z.infer<typeof loginWithTokenSchema>;
 
 export type AuditLogStatus = 'SUCCESS' | 'ERROR';
 
+/** Contexto HTTP + usuario para registrar auditoría desde controladores admin. */
+export type AdminAuditContext = {
+  userId: string;
+  userAgent?: string | null;
+  endpoint?: string | null;
+};
+
 export type AuditLogPayload = {
   action: string;
   table?: string;

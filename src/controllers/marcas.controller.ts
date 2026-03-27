@@ -1,6 +1,7 @@
 // src/controllers/marcas.controller.ts
 import { Request, Response } from 'express';
 import { asSingleString } from '../utils/validation.utils';
+import { parseAdminListQuery, shouldPaginateAdminList } from '../utils/adminPaginationQuery';
 import { MarcasService } from '../services/marcas.service';
 import { ICreateMarcaDTO, IUpdateMarcaDTO } from '../types/index';
 import { IApiResponse } from '../types';
@@ -11,6 +12,17 @@ export class MarcasController {
 
     async getAll(req: Request, res: Response): Promise<void> {
         try {
+            if (shouldPaginateAdminList(req)) {
+                const { page, limit, busqueda } = parseAdminListQuery(req);
+                const result = await marcasService.getPaginated(page, limit, busqueda);
+                res.json({
+                    success: true,
+                    data: result.data,
+                    pagination: result.pagination,
+                });
+                return;
+            }
+
             const marcas = await marcasService.getAll();
             
             const response: IApiResponse = {
@@ -131,7 +143,14 @@ export class MarcasController {
                 return;
             }
 
-            await marcasService.create(data);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            await marcasService.create(data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -171,7 +190,14 @@ export class MarcasController {
                 return;
             }
 
-            const marcaActualizada = await marcasService.update(id, data);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            const marcaActualizada = await marcasService.update(id, data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -211,7 +237,14 @@ export class MarcasController {
                 return;
             }
 
-            await marcasService.delete(id);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            await marcasService.delete(id, auditContext);
 
             const response: IApiResponse = {
                 success: true,

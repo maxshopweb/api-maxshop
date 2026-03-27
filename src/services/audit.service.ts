@@ -47,7 +47,6 @@ export type GetLogsResult = {
 export type GetLogsFilters = {
   fecha_desde?: string; // YYYY-MM-DD
   fecha_hasta?: string; // YYYY-MM-DD
-  accion?: string;
   tabla_afectada?: string;
   method?: string; // GET, POST, PUT, DELETE
   estado?: string;
@@ -71,14 +70,8 @@ class AuditService {
       }
       where.fecha = fechaCond;
     }
-    if (filters.accion?.trim()) {
-      (where as { accion?: { contains: string; mode: string } }).accion = {
-        contains: filters.accion.trim(),
-        mode: 'insensitive'
-      };
-    } else if (filters.method?.trim()) {
+    if (filters.method?.trim()) {
       const m = filters.method.trim().toUpperCase();
-      // Coincide con inferMethod: DELETE/PUT por contenido en accion; POST = el resto
       if (m === 'DELETE') {
         (where as { accion?: { contains: string; mode: string } }).accion = {
           contains: 'DELETE',
@@ -90,7 +83,7 @@ class AuditService {
           { accion: { contains: 'PUT', mode: 'insensitive' } }
         ];
       } else {
-        // POST o GET: accion null o que no contenga DELETE ni UPDATE/PUT (igual que inferMethod)
+        // POST, GET u otro: coincide con inferMethod (no DELETE ni UPDATE/PUT en accion)
         (where as { OR?: Array<unknown> }).OR = [
           { accion: null },
           {
@@ -104,8 +97,8 @@ class AuditService {
       }
     }
     if (filters.tabla_afectada?.trim()) {
-      (where as { tabla_afectada?: { contains: string; mode: string } }).tabla_afectada = {
-        contains: filters.tabla_afectada.trim(),
+      (where as { tabla_afectada?: { equals: string; mode: string } }).tabla_afectada = {
+        equals: filters.tabla_afectada.trim(),
         mode: 'insensitive'
       };
     }

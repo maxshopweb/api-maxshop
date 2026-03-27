@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { asSingleString } from '../utils/validation.utils';
+import { parseAdminListQuery, shouldPaginateAdminList } from '../utils/adminPaginationQuery';
 import { CategoriasService } from '../services/categorias.service';
 import { 
     ICreateCategoriaDTO, 
@@ -17,6 +18,17 @@ export class CategoriasController {
 
     async getAllCategorias(req: Request, res: Response): Promise<void> {
         try {
+            if (shouldPaginateAdminList(req)) {
+                const { page, limit, busqueda } = parseAdminListQuery(req);
+                const result = await categoriasService.getCategoriasPaginated(page, limit, busqueda);
+                res.json({
+                    success: true,
+                    data: result.data,
+                    pagination: result.pagination,
+                });
+                return;
+            }
+
             const categorias = await categoriasService.getAllCategorias();
             
             const response: IApiResponse = {
@@ -139,7 +151,14 @@ export class CategoriasController {
                 return;
             }
 
-            await categoriasService.createCategoria(data);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            await categoriasService.createCategoria(data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -179,7 +198,14 @@ export class CategoriasController {
                 return;
             }
 
-            const categoriaActualizada = await categoriasService.updateCategoria(id, data);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            const categoriaActualizada = await categoriasService.updateCategoria(id, data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -219,7 +245,14 @@ export class CategoriasController {
                 return;
             }
 
-            await categoriasService.deleteCategoria(id);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            await categoriasService.deleteCategoria(id, auditContext);
 
             const response: IApiResponse = {
                 success: true,

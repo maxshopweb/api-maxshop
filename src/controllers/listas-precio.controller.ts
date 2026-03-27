@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { asSingleString } from '../utils/validation.utils';
+import { parseAdminListQuery, shouldPaginateAdminList } from '../utils/adminPaginationQuery';
 import { ListasPrecioService } from '../services/listas-precio.service';
 import { IApiResponse } from '../types';
 
@@ -10,6 +11,16 @@ export class ListasPrecioController {
     async getAll(req: Request, res: Response): Promise<void> {
         try {
             const activoOnly = req.query.activo !== 'false';
+            if (shouldPaginateAdminList(req)) {
+                const { page, limit, busqueda } = parseAdminListQuery(req);
+                const result = await listasPrecioService.getPaginated(activoOnly, page, limit, busqueda);
+                res.json({
+                    success: true,
+                    data: result.data,
+                    pagination: result.pagination,
+                });
+                return;
+            }
             const listas = await listasPrecioService.getAll(activoOnly);
             const response: IApiResponse = {
                 success: true,

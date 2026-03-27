@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ConfigTiendaService } from '../services/config-tienda.service';
+import { logServerError, toPublicErrorMessage } from '../utils/publicError';
 import { IApiResponse } from '../types/index';
 import { IUpdateConfigTiendaDTO } from '../types/config-tienda.type';
 
@@ -39,10 +40,10 @@ export class ConfigTiendaController {
       const response: IApiResponse = { success: true, data };
       res.json(response);
     } catch (error) {
-      console.error('ConfigTiendaController.getConfig:', error);
+      logServerError('ConfigTiendaController.getConfig', error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : 'Error al obtener configuración',
+        error: toPublicErrorMessage(error, 'No pudimos cargar la configuración de la tienda.'),
       });
     }
   }
@@ -61,10 +62,10 @@ export class ConfigTiendaController {
       const response: IApiResponse = { success: true, data };
       res.json(response);
     } catch (error) {
-      console.error('ConfigTiendaController.updateConfig:', error);
+      logServerError('ConfigTiendaController.updateConfig', error);
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : 'Error al actualizar configuración',
+        error: toPublicErrorMessage(error, 'No pudimos guardar la configuración. Intentá de nuevo.'),
       });
     }
   }

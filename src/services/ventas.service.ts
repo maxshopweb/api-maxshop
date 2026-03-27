@@ -85,14 +85,20 @@ export class VentasService {
             }
         }
 
-        if (estado_pago) whereClause.estado_pago = estado_pago;
         if (estado_envio) whereClause.estado_envio = estado_envio;
         if (metodo_pago) whereClause.metodo_pago = metodo_pago;
         if (tipo_venta) whereClause.tipo_venta = tipo_venta;
+
         if (!incluir_canceladas) {
-            whereClause.estado_pago = estado_pago && estado_pago !== 'cancelado'
-                ? estado_pago
-                : { not: 'cancelado' };
+            if (estado_pago === 'cancelado') {
+                whereClause.estado_pago = 'cancelado';
+            } else if (estado_pago) {
+                whereClause.estado_pago = estado_pago;
+            } else {
+                whereClause.estado_pago = { not: 'cancelado' };
+            }
+        } else if (estado_pago) {
+            whereClause.estado_pago = estado_pago;
         }
 
         // Filtros por rango de total

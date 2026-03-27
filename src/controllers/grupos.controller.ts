@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { asSingleString } from '../utils/validation.utils';
+import { parseAdminListQuery, shouldPaginateAdminList } from '../utils/adminPaginationQuery';
 import { GruposService, ICreateGrupoDTO, IUpdateGrupoDTO } from '../services/grupos.service';
 import { IApiResponse } from '../types';
 
@@ -9,6 +10,17 @@ export class GruposController {
 
     async getAll(req: Request, res: Response): Promise<void> {
         try {
+            if (shouldPaginateAdminList(req)) {
+                const { page, limit, busqueda } = parseAdminListQuery(req);
+                const result = await gruposService.getPaginated(page, limit, busqueda);
+                res.json({
+                    success: true,
+                    data: result.data,
+                    pagination: result.pagination,
+                });
+                return;
+            }
+
             const grupos = await gruposService.getAll();
             
             const response: IApiResponse = {
@@ -139,7 +151,14 @@ export class GruposController {
                 return;
             }
 
-            await gruposService.create(data);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            await gruposService.create(data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -179,7 +198,14 @@ export class GruposController {
                 return;
             }
 
-            const grupoActualizado = await gruposService.update(id, data);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            const grupoActualizado = await gruposService.update(id, data, auditContext);
 
             const response: IApiResponse = {
                 success: true,
@@ -219,7 +245,14 @@ export class GruposController {
                 return;
             }
 
-            await gruposService.delete(id);
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+            await gruposService.delete(id, auditContext);
 
             const response: IApiResponse = {
                 success: true,
