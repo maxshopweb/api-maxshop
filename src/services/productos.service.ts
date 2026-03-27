@@ -511,6 +511,12 @@ export class ProductosService {
         const esListaE = listaActiva === 'E';
         const precioManual = esListaE && rest.precio_manual != null ? Number(rest.precio_manual) : null;
         const bonificacionPorcentaje = this.normalizePorcentajeBonificacion((rest as any).bonificacion_porcentaje);
+        /** Alineado con update(): marcar si hubo precios explícitos en alta o lista E (sync no debe pisar). */
+        const precioEditadoManualCreate =
+            esListaE ||
+            [rest.precio_venta, rest.precio_especial, rest.precio_pvp, rest.precio_campanya, rest.precio_manual].some(
+                (v) => v !== undefined && v !== null
+            );
 
         const nuevoProducto = await prisma.productos.create({
             data: {
@@ -525,7 +531,7 @@ export class ProductosService {
                 precio_manual: precioManual,
                 bonificacion_porcentaje: bonificacionPorcentaje,
                 lista_precio_activa: listaActiva,
-                precio_editado_manualmente: esListaE,
+                precio_editado_manualmente: precioEditadoManualCreate,
                 stock: rest.stock ?? null,
                 stock_min: rest.stock_min ?? null,
                 codi_barras: this.truncateStr(rest.codi_barras, L.codi_barras),

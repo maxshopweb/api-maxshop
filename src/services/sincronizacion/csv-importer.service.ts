@@ -1161,9 +1161,9 @@ export class CSVImporterService {
   /**
    * Etapa 3: Actualiza solo precios en productos desde maesprec.csv.
    * No toca stock ni datos maestros. Reutiliza cargarPrecios().
-   * Actualiza precio_venta, precio_especial, precio_pvp, precio_campanya en TODOS los productos
-   * (incluidos los que tienen lista E). No toca precio_manual ni lista_precio_activa:
-   * los productos con precio manual (lista E) mantienen su precio_manual.
+   * Actualiza precio_venta, precio_especial, precio_pvp, precio_campanya solo si
+   * precio_editado_manualmente no es true (panel marcó edición manual de precios).
+   * No toca precio_manual ni lista_precio_activa.
    */
   async actualizarSoloPrecios(csvDir: string): Promise<{ actualizados: number }> {
     const csvPath = path.join(csvDir, 'maesprec.csv');
@@ -1177,7 +1177,10 @@ export class CSVImporterService {
       const codi_arti_truncado = codiarti.trim().substring(0, 10);
       try {
         const result = await prisma.productos.updateMany({
-          where: { codi_arti: codi_arti_truncado },
+          where: {
+            codi_arti: codi_arti_truncado,
+            OR: [{ precio_editado_manualmente: false }, { precio_editado_manualmente: null }],
+          },
           data: {
             precio_venta: precios.precioVenta ?? null,
             precio_especial: precios.precioEspecial ?? null,
@@ -1591,11 +1594,11 @@ export class CSVImporterService {
       try {
         const existente = await prisma.productos.findUnique({
           where: { codi_arti: producto.codi_arti },
-          select: { img_principal: true },
+          select: { img_principal: true, precio_editado_manualmente: true },
         });
 
-        // Actualizar siempre las listas V,O,P,Q desde CSV. No tocamos precio_manual ni lista_precio_activa:
-        // los productos con lista E (precio manual) mantienen su precio_manual.
+        // Listas V,O,P,Q desde CSV salvo si el panel marcó edición manual de precios.
+        // No tocamos precio_manual ni lista_precio_activa (lista E u otras elecciones del usuario).
         const updateData: Record<string, unknown> = {
           codi_grupo: producto.codi_grupo,
           codi_categoria: producto.codi_categoria,
@@ -1662,6 +1665,13 @@ export class CSVImporterService {
           } else {
             stats.sinPath++;
           }
+        }
+
+        if (existente?.precio_editado_manualmente === true) {
+          delete updateData.precio_venta;
+          delete updateData.precio_especial;
+          delete updateData.precio_pvp;
+          delete updateData.precio_campanya;
         }
 
         await prisma.productos.upsert({
