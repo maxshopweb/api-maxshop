@@ -10,6 +10,7 @@ import { direccionesService } from './direcciones.service';
 import { mercadoPagoService } from './mercado-pago.service';
 import { ConfigTiendaService } from './config-tienda.service';
 import { ProductosService } from './productos.service';
+import { getAndreaniModoManual } from '../config/andreani.config';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
@@ -904,7 +905,7 @@ export class VentasService {
                     // Determinar si usar auto_return
                     // En producción: usar auto_return si es HTTPS
                     // En desarrollo/sandbox: NO usar auto_return para evitar problemas
-                    const isProduction = process.env.NODE_ENV === 'production' && process.env.MERCADOPAGO_ENV === 'production';
+                    const isProduction = mercadoPagoService.getMode() === 'production';
                     const isLocalhost = successUrl.includes('localhost') || successUrl.includes('127.0.0.1');
                     const isHttp = successUrl.startsWith('http://');
                     const shouldUseAutoReturn = isProduction && !isLocalhost && !isHttp;
@@ -938,8 +939,22 @@ export class VentasService {
                     console.log(`🔗 [VentasService] URL de pago: ${mercadoPagoPreferenceUrl}`);
                 } catch (error: any) {
                     console.error(`❌ [VentasService] Error al crear preferencia de Mercado Pago:`, error);
-                    // No lanzar error, pero loguear. La venta ya está creada.
-                    // El frontend puede manejar la ausencia de URL mostrando un error.
+                    try {
+                        await prisma.venta.update({
+                            where: { id_venta: venta.id_venta },
+                            data: {
+                                estado_pago: 'cancelado',
+                                observaciones: `${venta.observaciones || ''}\n[checkout] Venta cancelada por error al crear preferencia MP`,
+                                actualizado_en: new Date(),
+                            },
+                        });
+                    } catch (cleanupError) {
+                        console.error(`❌ [VentasService] Error al cancelar venta #${venta.id_venta} tras falla de MP:`, cleanupError);
+                    }
+
+                    const mpError = new Error('No se pudo iniciar el pago con Mercado Pago. Intenta nuevamente en unos minutos.');
+                    (mpError as any).statusCode = 502;
+                    throw mpError;
                 }
             }
 
@@ -1393,6 +1408,13 @@ export class VentasService {
         const payload: { cod_seguimiento?: string | null; empresa_envio?: string | null } = {};
         if (data.cod_seguimiento !== undefined) payload.cod_seguimiento = data.cod_seguimiento || null;
         if (data.empresa_envio !== undefined) payload.empresa_envio = data.empresa_envio || null;
+        if (
+            payload.cod_seguimiento &&
+            (payload.empresa_envio === undefined || payload.empresa_envio === null || payload.empresa_envio === '')
+            && getAndreaniModoManual()
+        ) {
+            payload.empresa_envio = 'andreani';
+        }
         if (Object.keys(payload).length === 0) return venta;
 
         const envioExistente = venta.envio;

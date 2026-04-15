@@ -18,6 +18,7 @@ import { auditService } from './audit.service';
 import ftpService from './ftp.service';
 import mailService from '../mail/mail.service';
 import { IVenta, IVentaPendienteFactura } from '../types';
+import { ftpPathsConfig } from '../config/ftp-paths.config';
 
 export type FacturaSyncAuditContext = {
     userId: string;
@@ -40,7 +41,7 @@ export interface SyncFacturasResult {
 }
 
 export class FacturaSyncService {
-    private readonly FTP_FACTURAS_PATH = '/Tekno/Facturas';
+    private readonly FTP_FACTURAS_PATH = ftpPathsConfig.facturas;
     // Construir ruta relativa a process.cwd() (raíz del proyecto backend)
     // Si estamos en src/, subimos un nivel, si estamos en dist/, subimos un nivel también
     private readonly TEMP_DIR = (() => {

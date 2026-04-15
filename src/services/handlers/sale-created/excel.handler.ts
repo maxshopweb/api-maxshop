@@ -26,6 +26,7 @@ import { IVenta } from '../../../types';
 import * as path from 'path';
 import * as fs from 'fs';
 import { prisma } from '../../../index';
+import { ftpPathsConfig } from '../../../config/ftp-paths.config';
 
 export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventContext> {
     name = 'excel-handler';
@@ -34,7 +35,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
     priority = 30; // Ejecutar después de Andreani
     enabled = true;
 
-    private readonly REMOTE_PATH = '/Tekno/Pedido/Ventas.xlsx';
+    private readonly REMOTE_PATH = ftpPathsConfig.ventasExcel;
     private readonly TEMP_DIR = path.join(process.cwd(), 'backend', 'data', 'temp');
 
     async handle(payload: SaleCreatedPayload, context: EventContext): Promise<void> {

@@ -22,29 +22,6 @@ import {
 } from './andreani.types';
 import mailService from '../../mail';
 
-/** Respuesta de ejemplo para modo mock (doc ANDREANI_INTEGRATION.md) */
-const MOCK_PRE_ENVIO_RESPONSE: IOrdenEnvioResponse = {
-    estado: 'Solicitada',
-    tipo: 'B2C',
-    sucursalDeDistribucion: { nomenclatura: 'COR', descripcion: 'CORDOBA - RECANALIZACION', id: '245' },
-    sucursalDeRendicion: { nomenclatura: 'PSD', descripcion: 'PROCESAMIENTO CIT POSTAL', id: '1' },
-    fechaCreacion: '2026-01-12T15:55:51-03:00',
-    numeroDePermisionaria: 'RNPSP Nº 586',
-    descripcionServicio: 'LI CAMBIO',
-    bultos: [
-        {
-            numeroDeBulto: '1',
-            numeroDeEnvio: '360000102000579',
-            totalizador: '1/1',
-            linking: [
-                { meta: 'Etiqueta', contenido: 'https://apisqa.andreani.com/v2/ordenes-de-envio/API0000000479719/etiquetas?bulto=1' },
-            ],
-        },
-    ],
-    agrupadorDeBultos: 'API0000000479719',
-    etiquetasPorAgrupador: 'https://apisqa.andreani.com/v2/ordenes-de-envio/API0000000479719/etiquetas',
-};
-
 export class AndreaniPreEnvioService {
     /**
      * Crea un pre-envío en Andreani
@@ -136,45 +113,11 @@ export class AndreaniPreEnvioService {
                 );
             }
 
-            // Modo mock (ANDREANI_MOCK=true): no llamar a la API, devolver ejemplo y persistir en BD
-            if (andreaniConfig.useMock) {
-                const preEnvioCreado = MOCK_PRE_ENVIO_RESPONSE;
-                const numeroEnvio = preEnvioCreado.bultos?.[0]?.numeroDeEnvio || null;
-                console.log(`📦 [Andreani Pre-envío] MOCK: venta #${idVenta} - usando respuesta de ejemplo (tracking: ${numeroEnvio})`);
-
-                const envio = await prisma.envios.create({
-                    data: {
-                        id_venta: idVenta,
-                        empresa_envio: 'andreani',
-                        cod_seguimiento: numeroEnvio,
-                        estado_envio: this.mapearEstadoPreEnvio(preEnvioCreado.estado),
-                        costo_envio: null,
-                        fecha_envio: new Date(),
-                        observaciones: `[MOCK] Pre-envío Andreani. Estado: ${preEnvioCreado.estado}. Agrupador: ${preEnvioCreado.agrupadorDeBultos}.`,
-                    },
-                });
-
-                await prisma.venta.update({
-                    where: { id_venta: idVenta },
-                    data: {
-                        id_envio: envio.id_envio,
-                        estado_envio: this.mapearEstadoPreEnvio(preEnvioCreado.estado),
-                    },
-                });
-
-                if (numeroEnvio && venta.cliente?.usuarios?.email) {
-                    mailService.sendShippingSent({
-                        orderId: idVenta,
-                        trackingCode: numeroEnvio,
-                        carrier: 'Andreani',
-                        cliente: {
-                            email: venta.cliente.usuarios.email,
-                            nombre: venta.cliente.usuarios.nombre || 'Cliente',
-                        },
-                    }).catch((err) => console.error(`❌ [Andreani Pre-envío] MOCK: error al enviar email:`, err));
-                }
-
-                return preEnvioCreado;
+            // Modo manual: integración desactivada temporalmente.
+            if (andreaniConfig.andreaniModoManual) {
+                throw new Error(
+                    'Integración de Andreani en modo manual. El pre-envío debe gestionarse externamente.'
+                );
             }
 
             // 4. Preparar datos del pre-envío

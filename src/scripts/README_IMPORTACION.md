@@ -115,7 +115,4 @@ Cada tabla de referencia tiene su `id` autoincrement para ordenamiento interno, 
 - Usa `upsert` para evitar duplicados (basado en `codi_arti`)
 - El cálculo de IVA se hace automáticamente basado en el porcentaje del impuesto
 - El stock se suma de todos los depósitos en MAESSTOK.csv
-
-### Variable de entorno para pruebas (stock)Si MAESSTOK aún viene en 0 y quieres probar con stock fijo, en el `.env` del backend puedes definir:```env
-IMPORT_STOCK_OVERRIDE=100
-```En la importación/sincronización, todos los productos usarán ese valor como stock. **Quita o comenta esta variable cuando tengas el archivo MAESSTOK final** para que se use el stock real del CSV.
+- El stock final siempre se toma de MAESSTOK.csv (fuente única); si un artículo no trae dato de stock, se guarda/expone como `0`.
