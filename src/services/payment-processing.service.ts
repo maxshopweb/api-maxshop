@@ -5,7 +5,7 @@ import { prisma } from '../index';
 import cacheService from './cache.service';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
 import { handlerExecutorService } from './handlers/handler-executor.service';
-import { assertClienteDireccionCompletaParaEnvio } from './venta-envio.validation';
+import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from './venta-envio.validation';
 
 /**
  * Servicio centralizado para procesar confirmaciones de pago
@@ -255,6 +255,7 @@ export class PaymentProcessingService {
                 // Convertir null a undefined para cumplir con el tipo esperado
                 trackingCode: trackingCode || undefined,
                 carrier: trackingCode ? 'Andreani' : undefined,
+                esRetiroEnTienda: isVentaRetiroEnTienda(venta.observaciones),
             };
 
             // Enviar email de PAGO CONFIRMADO (no pedido confirmado)

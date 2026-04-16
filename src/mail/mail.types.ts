@@ -89,6 +89,8 @@ export interface OrderEventData extends MailEventData {
         apellido?: string;
         email?: string;
     };
+    /** Retiro en tienda (observaciones); muestra texto en templates de pedido */
+    esRetiroEnTienda?: boolean;
 }
 
 /**

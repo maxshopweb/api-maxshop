@@ -103,6 +103,7 @@ export class MailService {
             };
             trackingCode?: string; // Número de seguimiento del pre-envío
             carrier?: string; // Transportista (ej: 'Andreani')
+            esRetiroEnTienda?: boolean;
         }
     ): Promise<BrevoResponse> {
         return this.send({
@@ -123,6 +124,7 @@ export class MailService {
                 cliente: orderData.cliente,
                 trackingCode: orderData.trackingCode,
                 carrier: orderData.carrier,
+                esRetiroEnTienda: orderData.esRetiroEnTienda,
             },
             tags: ['pedido', 'confirmacion'],
         });
@@ -143,6 +145,7 @@ export class MailService {
                 nombre?: string;
                 apellido?: string;
             };
+            esRetiroEnTienda?: boolean;
         }
     ): Promise<BrevoResponse> {
         return this.send({
@@ -158,6 +161,7 @@ export class MailService {
                 totalFormatted: orderData.totalFormatted,
                 fecha: orderData.fecha,
                 cliente: orderData.cliente,
+                esRetiroEnTienda: orderData.esRetiroEnTienda,
             },
             tags: ['pedido', 'pendiente'],
         });

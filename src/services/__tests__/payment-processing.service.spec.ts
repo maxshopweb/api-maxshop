@@ -285,6 +285,7 @@ describe('PaymentProcessingService.confirmPayment', () => {
       // Retiro: no hay envío, por tanto no hay tracking
       expect(call.trackingCode).toBeUndefined();
       expect(call.carrier).toBeUndefined();
+      expect(call.esRetiroEnTienda).toBe(true);
     });
   });
 });

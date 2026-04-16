@@ -70,6 +70,21 @@ export class ProductosService {
         return pv * (1 + porcentaje / 100);
     }
 
+    /**
+     * Precio neto según lista activa (sin IVA). Misma regla que `precio_sin_iva` en catálogo.
+     * Usado por VentasService (fuente de verdad en servidor).
+     */
+    getPrecioSinIvaListaActiva(producto: any): number | null {
+        return this.getPrecioListaActiva(producto);
+    }
+
+    /**
+     * Precio unitario final con IVA — misma regla que `precio` en catálogo.
+     */
+    getPrecioFinalConIva(producto: any): number | null {
+        return this.calcularPrecioConIva(producto);
+    }
+
     /** Map codi_lista -> lista para enriquecer producto con lista_activa (sin N+1) */
     private async getListasMap(): Promise<Map<string, IListaPrecio>> {
         const listas = await prisma.lista_precio.findMany({

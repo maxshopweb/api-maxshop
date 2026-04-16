@@ -358,7 +358,7 @@ export class VentasController {
                 if (detalle.id_prod === undefined || detalle.id_prod === null) {
                     res.status(400).json({
                         success: false,
-                        error: 'Todos los detalles deben tener id_prod, cantidad y precio_unitario'
+                        error: 'Todos los detalles deben tener id_prod y cantidad válidos'
                     });
                     return;
                 }
@@ -366,18 +366,11 @@ export class VentasController {
                 if (detalle.cantidad === undefined || detalle.cantidad === null || detalle.cantidad <= 0) {
                     res.status(400).json({
                         success: false,
-                        error: 'Todos los detalles deben tener id_prod, cantidad y precio_unitario'
+                        error: 'Todos los detalles deben tener id_prod y cantidad válidos'
                     });
                     return;
                 }
-                // Validar que precio_unitario exista (puede ser 0 para productos gratuitos)
-                if (detalle.precio_unitario === undefined || detalle.precio_unitario === null) {
-                    res.status(400).json({
-                        success: false,
-                        error: 'Todos los detalles deben tener id_prod, cantidad y precio_unitario'
-                    });
-                    return;
-                }
+                // Precio: en checkout online el servidor calcula desde el catálogo (precio_unitario opcional).
             }
 
             const venta = await ventasService.createFromCheckout(data, idUsuario);

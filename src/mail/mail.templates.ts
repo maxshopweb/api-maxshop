@@ -81,6 +81,10 @@ function formatCurrency(amount: number | undefined): string {
     return `$${amount.toFixed(2)}`;
 }
 
+/** Mismo texto que checkout Step3ShippingData (retiro en tienda) */
+const MENSAJE_RETIRO_EN_TIENDA =
+    'Retirarás tu pedido en nuestro local sin costo. Tu pedido estará disponible para retiro entre 24 y 48 horas hábiles.';
+
 /**
  * Genera el template HTML según el evento y datos
  */
@@ -125,6 +129,11 @@ function getOrderPendingTemplate(data: OrderEventData): MailTemplate {
     const orderId = data.orderId || data.orderNumber || 'N/A';
     const fecha = formatDate(data.fecha);
     const total = data.totalFormatted || formatCurrency(data.total);
+    const retiroHtml = data.esRetiroEnTienda
+        ? `<p style="color: #333333; font-size: 14px; line-height: 1.6; margin: 20px 0 0 0;">
+            ${MENSAJE_RETIRO_EN_TIENDA}
+        </p>`
+        : '';
 
     const content = `
         <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
@@ -142,6 +151,8 @@ function getOrderPendingTemplate(data: OrderEventData): MailTemplate {
                 <strong>Total:</strong> ${total}
             </p>
         </div>
+        
+        ${retiroHtml}
         
         <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
             Si tienes alguna pregunta, no dudes en contactarnos.<br>
@@ -194,6 +205,12 @@ function getOrderConfirmedTemplate(data: OrderEventData): MailTemplate {
         ? 'Tu pedido fue reservado exitosamente. Realiza el pago según las instrucciones que recibirás.'
         : 'Tu pedido ha sido confirmado y está siendo procesado.';
 
+    const retiroHtml = data.esRetiroEnTienda
+        ? `<p style="color: #333333; font-size: 14px; line-height: 1.6; margin: 20px 0 0 0;">
+            ${MENSAJE_RETIRO_EN_TIENDA}
+        </p>`
+        : '';
+
     const content = `
         <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
             ¡Hola ${userName}!
@@ -212,6 +229,8 @@ function getOrderConfirmedTemplate(data: OrderEventData): MailTemplate {
                 ${trackingCode ? `<br><strong>Código de Seguimiento (${carrier}):</strong> ${trackingCode}` : ''}
             </p>
         </div>
+        
+        ${retiroHtml}
         
         ${trackingCode ? `
         <div style="background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 15px; margin: 20px 0;">
