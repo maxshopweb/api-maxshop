@@ -10,6 +10,7 @@ import { direccionesService } from './direcciones.service';
 import { mercadoPagoService } from './mercado-pago.service';
 import { ConfigTiendaService } from './config-tienda.service';
 import { ProductosService } from './productos.service';
+import { assertClienteDireccionCompletaParaEnvio } from './venta-envio.validation';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
@@ -420,41 +421,9 @@ export class VentasService {
         return Buffer.from(csv, 'utf-8');
     }
 
-    /**
-     * Ventas online: valida stock real en BD (misma regla que confirmación de pago).
-     * Agrupa cantidades por id_prod por si hubiera líneas duplicadas.
-     */
-    private async assertDetallesStockDisponible(detalles: ICreateVentaDTO['detalles']): Promise<void> {
-        const cantidadPorId = new Map<number, number>();
-        for (const d of detalles) {
-            const id = d.id_prod;
-            const c = Number(d.cantidad);
-            if (id == null || !Number.isFinite(c) || c <= 0) {
-                continue;
-            }
-            cantidadPorId.set(id, (cantidadPorId.get(id) ?? 0) + c);
-        }
-        for (const [id_prod, cantidadRequerida] of cantidadPorId) {
-            const producto = await prisma.productos.findUnique({
-                where: { id_prod },
-                select: { stock: true, nombre: true },
-            });
-            if (!producto) {
-                throw new Error(`Producto ${id_prod} no encontrado`);
-            }
-            const stockActual = producto.stock != null ? Number(producto.stock) : 0;
-            if (stockActual < cantidadRequerida) {
-                const nombre = producto.nombre?.trim() || `Producto #${id_prod}`;
-                throw new Error(
-                    `Stock insuficiente para "${nombre}". Disponible: ${stockActual}, solicitado: ${cantidadRequerida}`
-                );
-            }
-        }
-    }
-
     async create(data: ICreateVentaDTO, idUsuario?: string): Promise<IVenta> {
         if (data.tipo_venta === 'online') {
-            await this.assertDetallesStockDisponible(data.detalles);
+            await productosService.assertStockDisponibleParaLineas(data.detalles);
         }
 
         // Calcular totales y guardar bonificación porcentual por línea
@@ -1430,6 +1399,17 @@ export class VentasService {
         if (data.cod_seguimiento !== undefined) payload.cod_seguimiento = data.cod_seguimiento || null;
         if (data.empresa_envio !== undefined) payload.empresa_envio = data.empresa_envio || null;
         if (Object.keys(payload).length === 0) return venta;
+
+        const tieneDatosSeguimiento = Boolean(
+            (payload.cod_seguimiento && String(payload.cod_seguimiento).trim()) ||
+            (payload.empresa_envio && String(payload.empresa_envio).trim())
+        );
+        if (tieneDatosSeguimiento) {
+            assertClienteDireccionCompletaParaEnvio(
+                venta,
+                `No se puede guardar el seguimiento (venta #${idVenta})`
+            );
+        }
 
         const envioExistente = venta.envio;
         if (envioExistente?.id_envio) {

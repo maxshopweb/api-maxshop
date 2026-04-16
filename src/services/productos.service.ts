@@ -897,6 +897,46 @@ export class ProductosService {
         return count > 0;
     }
 
+    /**
+     * Valida stock en BD (lectura fresca, sin cache de catálogo). Agrupa por id_prod.
+     * Usado en creación de ventas online y en confirmación de pago.
+     */
+    async assertStockDisponibleParaLineas(
+        lineas: Array<{ id_prod: number; cantidad: number }>
+    ): Promise<void> {
+        const cantidadPorId = new Map<number, number>();
+        for (const d of lineas) {
+            const id = d.id_prod;
+            const c = Number(d.cantidad);
+            if (id == null || !Number.isFinite(c) || c <= 0) {
+                continue;
+            }
+            cantidadPorId.set(id, (cantidadPorId.get(id) ?? 0) + c);
+        }
+        if (cantidadPorId.size === 0) {
+            return;
+        }
+        const ids = [...cantidadPorId.keys()];
+        const productos = await prisma.productos.findMany({
+            where: { id_prod: { in: ids } },
+            select: { id_prod: true, stock: true, nombre: true },
+        });
+        const byId = new Map(productos.map((p) => [p.id_prod, p]));
+        for (const [id_prod, cantidadRequerida] of cantidadPorId) {
+            const producto = byId.get(id_prod);
+            if (!producto) {
+                throw new Error(`Producto ${id_prod} no encontrado`);
+            }
+            const stockActual = producto.stock != null ? Number(producto.stock) : 0;
+            if (stockActual < cantidadRequerida) {
+                const nombre = producto.nombre?.trim() || `Producto #${id_prod}`;
+                throw new Error(
+                    `Stock insuficiente para "${nombre}". Disponible: ${stockActual}, solicitado: ${cantidadRequerida}`
+                );
+            }
+        }
+    }
+
     async updateStock(id: number, cantidad: number, auditContext?: ProductoAuditContext): Promise<IProductos> {
         const producto = await prisma.productos.findFirst({
             where: {
