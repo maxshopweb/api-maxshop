@@ -111,11 +111,12 @@ export class VentasController {
                 return;
             }
 
-            await ventasService.create(data, idUsuario);
+            const venta = await ventasService.create(data, idUsuario);
 
-            const response: IApiResponse = {
+            const response: IApiResponse<IVenta> = {
                 success: true,
-                message: 'Venta creada exitosamente'
+                message: 'Venta creada exitosamente',
+                data: venta,
             };
 
             res.status(201).json(response);
