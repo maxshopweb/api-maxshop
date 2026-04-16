@@ -352,7 +352,7 @@ export class VentasController {
                 return;
             }
 
-            // Validar que los productos existan y tengan stock
+            // Validar forma de los detalles (stock real: VentasService.create + tipo_venta online)
             for (const detalle of data.detalles) {
                 // Validar que id_prod exista y no sea null/undefined
                 if (detalle.id_prod === undefined || detalle.id_prod === null) {
