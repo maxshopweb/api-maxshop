@@ -11,6 +11,7 @@ import { mercadoPagoService } from './mercado-pago.service';
 import { ConfigTiendaService } from './config-tienda.service';
 import { ProductosService } from './productos.service';
 import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from './venta-envio.validation';
+import { getAndreaniModoManual } from '../config/andreani.config';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
