@@ -5,6 +5,7 @@ import { prisma } from '../index';
 import cacheService from './cache.service';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
 import { handlerExecutorService } from './handlers/handler-executor.service';
+import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from './venta-envio.validation';
 
 /**
  * Servicio centralizado para procesar confirmaciones de pago
@@ -70,6 +71,11 @@ export class PaymentProcessingService {
                 throw new Error(`Solo se puede confirmar una venta en estado pendiente o vencido. Estado actual: ${venta.estado_pago}`);
             }
 
+            assertClienteDireccionCompletaParaEnvio(
+                venta,
+                `No se puede confirmar el pago (venta #${idVenta})`
+            );
+
             // 3. Validar stock antes de descontar
             await this.validateStock(venta);
 
@@ -133,27 +139,22 @@ export class PaymentProcessingService {
     }
 
     /**
-     * Valida que haya stock suficiente para todos los productos
+     * Stock desde BD (misma regla que VentasService.create online); no usa producto embebido en getById.
      */
     private async validateStock(venta: IVenta): Promise<void> {
         if (!venta.detalles || venta.detalles.length === 0) {
             throw new Error('La venta no tiene detalles');
         }
 
-        for (const detalle of venta.detalles) {
-            if (!detalle.producto) {
-                throw new Error(`Producto no encontrado en detalle ${detalle.id_detalle}`);
+        const lineas: Array<{ id_prod: number; cantidad: number }> = [];
+        for (const d of venta.detalles) {
+            if (d.id_prod == null) {
+                throw new Error(`Producto no encontrado en detalle ${d.id_detalle ?? 'sin id'}`);
             }
-            const stockActual = detalle.producto.stock ? Number(detalle.producto.stock) : 0;
-            const cantidadRequerida = detalle.cantidad || 0;
-
-            if (stockActual < cantidadRequerida) {
-                throw new Error(
-                    `Stock insuficiente para producto "${detalle.producto.nombre}". ` +
-                    `Stock disponible: ${stockActual}, Cantidad requerida: ${cantidadRequerida}`
-                );
-            }
+            lineas.push({ id_prod: d.id_prod, cantidad: d.cantidad ?? 0 });
         }
+
+        await this.productosService.assertStockDisponibleParaLineas(lineas);
     }
 
     /**
@@ -254,6 +255,7 @@ export class PaymentProcessingService {
                 // Convertir null a undefined para cumplir con el tipo esperado
                 trackingCode: trackingCode || undefined,
                 carrier: trackingCode ? 'Andreani' : undefined,
+                esRetiroEnTienda: isVentaRetiroEnTienda(venta.observaciones),
             };
 
             // Enviar email de PAGO CONFIRMADO (no pedido confirmado)

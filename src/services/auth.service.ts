@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import type { Prisma } from '@prisma/client';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { prisma } from '../index';
 import { firebaseAdminAuth } from '../lib/firebaseAdmin';
@@ -93,6 +94,132 @@ export class AuthService {
       email: sanitizeString(decoded.email ?? null),
       telefono: parseTelefono(decoded.phone_number ?? null)
     };
+  }
+
+  /**
+   * Invitado (checkout) guardado con UID anónimo + email: al registrarse con email/contraseña
+   * Firebase crea otro UID. Migramos la fila y FKs al nuevo UID en lugar de rechazar por email duplicado.
+   */
+  private async promoteGuestUsuarioToNewUid(params: {
+    guestRow: Prisma.usuariosGetPayload<{ include: { roles: true } }>;
+    firebaseUid: string;
+    dataToPersist: {
+      email: string;
+      nombre: string | null;
+      apellido: string | null;
+      username: string | null;
+      telefono: string | null;
+      nacimiento: Date | null;
+      id_rol?: number;
+      ultimo_login: Date;
+      login_ip: string | null;
+      actualizado_en: Date;
+    };
+  }): Promise<Prisma.usuariosGetPayload<{ include: { roles: true } }>> {
+    const { guestRow, firebaseUid, dataToPersist } = params;
+    const oldUid = guestRow.id_usuario;
+    const newUid = firebaseUid;
+
+    if (oldUid === newUid) {
+      return prisma.usuarios.findUniqueOrThrow({
+        where: { id_usuario: oldUid },
+        include: { roles: true }
+      });
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const clash = await tx.usuarios.findUnique({ where: { id_usuario: newUid } });
+      if (clash) {
+        throw new Error('Conflicto de cuenta. Iniciá sesión o contactá soporte.');
+      }
+
+      await tx.usuarios.update({
+        where: { id_usuario: oldUid },
+        data: { email: null }
+      });
+
+      await tx.usuarios.create({
+        data: {
+          id_usuario: newUid,
+          email: dataToPersist.email,
+          nombre: dataToPersist.nombre,
+          apellido: dataToPersist.apellido,
+          username: dataToPersist.username,
+          telefono: dataToPersist.telefono,
+          nacimiento: dataToPersist.nacimiento,
+          id_rol: dataToPersist.id_rol ?? undefined,
+          estado: 1,
+          es_anonimo: false,
+          guest_device_id: null,
+          email_no_verificado: true,
+          creado_en: guestRow.creado_en ?? new Date(),
+          ultimo_login: dataToPersist.ultimo_login,
+          login_ip: dataToPersist.login_ip,
+          actualizado_en: dataToPersist.actualizado_en,
+          activo: guestRow.activo ?? true,
+          img: guestRow.img,
+          tipo_documento: guestRow.tipo_documento,
+          numero_documento: guestRow.numero_documento
+        },
+        include: { roles: true }
+      });
+
+      await tx.venta.updateMany({
+        where: { id_usuario: oldUid },
+        data: { id_usuario: newUid }
+      });
+
+      await tx.direcciones.updateMany({
+        where: { id_usuario: oldUid },
+        data: { id_usuario: newUid }
+      });
+
+      await tx.auditoria.updateMany({
+        where: { id_usuario: oldUid },
+        data: { id_usuario: newUid }
+      });
+
+      const ventasWithClient = await tx.venta.findMany({
+        where: { id_cliente: oldUid },
+        select: { id_venta: true }
+      });
+      for (const v of ventasWithClient) {
+        await tx.venta.update({
+          where: { id_venta: v.id_venta },
+          data: { id_cliente: null }
+        });
+      }
+
+      const clienteRow = await tx.cliente.findUnique({ where: { id_usuario: oldUid } });
+      if (clienteRow) {
+        await tx.cliente.update({
+          where: { id_usuario: oldUid },
+          data: { id_usuario: newUid }
+        });
+      }
+
+      for (const v of ventasWithClient) {
+        await tx.venta.update({
+          where: { id_venta: v.id_venta },
+          data: { id_cliente: newUid }
+        });
+      }
+
+      const adminRow = await tx.admin.findUnique({ where: { id_usuario: oldUid } });
+      if (adminRow) {
+        await tx.admin.update({
+          where: { id_usuario: oldUid },
+          data: { id_usuario: newUid }
+        });
+      }
+
+      await tx.usuarios.delete({ where: { id_usuario: oldUid } });
+
+      return tx.usuarios.findUniqueOrThrow({
+        where: { id_usuario: newUid },
+        include: { roles: true }
+      });
+    });
   }
 
   async loginWithFirebaseToken(input: LoginWithTokenInput): Promise<AuthOperationResult> {
@@ -327,15 +454,9 @@ export class AuthService {
       }
     });
 
-    // Si el usuario ya existe por email (pero no por UID), significa que el email ya está registrado
-    // Esto es importante para evitar duplicados cuando se registra con Google
-    if (userRecord && userRecord.id_usuario !== firebaseUid && userRecord.email === email) {
-      throw new Error('Este email ya está registrado. Por favor, inicia sesión en su lugar.');
-    }
+    const loginIp = sanitizeString(input.ip ?? null) ?? (userRecord ? this.mapUser(userRecord).loginIp : null);
 
-    const previousUser = userRecord ? this.mapUser(userRecord) : null;
-    const loginIp = sanitizeString(input.ip ?? null) ?? previousUser?.loginIp ?? null;
-    const dataToPersist = {
+    const dataToPersistBase = {
       email,
       nombre,
       apellido,
@@ -347,6 +468,48 @@ export class AuthService {
       login_ip: loginIp,
       actualizado_en: new Date()
     };
+
+    // Mismo email pero otro UID: cuenta real duplicada, o invitado previo (checkout) a promocionar
+    if (userRecord && userRecord.id_usuario !== firebaseUid && userRecord.email === email) {
+      if (userRecord.es_anonimo !== true) {
+        throw new Error('Este email ya está registrado. Por favor, inicia sesión en su lugar.');
+      }
+
+      const previousUser = this.mapUser(userRecord);
+      userRecord = await this.promoteGuestUsuarioToNewUid({
+        guestRow: userRecord,
+        firebaseUid,
+        dataToPersist: dataToPersistBase
+      });
+
+      const mappedUser = this.mapUser({
+        ...userRecord,
+        roles: userRecord.roles ?? (roleName ? { nombre: roleName } : null)
+      });
+      const processingTimeGuest = performance.now() - start;
+
+      await auditService.record({
+        action: 'AUTH_GUEST_PROMOTED_REGISTER',
+        description: `Invitado promovido a registro con email ${mappedUser.email} (UID ${previousUser.id} → ${firebaseUid})`,
+        previousData: previousUser,
+        currentData: mappedUser,
+        userAgent: input.userAgent ?? null,
+        endpoint: input.endpoint ?? null,
+        status: 'SUCCESS',
+        userId: userRecord.id_usuario,
+        processingTimeMs: processingTimeGuest
+      });
+
+      return {
+        user: mappedUser,
+        created: false,
+        roleId: userRecord.id_rol ?? null,
+        estado: userRecord.estado ?? null
+      };
+    }
+
+    const previousUser = userRecord ? this.mapUser(userRecord) : null;
+    const dataToPersist = dataToPersistBase;
 
     const idUsuario = userRecord?.id_usuario ?? firebaseUid;
 

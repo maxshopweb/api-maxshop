@@ -513,12 +513,19 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 BY: pagoMP?.installment_amount != null ? Number(pagoMP.installment_amount) : null,   // Monto por cuota
             }) as VentaExcelRow;
 
-        // Helpers para columnas O, P, Q (solo filas de artículo): precio neto, IVA monto, % descuento
-        const precioNetoLinea = (d: any): number => (d.sub_total != null ? Number(d.sub_total) : 0);
-        const ivaLinea = (d: any, prod: any): number => {
-            const neto = precioNetoLinea(d);
+        // Helpers para columnas O, P, Q: sub_total y precio_unitario son montos finales con IVA incluido.
+        const montoFinalLinea = (d: any): number => (d.sub_total != null ? Number(d.sub_total) : 0);
+        const netoLineaDesdeFinal = (d: any, prod: any): number => {
+            const bruto = montoFinalLinea(d);
             const pct = prod?.iva?.porcentaje != null ? Number(prod.iva.porcentaje) : 0;
-            return Math.round(neto * (pct / 100) * 100) / 100;
+            const factor = 1 + pct / 100;
+            if (factor <= 0 || !Number.isFinite(bruto)) return 0;
+            return Math.round((bruto / factor) * 100) / 100;
+        };
+        const ivaLinea = (d: any, prod: any): number => {
+            const bruto = montoFinalLinea(d);
+            const neto = netoLineaDesdeFinal(d, prod);
+            return Math.round((bruto - neto) * 100) / 100;
         };
         const porcentajeDescuentoLinea = (d: any): number => {
             const base = (d.precio_unitario != null ? Number(d.precio_unitario) : 0) * (d.cantidad != null ? Number(d.cantidad) : 0);
@@ -535,7 +542,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // B
                 AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1, // F (cantidad, número)
                 AN: producto?.codi_arti || '', // N: solo SKU (codi_arti)
-                AO: precioNetoLinea(detalle), // O: precio neto del artículo (sin IVA)
+                AO: netoLineaDesdeFinal(detalle, producto), // O: neto del artículo (sin IVA)
                 AP: ivaLinea(detalle, producto), // P: IVA del artículo (monto)
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0, // R (número)
@@ -557,7 +564,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AG: detalle.sub_total != null ? Number(detalle.sub_total) : 0,
                 AL: calcularEstado(detalle, totalDetalles),
                 AN: producto?.codi_arti || '', // N: solo SKU (codi_arti)
-                AO: precioNetoLinea(detalle), // O: precio neto del artículo (sin IVA)
+                AO: netoLineaDesdeFinal(detalle, producto), // O: neto del artículo (sin IVA)
                 AP: ivaLinea(detalle, producto), // P: IVA del artículo (monto)
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0,

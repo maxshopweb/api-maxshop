@@ -408,7 +408,8 @@ export interface ICreateVentaDTO {
 export interface IVentaDetalleDTO {
     id_prod: number;
     cantidad: number;
-    precio_unitario: number;
+    /** Ventas online: se ignora; el precio final se toma del catálogo. Presencial/otro: precio final unitario (con IVA). */
+    precio_unitario?: number;
     descuento_aplicado?: number;
     evento_aplicado?: number;
     /** Bonificación porcentual de la línea (0-100). Si no se envía, se usa la del producto. */

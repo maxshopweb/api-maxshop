@@ -10,10 +10,15 @@ import { direccionesService } from './direcciones.service';
 import { mercadoPagoService } from './mercado-pago.service';
 import { ConfigTiendaService } from './config-tienda.service';
 import { ProductosService } from './productos.service';
-import { getAndreaniModoManual } from '../config/andreani.config';
+import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from './venta-envio.validation';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
+
+function roundMoney(n: number): number {
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n * 100) / 100;
+}
 
 export class VentasService {
     private TTL_VENTA = 3600; // 1 hora
@@ -422,16 +427,39 @@ export class VentasService {
     }
 
     async create(data: ICreateVentaDTO, idUsuario?: string): Promise<IVenta> {
-        // Calcular totales y guardar bonificación porcentual por línea
+        if (data.tipo_venta === 'online') {
+            await productosService.assertStockDisponibleParaLineas(data.detalles);
+        }
+
+        // Totales: precio unitario en línea = precio FINAL con IVA (igual que catálogo).
+        // - online: siempre desde catálogo (productos); opcional validar precio_unitario del cliente.
+        // - presencial/otro: precio_unitario del DTO = final con IVA (acuerdo / carga manual).
         let totalSinIva = 0;
         let totalConIva = 0;
         let descuentoTotal = 0;
-        const productosPorId = new Map<number, { bonificacion_porcentaje: number | null }>();
+
+        type LineaResuelta = {
+            precioFinalUnitario: number;
+            porcentajeIva: number;
+            bonificacion_porcentaje: number | null;
+        };
+        const lineasResueltas: LineaResuelta[] = [];
+
+        const selectProductoVenta = {
+            bonificacion_porcentaje: true,
+            lista_precio_activa: true,
+            precio_venta: true,
+            precio_especial: true,
+            precio_pvp: true,
+            precio_campanya: true,
+            precio_manual: true,
+            iva: true,
+        } as const;
 
         for (const detalle of data.detalles) {
             const producto = await prisma.productos.findUnique({
                 where: { id_prod: detalle.id_prod },
-                select: { bonificacion_porcentaje: true },
+                select: selectProductoVenta,
             });
 
             if (!producto) {
@@ -439,11 +467,33 @@ export class VentasService {
             }
 
             const boniProducto = producto.bonificacion_porcentaje != null ? Number(producto.bonificacion_porcentaje) : null;
-            productosPorId.set(detalle.id_prod, { bonificacion_porcentaje: boniProducto });
+            const porcentajeIva = producto.iva?.porcentaje != null ? Number(producto.iva.porcentaje) : 0;
 
-            const precioUnitario = detalle.precio_unitario;
+            let precioFinalUnitario: number;
+            if (data.tipo_venta === 'online') {
+                const desdeCatalogo = productosService.getPrecioFinalConIva(producto);
+                if (desdeCatalogo === null || desdeCatalogo < 0) {
+                    throw new Error(`Producto ${detalle.id_prod}: precio no disponible en catálogo`);
+                }
+                precioFinalUnitario = roundMoney(desdeCatalogo);
+                const enviado = detalle.precio_unitario;
+                if (enviado != null && enviado > 0) {
+                    const tol = Math.max(2, precioFinalUnitario * 0.005);
+                    if (Math.abs(Number(enviado) - precioFinalUnitario) > tol) {
+                        throw new Error(
+                            `Producto ${detalle.id_prod}: el precio del carrito no coincide con el catálogo. Actualizá el carrito e intentá de nuevo.`
+                        );
+                    }
+                }
+            } else {
+                if (detalle.precio_unitario === undefined || detalle.precio_unitario === null) {
+                    throw new Error(`Detalle producto ${detalle.id_prod}: precio_unitario es requerido para ventas no online`);
+                }
+                precioFinalUnitario = roundMoney(Number(detalle.precio_unitario));
+            }
+
             const cantidad = detalle.cantidad;
-            const baseLinea = precioUnitario * cantidad;
+            const baseLinea = precioFinalUnitario * cantidad;
             const bonificacionPctRaw = (detalle as any).bonificacion_porcentaje ?? boniProducto ?? null;
             const bonificacionPct = bonificacionPctRaw != null
                 ? Math.max(0, Math.min(100, Number(bonificacionPctRaw)))
@@ -451,17 +501,26 @@ export class VentasService {
             const descuentoBonificacion = bonificacionPct != null ? (baseLinea * bonificacionPct) / 100 : 0;
             const descuentoManual = detalle.descuento_aplicado || 0;
             const descuento = descuentoManual + descuentoBonificacion;
-            const subtotal = precioUnitario * cantidad - descuento;
+            const subtotalFinal = roundMoney(precioFinalUnitario * cantidad - descuento);
+            const factorIva = 1 + porcentajeIva / 100;
+            const subtotalNeto = roundMoney(factorIva > 0 ? subtotalFinal / factorIva : subtotalFinal);
 
-            totalSinIva += subtotal;
+            totalSinIva += subtotalNeto;
+            totalConIva += subtotalFinal;
             descuentoTotal += descuento;
+
+            lineasResueltas.push({
+                precioFinalUnitario,
+                porcentajeIva,
+                bonificacion_porcentaje: boniProducto,
+            });
         }
 
-        // Calcular IVA (simplificado, debería calcularse por producto)
-        totalConIva = totalSinIva * 1.21; // Asumiendo 21% de IVA
-        // Incluir costo de envío en el total neto (si se proporciona)
+        totalSinIva = roundMoney(totalSinIva);
+        totalConIva = roundMoney(totalConIva);
+
         const costoEnvio = data.costo_envio || 0;
-        const totalNeto = totalConIva + costoEnvio;
+        const totalNeto = roundMoney(totalConIva + costoEnvio);
 
         // Si se proporciona id_cliente, verificar que exista o crearlo
         let idClienteFinal = data.id_cliente;
@@ -522,22 +581,23 @@ export class VentasService {
                     tipo_venta: data.tipo_venta,
                     observaciones: data.observaciones || null,
                     venta_detalle: {
-                        create: data.detalles.map((detalle) => {
-                            const producto = productosPorId.get(detalle.id_prod);
-                            const baseLinea = detalle.precio_unitario * detalle.cantidad;
-                            const bonificacionPctRaw = (detalle as any).bonificacion_porcentaje ?? producto?.bonificacion_porcentaje ?? null;
+                        create: data.detalles.map((detalle, index) => {
+                            const resolved = lineasResueltas[index];
+                            const baseLinea = resolved.precioFinalUnitario * detalle.cantidad;
+                            const bonificacionPctRaw = (detalle as any).bonificacion_porcentaje ?? resolved.bonificacion_porcentaje ?? null;
                             const bonificacionPct = bonificacionPctRaw != null
                                 ? Math.max(0, Math.min(100, Number(bonificacionPctRaw)))
                                 : null;
                             const descuentoBonificacion = bonificacionPct != null ? (baseLinea * bonificacionPct) / 100 : 0;
                             const descuentoManual = detalle.descuento_aplicado || 0;
                             const descuentoLinea = descuentoManual + descuentoBonificacion;
+                            const subTotalLinea = roundMoney(resolved.precioFinalUnitario * detalle.cantidad - descuentoLinea);
                             return {
                                 id_prod: detalle.id_prod,
                                 cantidad: detalle.cantidad,
-                                precio_unitario: detalle.precio_unitario,
+                                precio_unitario: resolved.precioFinalUnitario,
                                 descuento_aplicado: descuentoLinea,
-                                sub_total: detalle.precio_unitario * detalle.cantidad - descuentoLinea,
+                                sub_total: subTotalLinea,
                                 evento_aplicado: detalle.evento_aplicado || null,
                                 bonificacion_porcentaje: bonificacionPct,
                             };
@@ -617,7 +677,8 @@ export class VentasService {
             detalles: Array<{
                 id_prod: number;
                 cantidad: number;
-                precio_unitario: number;
+                /** Opcional; en online el precio se toma del catálogo. */
+                precio_unitario?: number;
                 descuento_aplicado?: number;
                 bonificacion_porcentaje?: number;
             }>;
@@ -776,7 +837,9 @@ export class VentasService {
                 detalles: data.detalles.map((detalle) => ({
                     id_prod: detalle.id_prod,
                     cantidad: detalle.cantidad,
-                    precio_unitario: detalle.precio_unitario,
+                    ...(detalle.precio_unitario !== undefined && detalle.precio_unitario !== null
+                        ? { precio_unitario: detalle.precio_unitario }
+                        : {}),
                     descuento_aplicado: detalle.descuento_aplicado || 0,
                     bonificacion_porcentaje: detalle.bonificacion_porcentaje,
                 })),
@@ -1087,6 +1150,7 @@ export class VentasService {
                     nombre: userName,
                     apellido: userApellido,
                 },
+                esRetiroEnTienda: isVentaRetiroEnTienda(venta.observaciones),
             });
         } catch (error) {
             console.error(`❌ [VentasService] Error al enviar email de pedido pendiente:`, error);
@@ -1416,6 +1480,17 @@ export class VentasService {
             payload.empresa_envio = 'andreani';
         }
         if (Object.keys(payload).length === 0) return venta;
+
+        const tieneDatosSeguimiento = Boolean(
+            (payload.cod_seguimiento && String(payload.cod_seguimiento).trim()) ||
+            (payload.empresa_envio && String(payload.empresa_envio).trim())
+        );
+        if (tieneDatosSeguimiento) {
+            assertClienteDireccionCompletaParaEnvio(
+                venta,
+                `No se puede guardar el seguimiento (venta #${idVenta})`
+            );
+        }
 
         const envioExistente = venta.envio;
         if (envioExistente?.id_envio) {

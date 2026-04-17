@@ -33,6 +33,7 @@
 
 import { PaymentProcessingService } from '../payment-processing.service';
 import mailService from '../../mail';
+import { prisma } from '../../index';
 
 // -----------------------------------------------------------------------------
 // Estado compartido para mocks (permite que VentasService mock devuelva getById
@@ -82,6 +83,7 @@ jest.mock('../ventas.service', () => ({
 
 jest.mock('../productos.service', () => ({
   ProductosService: jest.fn().mockImplementation(() => ({
+    assertStockDisponibleParaLineas: jest.fn().mockResolvedValue(undefined),
     updateStock: jest.fn().mockResolvedValue(undefined),
   })),
 }));
@@ -107,6 +109,9 @@ function buildVentaPendiente(overrides: Record<string, unknown> = {}) {
         nombre: 'Juan',
         apellido: 'Pérez',
       },
+      direccion: 'Av. Siempre Viva 742',
+      ciudad: 'CABA',
+      cod_postal: 1425,
     },
     usuario: null,
     detalles: [
@@ -158,6 +163,25 @@ describe('PaymentProcessingService.confirmPayment', () => {
   });
 
   describe('flujo básico (stock, estado, evento)', () => {
+    it('rechaza confirmación si falta dirección de envío (no retiro)', async () => {
+      const ventaPendiente = buildVentaPendiente({
+        cliente: {
+          usuario: {
+            email: 'cliente@ejemplo.com',
+            nombre: 'Juan',
+            apellido: 'Pérez',
+          },
+          direccion: null,
+          ciudad: null,
+          cod_postal: null,
+        },
+      });
+      ventasState.getById.mockResolvedValue(ventaPendiente);
+
+      await expect(service.confirmPayment(ID_VENTA)).rejects.toThrow(/dirección/i);
+      expect(prisma.venta.update).not.toHaveBeenCalled();
+    });
+
     it('descuenta stock y deja la venta en estado aprobado', async () => {
       const ventaPendiente = buildVentaPendiente();
       const ventaAprobada = buildVentaAprobadaSinEnvio();
@@ -261,6 +285,7 @@ describe('PaymentProcessingService.confirmPayment', () => {
       // Retiro: no hay envío, por tanto no hay tracking
       expect(call.trackingCode).toBeUndefined();
       expect(call.carrier).toBeUndefined();
+      expect(call.esRetiroEnTienda).toBe(true);
     });
   });
 });
