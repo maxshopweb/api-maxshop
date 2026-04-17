@@ -60,6 +60,29 @@ export const verifyFirebaseToken = async (req: Request, res: Response, next: Nex
   }
 };
 
+/**
+ * Verifica token si viene en el request, pero permite continuar sin token.
+ * Útil para endpoints mixtos (invitado o usuario autenticado).
+ */
+export const verifyFirebaseTokenOptional = async (req: Request, _res: Response, next: NextFunction) => {
+  try {
+    const authorization = req.headers.authorization ?? req.cookies?.token ?? '';
+    const token = authorization.startsWith('Bearer ') ? authorization.substring(7).trim() : authorization;
+
+    if (!token) {
+      return next();
+    }
+
+    const adminAuth = ensureFirebaseAdmin();
+    const decodedToken = await adminAuth.verifyIdToken(token, true);
+    req.decodedToken = decodedToken;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Token inválido.';
+    console.warn(`⚠️ [verifyFirebaseTokenOptional] Se ignoró token inválido: ${message}`);
+  }
+  return next();
+};
+
 export const requireAuthenticatedUser = (req: Request, res: Response, next: NextFunction) => {
   if (!req.decodedToken) {
     return res.status(401).json({
@@ -187,6 +210,17 @@ export const loadUserFromDatabase = async (req: Request, res: Response, next: Ne
       error: message
     });
   }
+};
+
+/**
+ * Carga usuario de DB solo si ya hay token validado.
+ * Si no hay token, continúa como invitado.
+ */
+export const loadUserFromDatabaseOptional = async (req: Request, res: Response, next: NextFunction) => {
+  if (!req.decodedToken) {
+    return next();
+  }
+  return loadUserFromDatabase(req, res, next);
 };
 
 // Middleware para permitir usuarios invitados (estado 1) o usuarios completos

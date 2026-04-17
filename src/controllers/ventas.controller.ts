@@ -391,7 +391,8 @@ export class VentasController {
             res.status(201).json(response);
         } catch (error: any) {
             console.error('❌ Error en createFromCheckout:', error);
-            res.status(400).json({
+            const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 400;
+            res.status(statusCode).json({
                 success: false,
                 error: error.message || 'Error al crear pedido'
             });

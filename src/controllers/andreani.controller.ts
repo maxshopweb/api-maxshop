@@ -13,7 +13,7 @@ import { asSingleString } from '../utils/validation.utils';
 import { andreaniPreEnvioService } from '../services/andreani/andreani.preenvio.service';
 import { andreaniEnvioService } from '../services/andreani/andreani.envio.service';
 import { andreaniEnviosService } from '../services/andreani/andreani.envios.service';
-import { getUseMock } from '../config/andreani.config';
+import { getAndreaniModoManual } from '../config/andreani.config';
 import { ICotizarEnvioRequest } from '../services/andreani/andreani.types';
 import { IApiResponse } from '../types';
 import { ConfigTiendaService } from '../services/config-tienda.service';
@@ -287,17 +287,17 @@ export class AndreaniController {
                 return;
             }
 
-            // Modo mock (ANDREANI_MOCK=true): costo fijo $1000, sin envío gratis ni llamada a Andreani
-            if (getUseMock()) {
+            // Modo manual (ANDREANI_MODO_MANUAL=true): no cotizar en Andreani, costo 0 operativo.
+            if (getAndreaniModoManual()) {
                 const response: IApiResponse = {
                     success: true,
                     data: {
-                        precio: 1000,
+                        precio: 0,
                         moneda: 'ARS',
                         envioGratis: false,
-                        mock: true,
+                        manual: true,
                     },
-                    message: 'Cotización mock (Andreani en modo prueba)',
+                    message: 'Envío a domicilio disponible. El costo se confirmará por WhatsApp/soporte.',
                 };
                 res.json(response);
                 return;

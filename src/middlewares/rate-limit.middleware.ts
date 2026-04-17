@@ -143,6 +143,30 @@ export const adminRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter específico para checkout (invitados y autenticados)
+ * 15 requests por 10 minutos por IP + device-id/uid.
+ */
+export const checkoutRateLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minutos
+    max: 15,
+    message: {
+        success: false,
+        error: 'Demasiados intentos de checkout. Espera unos minutos antes de reintentar.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+        const ip = req.ip || req.socket.remoteAddress || 'unknown';
+        const uid = (req as any).decodedToken?.uid || 'guest';
+        const guestDeviceId = (req.headers['x-guest-device-id'] as string)?.trim() || 'no-device';
+        return `checkout:${ip}:${uid}:${guestDeviceId}`;
+    },
+    skip: (_req: Request) => {
+        return process.env.NODE_ENV === 'development' && process.env.SKIP_RATE_LIMIT === 'true';
+    },
+});
+
+/**
  * Rate limiter para endpoints de sincronización (facturas, etc.)
  * 5 requests por minuto (operaciones pesadas)
  */

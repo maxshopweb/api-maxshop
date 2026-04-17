@@ -6,6 +6,7 @@ import { clientesService } from '../services/clientes.service';
 import { buildClientesExcelBuffer } from '../services/clientes-excel.service';
 import ftpService from '../services/ftp.service';
 import { IClienteFilters, IUpdateClienteDTO } from '../types';
+import { ftpPathsConfig } from '../config/ftp-paths.config';
 
 function parseActivoQuery(value: unknown): boolean | undefined {
     if (value === undefined || value === null || value === '') return undefined;
@@ -128,7 +129,7 @@ export class ClientesController {
      */
     async exportExcel(req: Request, res: Response) {
         const TEMP_DIR = path.join(process.cwd(), 'backend', 'data', 'temp');
-        const REMOTE_PATH = '/Tekno/Pedido/Clientes.xlsx';
+        const REMOTE_PATH = ftpPathsConfig.clientesExcel;
         const FILENAME = 'Clientes.xlsx';
 
         try {

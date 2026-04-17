@@ -9,7 +9,8 @@ Agregar las siguientes variables al archivo `.env`:
 # MERCADO PAGO - Configuración
 # ============================================
 
-# Modo de operación: 'test' para sandbox, 'production' para producción
+# Modo de operación de MP: 'test' (sandbox) o 'production' (live)
+# IMPORTANTE: este valor define el modo de MP, no NODE_ENV
 MERCADOPAGO_ENV=test
 
 # ============================================
@@ -44,6 +45,18 @@ MERCADOPAGO_WEBHOOK_URL=https://tu-dominio.com/api/webhooks/mercadopago
 ```
 
 ---
+
+## Matriz de entornos (recomendada)
+
+| Escenario | `MERCADOPAGO_ENV` | Token obligatorio | URL webhook |
+|---|---|---|---|
+| Desarrollo / QA | `test` | `MERCADOPAGO_ACCESS_TOKEN_TEST` | ngrok/URL pública de test |
+| Producción | `production` | `MERCADOPAGO_ACCESS_TOKEN` | dominio productivo HTTPS |
+
+Reglas de seguridad:
+- No mezclar token `TEST` con `MERCADOPAGO_ENV=production`.
+- No mezclar token `APP_USR` live con `MERCADOPAGO_ENV=test`.
+- Mantener `MERCADOPAGO_WEBHOOK_SECRET` y `MERCADOPAGO_WEBHOOK_URL` alineados al mismo entorno.
 
 ## Pasos para Obtener las Credenciales
 

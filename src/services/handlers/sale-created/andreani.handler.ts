@@ -12,6 +12,7 @@ import { IEventHandler, EventContext } from '../handler.interface';
 import { SaleCreatedPayload } from '../../../domain/events/sale.events';
 import { andreaniPreEnvioService } from '../../andreani/andreani.preenvio.service';
 import { IOrdenEnvioResponse } from '../../andreani/andreani.types';
+import { getAndreaniModoManual } from '../../../config/andreani.config';
 
 export class AndreaniHandler implements IEventHandler<SaleCreatedPayload, EventContext> {
     name = 'andreani-handler';
@@ -22,6 +23,15 @@ export class AndreaniHandler implements IEventHandler<SaleCreatedPayload, EventC
 
     async handle(payload: SaleCreatedPayload, context: EventContext): Promise<void> {
         const { id_venta, venta } = payload;
+
+        if (getAndreaniModoManual()) {
+            context.handlerData[this.name] = {
+                skipped: true,
+                reason: 'andreani_modo_manual',
+                processedAt: new Date().toISOString(),
+            };
+            return;
+        }
 
         if (!venta) {
             console.warn(`⚠️ [AndreaniHandler] Venta #${id_venta} sin datos completos - saltando`);

@@ -229,10 +229,8 @@ class MercadoPagoService {
     private testUserEmail: string;
 
     constructor() {
-        // Determinar si usar modo producción o sandbox
-        // En producción: NODE_ENV=production y MERCADOPAGO_ENV=production
-        // En desarrollo: cualquier otro caso (default: sandbox)
-        this.isLiveMode = process.env.NODE_ENV === 'production' && process.env.MERCADOPAGO_ENV === 'production';
+        // MERCADOPAGO_ENV es la fuente de verdad del modo MP (test por defecto)
+        this.isLiveMode = this.getConfiguredEnvironment() === 'production';
         
         // Usar token correspondiente
         this.accessToken = this.isLiveMode
@@ -249,6 +247,11 @@ class MercadoPagoService {
         }
     }
 
+    private getConfiguredEnvironment(): 'test' | 'production' {
+        const env = (process.env.MERCADOPAGO_ENV || 'test').toString().trim().toLowerCase();
+        return env === 'production' || env === 'prod' ? 'production' : 'test';
+    }
+
     /**
      * Verifica si el servicio está configurado correctamente
      */
@@ -261,6 +264,14 @@ class MercadoPagoService {
      */
     getMode(): 'sandbox' | 'production' {
         return this.isLiveMode ? 'production' : 'sandbox';
+    }
+
+    /**
+     * Token efectivo usado por el servicio según el entorno activo.
+     * Útil para integraciones auxiliares (merchant_order, diagnósticos, etc).
+     */
+    getAccessToken(): string {
+        return this.accessToken;
     }
 
     /**

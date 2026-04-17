@@ -33,15 +33,12 @@ function getBaseUrl(): string {
 }
 
 /**
- * Modo mock: cuando ANDREANI_MOCK=true no se llama a la API de Andreani.
- * - Cotización devuelve costo fijo $1000.
- * - Pre-envío devuelve el JSON de ejemplo de la doc y persiste en BD.
- * - Etiquetas: se sube backend/data/etiqueta_1.pdf al FTP.
- * Para volver al sistema normal, poner ANDREANI_MOCK=false o quitar la variable.
- * Se lee en cada acceso (getter) para que dotenv ya haya cargado el .env.
+ * Modo manual: cuando ANDREANI_MODO_MANUAL=true no se llama a la API de Andreani.
+ * El flujo de envío se resuelve manualmente desde el panel admin.
+ * Se lee en cada acceso para que dotenv ya haya cargado el .env.
  */
-export function getUseMock(): boolean {
-    const v = (process.env.ANDREANI_MOCK ?? '').toString().trim().toLowerCase();
+export function getAndreaniModoManual(): boolean {
+    const v = (process.env.ANDREANI_MODO_MANUAL ?? '').toString().trim().toLowerCase();
     return v === 'true' || v === '1';
 }
 
@@ -77,17 +74,16 @@ const configBase = {
     timeout: 30000, // 30 segundos
 };
 
-// useMock como getter: se lee en cada acceso, no al cargar el módulo.
-// Así dotenv.config() ya cargó el .env cuando se usa (cotización, pre-envío, etiquetas).
-Object.defineProperty(configBase, 'useMock', {
+// andreaniModoManual como getter: se lee en cada acceso, no al cargar el módulo.
+Object.defineProperty(configBase, 'andreaniModoManual', {
     get(): boolean {
-        return getUseMock();
+        return getAndreaniModoManual();
     },
     enumerable: true,
     configurable: true,
 });
 
-export const andreaniConfig = configBase as typeof configBase & { useMock: boolean };
+export const andreaniConfig = configBase as typeof configBase & { andreaniModoManual: boolean };
 
 /**
  * Valida que las credenciales estén configuradas

@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { ftpPathsConfig } from './ftp-paths.config';
 
 dotenv.config();
 
@@ -17,7 +18,7 @@ export const ftpConfig: FTPConfig = {
   password: process.env.FTP_PASSWORD || '',
   port: parseInt(process.env.FTP_PORT || '21', 10),
   secure: false, // FTP estándar, no SFTP
-  remotePath: '/Tekno/Bases', // Ruta en el servidor FTP
+  remotePath: ftpPathsConfig.bases,
 };
 
 // Validar que las credenciales estén configuradas

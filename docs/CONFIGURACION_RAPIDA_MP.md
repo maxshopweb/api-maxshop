@@ -84,6 +84,28 @@ DEFAULT_FAILURE_URL=http://localhost:3000/checkout/resultado?status=rejected
 DEFAULT_PENDING_URL=http://localhost:3000/checkout/resultado?status=pending
 ```
 
+### Configuración para producción (cuando tengas credenciales)
+
+```env
+# ============================================
+# MERCADO PAGO - PRODUCCION
+# ============================================
+MERCADOPAGO_ENV=production
+
+# Credenciales LIVE
+MERCADOPAGO_ACCESS_TOKEN=APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+MERCADOPAGO_PUBLIC_KEY=APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# Webhook LIVE (siempre HTTPS)
+MERCADOPAGO_WEBHOOK_URL=https://api.tu-dominio.com/api/webhooks/mercadopago
+MERCADOPAGO_WEBHOOK_SECRET=tu_firma_secreta_live
+```
+
+Reglas:
+- En `test` usa token `*_TEST`.
+- En `production` usa token live (`APP_USR`).
+- No mezclar credenciales entre entornos.
+
 ### Paso 6: Reiniciar Backend
 
 ```bash

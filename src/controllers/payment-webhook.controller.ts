@@ -371,7 +371,7 @@ class PaymentWebhookController {
         
         try {
             const { mercadoPagoService } = require('../services/mercado-pago.service');
-            const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN_TEST || process.env.MERCADOPAGO_ACCESS_TOKEN;
+            const accessToken = mercadoPagoService.getAccessToken();
             
             if (!accessToken) {
                 throw new Error('MERCADOPAGO_ACCESS_TOKEN no configurado');
@@ -463,7 +463,7 @@ class PaymentWebhookController {
             console.log(`🔍 [WebhookController] Diagnóstico solicitado para preferencia: ${preferenceId}`);
 
             const { mercadoPagoService } = require('../services/mercado-pago.service');
-            const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN_TEST || process.env.MERCADOPAGO_ACCESS_TOKEN;
+            const accessToken = mercadoPagoService.getAccessToken();
 
             if (!accessToken) {
                 throw new Error('MERCADOPAGO_ACCESS_TOKEN no configurado');
@@ -587,7 +587,7 @@ class PaymentWebhookController {
                 return;
             }
 
-            const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN_TEST || process.env.MERCADOPAGO_ACCESS_TOKEN;
+            const accessToken = mercadoPagoService.getAccessToken();
             
             if (!accessToken) {
                 res.status(500).json({

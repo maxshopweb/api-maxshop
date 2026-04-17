@@ -17,17 +17,9 @@ import { andreaniConfig } from '../../../config/andreani.config';
 import ftpService from '../../ftp.service';
 import { IOrdenEnvioResponse } from '../../andreani/andreani.types';
 import { prisma } from '../../../index';
+import { ftpPathsConfig } from '../../../config/ftp-paths.config';
 
-const REMOTE_BASE = '/Tekno/Andreani';
-
-/** PDF de etiqueta usado en modo mock (ANDREANI_MOCK=true) */
-function getMockEtiquetaPath(): string | null {
-    const fromRoot = path.join(process.cwd(), 'backend', 'data', 'etiqueta_1.pdf');
-    const fromBackend = path.join(process.cwd(), 'data', 'etiqueta_1.pdf');
-    if (fs.existsSync(fromRoot)) return fromRoot;
-    if (fs.existsSync(fromBackend)) return fromBackend;
-    return null;
-}
+const REMOTE_BASE = ftpPathsConfig.andreani;
 
 export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayload, EventContext> {
     name = 'etiquetas-andreani-handler';
@@ -40,6 +32,15 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
 
     async handle(payload: SaleCreatedPayload, context: EventContext): Promise<void> {
         const { id_venta } = payload;
+
+        if (andreaniConfig.andreaniModoManual) {
+            context.handlerData[this.name] = {
+                skipped: true,
+                reason: 'andreani_modo_manual',
+                processedAt: new Date().toISOString(),
+            };
+            return;
+        }
 
         const andreaniData = context.handlerData['andreani-handler'] as {
             success?: boolean;
@@ -94,11 +95,9 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
 
         const rutasSubidas: string[] = [];
         const errores: { bulto: string; error: string }[] = [];
-        const isMock = andreaniConfig.useMock;
-        const mockPdfPath = isMock ? getMockEtiquetaPath() : null;
 
         try {
-            console.log(`🏷️ [EtiquetasAndreani] Venta #${id_venta}: ${isMock ? 'MOCK: subiendo' : 'descargando y subiendo'} etiquetas (carpeta: ${codVenta}, tracking: ${codigoSeguimiento})...`);
+            console.log(`🏷️ [EtiquetasAndreani] Venta #${id_venta}: descargando y subiendo etiquetas (carpeta: ${codVenta}, tracking: ${codigoSeguimiento})...`);
 
             await ftpService.connect();
 
@@ -110,25 +109,6 @@ export class EtiquetasAndreaniHandler implements IEventHandler<SaleCreatedPayloa
             for (let i = 0; i < respuestaCompleta.bultos.length; i++) {
                 const bulto = respuestaCompleta.bultos[i];
                 const numeroBulto = bulto.numeroDeBulto || String(i + 1);
-                const nombreArchivo = `etiqueta_${numeroBulto}.pdf`;
-                const remotePath = `${REMOTE_BASE}/${codVenta}/${nombreArchivo}`;
-
-                if (isMock) {
-                    // Modo mock: subir siempre backend/data/etiqueta_1.pdf al FTP
-                    if (!mockPdfPath) {
-                        console.warn(`⚠️ [EtiquetasAndreani] MOCK: no se encontró backend/data/etiqueta_1.pdf`);
-                        errores.push({ bulto: numeroBulto, error: 'Archivo mock no encontrado' });
-                        continue;
-                    }
-                    try {
-                        await ftpService.uploadFile(mockPdfPath, remotePath);
-                        rutasSubidas.push(remotePath);
-                    } catch (uploadErr: any) {
-                        console.warn(`⚠️ [EtiquetasAndreani] MOCK Bulto ${numeroBulto}: error al subir FTP: ${uploadErr.message}`);
-                        errores.push({ bulto: numeroBulto, error: uploadErr.message });
-                    }
-                    continue;
-                }
 
                 const etiquetaLink = bulto.linking?.find((l) => l.meta === 'Etiqueta');
                 const urlEtiqueta = etiquetaLink?.contenido?.trim();
