@@ -258,7 +258,10 @@ export class AdminStaffService {
     }
 
     const roleId = await resolveRoleId('ADMIN');
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword =
+      parsed.password !== undefined && parsed.password.length > 0
+        ? parsed.password
+        : generateTemporaryPassword();
     let firebaseUid: string | null = null;
     const start = performance.now();
 

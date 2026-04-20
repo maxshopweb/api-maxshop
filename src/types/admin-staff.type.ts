@@ -8,7 +8,12 @@ const emailSchema = z.string().email('Email inválido.').min(3).max(255);
 export const createStaffUserSchema = z.object({
   email: emailSchema,
   nombre: z.string().trim().min(1, 'El nombre es requerido.').max(255),
-  apellido: z.string().trim().max(255).optional().nullable()
+  apellido: z.string().trim().max(255).optional().nullable(),
+  /** Opcional: si no se envía, el servidor genera una contraseña segura. */
+  password: z.preprocess(
+    (v) => (v === undefined || v === null || v === '' ? undefined : String(v).trim()),
+    z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.').max(128).optional()
+  )
 });
 
 export type CreateStaffUserInput = z.infer<typeof createStaffUserSchema>;
