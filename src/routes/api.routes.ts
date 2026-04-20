@@ -22,6 +22,7 @@ import uploadRoutes from './upload.routes';
 import configTiendaRoutes from './config-tienda.routes';
 import bannersRoutes from './banners.routes';
 import auditoriaRoutes from './auditoria.routes';
+import adminStaffRoutes from './admin-staff.routes';
 import { publicRateLimiter, webhookRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const apiRoutes = Router();
@@ -53,6 +54,7 @@ apiRoutes.use('/ventas', ventasRoutes);
 apiRoutes.use('/clientes', clientesRoutes);
 apiRoutes.use('/andreani', andreaniRoutes);
 apiRoutes.use('/admin/dashboard', dashboardRoutes);
+apiRoutes.use('/admin/staff', adminStaffRoutes);
 apiRoutes.use('/admin/auditoria', auditoriaRoutes);
 apiRoutes.use('/direcciones', direccionesRoutes);
 apiRoutes.use('/dbf-converter', dbfConverterRoutes);
