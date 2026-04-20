@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import sincronizacionService from '../services/sincronizacion/sincronizacion.service';
 import csvImporterService from '../services/sincronizacion/csv-importer.service';
+import syncRunService from '../services/sync-run.service';
 import { ProductosService } from '../services/productos.service';
 import { auditService } from '../services/audit.service';
 import * as path from 'path';
@@ -95,6 +96,12 @@ export class SincronizacionController {
           adminAudit: true,
         });
       }
+
+      // Persistir el run en BD (sin bloquear la respuesta)
+      syncRunService.save(resultado, 'ON_DEMAND').catch((persistErr: unknown) => {
+        const msg = persistErr instanceof Error ? persistErr.message : String(persistErr);
+        console.warn('[SincronizacionController] No se pudo persistir el run:', msg);
+      });
 
       if (resultado.exito) {
         res.json({
@@ -253,25 +260,95 @@ export class SincronizacionController {
 
   /**
    * GET /api/sincronizacion/estado
-   * Estado de última sincronización (placeholder) + hint de confirmación para force_overwrite
+   * Retorna el último run real + hint de force_overwrite (compatibilidad hacia atrás).
    */
   async obtenerEstado(req: Request, res: Response): Promise<void> {
     void req;
-    res.json({
-      success: true,
-      message: 'Estado de sincronización',
-      data: {
-        ultimaSincronizacion: null,
-        estado: 'no_disponible',
-        forceOverwrite: {
-          confirmacion: CONFIRMACION_FORCE_ERP_TOTAL,
-          bodyEjemplo: {
-            force_overwrite: true,
+    try {
+      const stats = await syncRunService.getStats();
+      res.json({
+        success: true,
+        message: 'Estado de sincronización',
+        data: {
+          ultimaSincronizacion: stats.ultimaCorrida,
+          estado: stats.ultimaCorrida?.resultado ?? 'sin_datos',
+          horasSinExito: stats.horasSinExito,
+          forceOverwrite: {
             confirmacion: CONFIRMACION_FORCE_ERP_TOTAL,
+            bodyEjemplo: {
+              force_overwrite: true,
+              confirmacion: CONFIRMACION_FORCE_ERP_TOTAL,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ success: false, message: 'Error al obtener estado', error: errMsg });
+    }
+  }
+
+  /**
+   * GET /api/sincronizacion/runs
+   * Lista paginada de corridas. Query: ?page=1&limit=50
+   */
+  async listarRuns(req: Request, res: Response): Promise<void> {
+    try {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+      const { runs, total } = await syncRunService.findAll(page, limit);
+      res.json({
+        success: true,
+        data: runs,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ success: false, message: 'Error al listar corridas', error: errMsg });
+    }
+  }
+
+  /**
+   * GET /api/sincronizacion/runs/:id
+   * Detalle de una corrida.
+   */
+  async obtenerRun(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ success: false, message: 'ID inválido' });
+        return;
+      }
+      const run = await syncRunService.findById(id);
+      if (!run) {
+        res.status(404).json({ success: false, message: 'Corrida no encontrada' });
+        return;
+      }
+      res.json({ success: true, data: run });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ success: false, message: 'Error al obtener corrida', error: errMsg });
+    }
+  }
+
+  /**
+   * GET /api/sincronizacion/stats
+   * Estadísticas para cards del dashboard.
+   */
+  async obtenerStats(req: Request, res: Response): Promise<void> {
+    void req;
+    try {
+      const stats = await syncRunService.getStats();
+      res.json({ success: true, data: stats });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ success: false, message: 'Error al obtener stats', error: errMsg });
+    }
   }
 }
 

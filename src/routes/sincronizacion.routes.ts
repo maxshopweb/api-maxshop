@@ -53,8 +53,38 @@ router.post(
 
 /**
  * GET /api/sincronizacion/estado
- * Placeholder + ejemplo de body para force_overwrite (público para documentación rápida).
+ * Retorna el último run real + hint para force_overwrite (público para compatibilidad).
  */
 router.get('/estado', sincronizacionController.obtenerEstado.bind(sincronizacionController));
+
+/**
+ * GET /api/sincronizacion/stats
+ * Estadísticas para cards del dashboard de monitoreo.
+ */
+router.get(
+  '/stats',
+  ...adminAuth,
+  sincronizacionController.obtenerStats.bind(sincronizacionController)
+);
+
+/**
+ * GET /api/sincronizacion/runs
+ * Lista paginada de corridas. Query: ?page=1&limit=50
+ */
+router.get(
+  '/runs',
+  ...adminAuth,
+  sincronizacionController.listarRuns.bind(sincronizacionController)
+);
+
+/**
+ * GET /api/sincronizacion/runs/:id
+ * Detalle de una corrida por ID.
+ */
+router.get(
+  '/runs/:id',
+  ...adminAuth,
+  sincronizacionController.obtenerRun.bind(sincronizacionController)
+);
 
 export default router;

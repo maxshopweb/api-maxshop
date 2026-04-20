@@ -582,3 +582,23 @@ model ventas_pendientes_factura {
   @@index([venta_id], map: "idx_pendientes_factura_venta")
   @@map("ventas_pendientes_factura")
 }
+
+model sync_run {
+  id                   Int      @id @default(autoincrement())
+  iniciado_en          DateTime @db.Timestamp(6)
+  finalizado_en        DateTime @db.Timestamp(6)
+  duracion_ms          Int
+  trigger              String   @db.VarChar(20)
+  resultado            String   @db.VarChar(20)
+  archivos_descargados Int      @default(0)
+  archivos_convertidos Int      @default(0)
+  archivos_importados  Int      @default(0)
+  total_registros      Int?
+  errores              Json     @default("[]")
+  mensaje              String?  @db.Text
+  ftp_json_subido      Boolean  @default(false)
+  creado_en            DateTime @default(now()) @db.Timestamp(6)
+
+  @@index([iniciado_en(sort: Desc)], map: "idx_sync_run_iniciado")
+  @@map("sync_run")
+}

@@ -10,6 +10,7 @@
 
 import * as cron from 'node-cron';
 import sincronizacionService from './sincronizacion/sincronizacion.service';
+import syncRunService from './sync-run.service';
 
 const DELAY_INICIAL_MS = 15_000; // 15 segundos después de levantar el servidor
 const CRON_CADA_MINUTOS = 20;
@@ -89,6 +90,11 @@ export class CatalogoSyncWorker {
             resultado.errores
           );
         }
+        try {
+          await syncRunService.saveIncremental(resultado, 'AUTO');
+        } catch (persistErr: any) {
+          console.warn('[CatalogoSyncWorker] No se pudo persistir run incremental:', persistErr?.message);
+        }
       } else {
         const resultado = await sincronizacionService.sincronizarCompleto();
         if (resultado.exito) {
@@ -100,6 +106,11 @@ export class CatalogoSyncWorker {
             `❌ [CatalogoSyncWorker] Sincronización falló: ${resultado.mensaje}`,
             resultado.errores
           );
+        }
+        try {
+          await syncRunService.save(resultado, 'AUTO');
+        } catch (persistErr: any) {
+          console.warn('[CatalogoSyncWorker] No se pudo persistir run completo:', persistErr?.message);
         }
       }
     } catch (error: any) {
