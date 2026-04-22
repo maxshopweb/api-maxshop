@@ -118,9 +118,8 @@ export class ProductosService {
         const lista = listasMap?.get(codiLista);
         const lista_activa = listasMap ? this.buildListaActivaInfo(lista, codiLista) : (codiLista ? this.buildListaActivaInfo(undefined, codiLista) : null);
 
-        const stock = typeof producto.stock === 'number' && Number.isFinite(producto.stock)
-            ? Math.max(0, Math.trunc(producto.stock))
-            : 0;
+        const stockRaw = producto.stock != null ? Number(producto.stock) : 0;
+        const stock = Number.isFinite(stockRaw) ? Math.max(0, Math.trunc(stockRaw)) : 0;
         const precioActivo = this.calcularPrecioConIva(producto);
         const precioVentaRef = codiLista !== 'V' ? this.getPrecioVentaConIva(producto) : null;
         const normalized: any = {

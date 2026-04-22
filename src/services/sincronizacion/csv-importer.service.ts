@@ -1169,7 +1169,7 @@ export class CSVImporterService {
       const codi_arti_truncado = codiarti.trim().substring(0, 10);
       try {
         const result = await prisma.productos.updateMany({
-          where: { codi_arti: codi_arti_truncado, ...this.whereProductoPermiteSyncErp() },
+          where: { codi_arti: codi_arti_truncado },
           data: {
             stock,
             stock_min: stock_min != null ? Math.round(stock_min) : null,
@@ -1407,7 +1407,7 @@ export class CSVImporterService {
       const stock = stockEntry.stock;
       const stock_min = stockEntry.stock_min;
       await prisma.productos.updateMany({
-        where: { codi_arti: codi, ...this.whereProductoPermiteSyncErp() },
+        where: { codi_arti: codi },
         data: {
           stock,
           stock_min: stock_min != null ? Math.round(stock_min) : null,
@@ -1786,6 +1786,17 @@ export class CSVImporterService {
         });
 
         if (existente?.precio_editado_manualmente === true) {
+          // Si el precio está bloqueado por edición manual, igual sincronizamos stock y estado.
+          await prisma.productos.update({
+            where: { codi_arti: producto.codi_arti },
+            data: {
+              stock: producto.stock,
+              stock_min: producto.stock_min,
+              activo: producto.activo,
+              estado: producto.estado,
+              actualizado_en: new Date(),
+            },
+          });
           continue;
         }
 
