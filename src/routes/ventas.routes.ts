@@ -36,7 +36,7 @@ const checkoutBodySchema = z.object({
     detalles: z.array(z.object({
         id_prod: z.number().int().positive(),
         cantidad: z.number().int().positive().max(1000),
-        precio_unitario: z.number().finite().min(0).max(100_000_000),
+        precio_unitario: z.number().finite().min(0).max(100_000_000).optional(),
         descuento_aplicado: z.number().finite().min(0).max(100_000_000).optional(),
         bonificacion_porcentaje: z.number().finite().min(0).max(100).optional(),
     })).min(1).max(200),
