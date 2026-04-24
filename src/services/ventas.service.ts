@@ -656,8 +656,14 @@ export class VentasService {
                 fecha: ventaCompleta.fecha.toISOString(),
                 venta: ventaCompleta, // Incluir datos completos
             });
-            await handlerExecutorService.runHandlersAndEmit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
-                console.error('❌ [VentasService] Error en runHandlersAndEmit SALE_CREATED:', error);
+            // Ejecutar en background para no bloquear la respuesta del checkout.
+            // Así el pedido se confirma rápido y la exportación Excel/FTP ocurre de forma asíncrona.
+            setImmediate(() => {
+                void handlerExecutorService
+                    .runHandlersAndEmit(SaleEventType.SALE_CREATED, event.payload)
+                    .catch((error) => {
+                        console.error('❌ [VentasService] Error en runHandlersAndEmit SALE_CREATED (background):', error);
+                    });
             });
         }
 
