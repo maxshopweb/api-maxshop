@@ -17,6 +17,7 @@ export class FacturaPendienteHandler implements IEventHandler<SaleCreatedPayload
     description = 'Marca venta como pendiente de factura después de generar Excel';
     priority = 40; // Ejecutar después de ExcelHandler (30)
     enabled = true;
+    runOnPending = true;
 
     async handle(payload: SaleCreatedPayload, context: EventContext): Promise<void> {
         const { id_venta } = payload;

@@ -6,6 +6,7 @@ import mailService from '../mail';
 import { paymentProcessingService } from './payment-processing.service';
 import { eventBus } from '../infrastructure/event-bus/event-bus';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
+import { handlerExecutorService } from './handlers/handler-executor.service';
 import { direccionesService } from './direcciones.service';
 import { mercadoPagoService } from './mercado-pago.service';
 import { ConfigTiendaService } from './config-tienda.service';
@@ -655,8 +656,8 @@ export class VentasService {
                 fecha: ventaCompleta.fecha.toISOString(),
                 venta: ventaCompleta, // Incluir datos completos
             });
-            await eventBus.emit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
-                console.error('❌ [VentasService] Error al emitir evento SALE_CREATED:', error);
+            await handlerExecutorService.runHandlersAndEmit(SaleEventType.SALE_CREATED, event.payload).catch((error) => {
+                console.error('❌ [VentasService] Error en runHandlersAndEmit SALE_CREATED:', error);
             });
         }
 

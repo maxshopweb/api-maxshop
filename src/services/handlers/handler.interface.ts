@@ -34,6 +34,12 @@ export interface IEventHandler<T = any, C = any> {
     enabled?: boolean;
 
     /**
+     * Si true, este handler corre también cuando estado_pago = 'pendiente'
+     * y el método de pago NO es mercadopago. Default: false.
+     */
+    runOnPending?: boolean;
+
+    /**
      * Método principal que ejecuta la lógica del handler
      * 
      * @param payload - Datos del evento

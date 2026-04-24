@@ -34,6 +34,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
     description = 'Genera Excel de ventas y lo sube al FTP';
     priority = 30; // Ejecutar después de Andreani
     enabled = true;
+    runOnPending = true;
 
     private readonly REMOTE_PATH = ftpPathsConfig.ventasExcel;
     private readonly TEMP_DIR = path.join(process.cwd(), 'backend', 'data', 'temp');
@@ -73,6 +74,20 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                     console.log(`📥 [ExcelHandler] Descargando Excel existente desde FTP...`);
                     await ftpService.downloadExcel(this.REMOTE_PATH, localPath);
                     workbook = excelTemplateService.readExcel(localPath);
+
+                    // Verificar duplicado por código de venta antes de agregar filas
+                    const codVentaCheck = ventaCompleta.cod_interno || id_venta.toString().padStart(8, '0');
+                    if (excelTemplateService.isVentaInExcel(workbook, codVentaCheck)) {
+                        console.log(`ℹ️ [ExcelHandler] Venta #${id_venta} ya existe en Excel - saltando duplicado`);
+                        context.handlerData[this.name] = {
+                            success: true,
+                            skipped: true,
+                            reason: 'already_in_excel',
+                            processedAt: new Date().toISOString(),
+                        };
+                        return;
+                    }
+
                     const lastRow = excelTemplateService.findLastDataRow(workbook);
                     // CRÍTICO: Asegurar que startRow sea al menos 4 (nunca escribir antes de la fila 4)
                     startRow = Math.max(lastRow + 1, 4);

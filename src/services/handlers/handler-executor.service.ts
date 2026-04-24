@@ -91,17 +91,31 @@ export class HandlerExecutorService {
      * Ejecuta todos los handlers para un evento
      */
     private async executeHandlers(eventType: string, payload: any): Promise<void> {
-        // Para SALE_CREATED, solo ejecutar handlers si estado_pago = 'aprobado'
-        if (eventType === 'SALE_CREATED' && payload.estado_pago !== 'aprobado') {
-            if (process.env.NODE_ENV !== 'production') {
-                console.log(`ℹ️ [HandlerExecutor] Evento SALE_CREATED ignorado (estado: ${payload.estado_pago}, solo se ejecuta cuando es 'aprobado')`);
-            }
-            return;
-        }
-
         const startTime = Date.now();
         const handlers = handlersRegistry[eventType] || [];
-        const enabledHandlers = handlers.filter(h => h.enabled !== false);
+        let enabledHandlers = handlers.filter(h => h.enabled !== false);
+
+        // Para SALE_CREATED:
+        // - estado aprobado: ejecutar todos los handlers habilitados
+        // - estado pendiente + metodo != mercadopago: ejecutar solo handlers con runOnPending=true
+        // - resto de estados: ignorar evento
+        if (eventType === 'SALE_CREATED') {
+            const isAprobado = payload.estado_pago === 'aprobado';
+            const metodoPago = String(payload.venta?.metodo_pago || '').toLowerCase();
+            const isMercadoPago = metodoPago.includes('mercado') || metodoPago === 'mercadopago' || metodoPago === 'mp';
+            const isPendienteNoMP = payload.estado_pago === 'pendiente' && !isMercadoPago;
+
+            if (!isAprobado && !isPendienteNoMP) {
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`ℹ️ [HandlerExecutor] Evento SALE_CREATED ignorado (estado: ${payload.estado_pago}, metodo: ${metodoPago || 'n/a'})`);
+                }
+                return;
+            }
+
+            if (isPendienteNoMP) {
+                enabledHandlers = enabledHandlers.filter(h => h.runOnPending === true);
+            }
+        }
         
         if (enabledHandlers.length === 0) {
             if (process.env.NODE_ENV !== 'production') {

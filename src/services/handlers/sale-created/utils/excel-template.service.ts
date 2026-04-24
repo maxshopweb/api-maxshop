@@ -91,6 +91,33 @@ export class ExcelTemplateService {
   }
 
   /**
+   * Verifica si una venta ya existe en el Excel por código interno (columna A/AA)
+   * Busca desde la fila 4 en adelante.
+   */
+  isVentaInExcel(workbook: XLSX.WorkBook, codVenta: string): boolean {
+    try {
+      const worksheet = workbook.Sheets[this.SHEET_NAME];
+      if (!worksheet) {
+        return false;
+      }
+
+      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null }) as any[][];
+      for (let i = 3; i < data.length; i++) {
+        const row = data[i];
+        if (!row) continue;
+        const cod = row[0];
+        if (cod !== null && cod !== undefined && String(cod).trim() === codVenta.trim()) {
+          return true;
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ [ExcelTemplate] Error al verificar venta duplicada en Excel:', error);
+      return false;
+    }
+  }
+
+  /**
    * Agrega filas de venta al Excel
    */
   appendVentaRows(workbook: XLSX.WorkBook, ventaRows: VentaExcelRow[], startRow: number): void {
