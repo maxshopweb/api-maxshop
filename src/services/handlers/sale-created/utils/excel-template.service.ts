@@ -19,18 +19,59 @@ export interface VentaExcelRow {
   [key: string]: string | number | null | undefined;
 }
 
+/**
+ * Notas legacy en N1 / S1 / S2 (misma disposición que ventas_corregido.xlsx).
+ * Mejoran compatibilidad con lectores externos; el texto se puede acordar con el cliente sin mover columnas.
+ */
+const VENTAS_SHEET_LEGACY_NOTES = {
+  N1: 'aca viene el sku',
+  S1: 'faltan las lista de precios ',
+  S2: 'cuando es más de una articulo',
+} as const;
+
 export class ExcelTemplateService {
   private readonly SHEET_NAME = 'Ventas AR';
 
   /**
-   * Crea un template Excel vacío (sin encabezados)
-   * Las filas 1, 2, 3 quedan vacías
-   * Los datos se escribirán desde la fila 4
+   * Recalcula worksheet['!ref'] como el rectángulo mínimo que contiene todas las celdas definidas.
+   * Evita filas/columnas fantasma y no recorta datos existentes al añadir filas nuevas.
+   */
+  private recomputeWorksheetRef(worksheet: XLSX.WorkSheet): void {
+    const keys = Object.keys(worksheet).filter((k) => !k.startsWith('!'));
+    if (keys.length === 0) {
+      worksheet['!ref'] = 'A1:A1';
+      return;
+    }
+    let minR = Infinity;
+    let minC = Infinity;
+    let maxR = -Infinity;
+    let maxC = -Infinity;
+    for (const addr of keys) {
+      const decoded = XLSX.utils.decode_cell(addr);
+      if (decoded.r < minR) minR = decoded.r;
+      if (decoded.c < minC) minC = decoded.c;
+      if (decoded.r > maxR) maxR = decoded.r;
+      if (decoded.c > maxC) maxC = decoded.c;
+    }
+    worksheet['!ref'] = XLSX.utils.encode_range({
+      s: { r: minR, c: minC },
+      e: { r: maxR, c: maxC },
+    });
+  }
+
+  /**
+   * Crea un template Excel para Ventas AR.
+   * Filas 1–2: notas legacy en N1, S1, S2 (compatibilidad con archivos históricos).
+   * Fila 3 vacía. Datos de ventas desde la fila 4.
    */
   createTemplate(): XLSX.WorkBook {
     const workbook = XLSX.utils.book_new();
-    // Crear una hoja completamente vacía
     const worksheet = XLSX.utils.aoa_to_sheet([]);
+
+    worksheet['N1'] = { t: 's', v: VENTAS_SHEET_LEGACY_NOTES.N1 };
+    worksheet['S1'] = { t: 's', v: VENTAS_SHEET_LEGACY_NOTES.S1 };
+    worksheet['S2'] = { t: 's', v: VENTAS_SHEET_LEGACY_NOTES.S2 };
+    this.recomputeWorksheetRef(worksheet);
 
     XLSX.utils.book_append_sheet(workbook, worksheet, this.SHEET_NAME);
     return workbook;
@@ -169,11 +210,7 @@ export class ExcelTemplateService {
         currentRow++;
       }
 
-      // Actualizar el rango de la hoja (columnas A hasta BY = índice 50)
-      worksheet['!ref'] = XLSX.utils.encode_range({
-        s: { r: 0, c: 0 },
-        e: { r: currentRow - 1, c: 50 }
-      });
+      this.recomputeWorksheetRef(worksheet);
 
       console.log(`✅ [ExcelTemplate] Agregadas ${ventaRows.length} fila(s) desde la fila ${startRow}`);
     } catch (error) {
