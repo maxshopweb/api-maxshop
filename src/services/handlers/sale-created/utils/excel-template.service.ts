@@ -20,14 +20,60 @@ export interface VentaExcelRow {
 }
 
 /**
- * Notas legacy en N1 / S1 / S2 (misma disposición que ventas_corregido.xlsx).
- * Mejoran compatibilidad con lectores externos; el texto se puede acordar con el cliente sin mover columnas.
+ * Cabeceras filas 2–3 alineadas con Venta_fgb_detallada.xlsx (fila 1 vacía).
  */
-const VENTAS_SHEET_LEGACY_NOTES = {
-  N1: 'aca viene el sku',
-  S1: 'faltan las lista de precios ',
-  S2: 'cuando es más de una articulo',
-} as const;
+const VENTAS_SHEET_ROW2: Record<string, string> = {
+  A2: 'Ventas',
+  T2: 'Facturación al comprador',
+  Y2: 'Compradores',
+};
+
+/** Fila 3: nombres de columna (texto literal del documento de referencia). */
+const VENTAS_SHEET_ROW3: Record<string, string> = {
+  A3: '# de venta    1',
+  B3: 'Fecha de venta 2',
+  F3: 'Unidades 6',
+  G3: 'Total 7 ',
+  L3: 'Estado  12   Si v iene en cero quiere decir que el pedido tiene más de 1 artículo',
+  N3: 'SKU 14',
+  R3: 'Precio unitario (ARS) 18',
+  S3: 'codigo lista de precios    19    ',
+  T3: 'Provincia de facturación 20  Tablpcia',
+  U3: 'Datos personales o de empresa 21',
+  V3: 'Tipo y número de documento 22',
+  W3: 'Dirección  23',
+  X3: 'Condición fiscal 24',
+  Y3: 'Comprador 25',
+  Z3: 'DNI 26',
+  AA3: 'Domicilio Envio 27',
+  AB3: 'Ciudad 28',
+  AC3: 'Provincia Envio   29   ',
+  AD3: 'Código postal Envio 30',
+  AE3: 'País',
+  AF3: 'Transporte   32 Tabltran',
+  AG3: 'Identificación de Plataforma de Pago 33',
+  AH3: 'id de Pago  34',
+  AI3: 'Estado del pago 35',
+  AJ3: 'Detalle del estado 36',
+  AK3: 'Forma de Pago  37',
+  AL3: 'Tipo de pago 38',
+  AM3: 'Fecha Aprobacion mismo formato que la columna 2   39',
+  AN3: 'Total Pagado  40',
+  AO3: 'Total Neto 41',
+  AP3: 'Comisiones 42',
+  AQ3: 'Cantidad Cuotas 43',
+  AR3: 'Numero Tarjeta 44',
+  AS3: 'Titular Tarjeta 45',
+};
+
+function seedVentasArSheetHeaders(worksheet: XLSX.WorkSheet): void {
+  for (const [addr, v] of Object.entries(VENTAS_SHEET_ROW2)) {
+    worksheet[addr] = { t: 's', v };
+  }
+  for (const [addr, v] of Object.entries(VENTAS_SHEET_ROW3)) {
+    worksheet[addr] = { t: 's', v };
+  }
+}
 
 export class ExcelTemplateService {
   private readonly SHEET_NAME = 'Ventas AR';
@@ -61,16 +107,13 @@ export class ExcelTemplateService {
 
   /**
    * Crea un template Excel para Ventas AR.
-   * Filas 1–2: notas legacy en N1, S1, S2 (compatibilidad con archivos históricos).
-   * Fila 3 vacía. Datos de ventas desde la fila 4.
+   * Fila 1 vacía. Filas 2–3: cabeceras como Venta_fgb_detallada.xlsx. Datos desde fila 4.
    */
   createTemplate(): XLSX.WorkBook {
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([]);
 
-    worksheet['N1'] = { t: 's', v: VENTAS_SHEET_LEGACY_NOTES.N1 };
-    worksheet['S1'] = { t: 's', v: VENTAS_SHEET_LEGACY_NOTES.S1 };
-    worksheet['S2'] = { t: 's', v: VENTAS_SHEET_LEGACY_NOTES.S2 };
+    seedVentasArSheetHeaders(worksheet);
     this.recomputeWorksheetRef(worksheet);
 
     XLSX.utils.book_append_sheet(workbook, worksheet, this.SHEET_NAME);
@@ -105,15 +148,15 @@ export class ExcelTemplateService {
 
       // Convertir a JSON para iterar
       const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-      
+
       // La fila 3 es la de headers (índice 2), empezar desde fila 4 (índice 3)
       let lastRow = 3; // Fila de headers (mínimo permitido)
-      
+
       // CRÍTICO: Ignorar cualquier dato antes de la fila 4
       // Iterar SOLO desde fila 4 (índice 3) hacia abajo
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
-        // Si la columna AA (índice 0) tiene valor, es una fila con datos
+        // Si la columna A (índice 0) tiene valor, es una fila con datos
         if (row && row[0] !== null && row[0] !== undefined && row[0] !== '') {
           lastRow = i + 1; // +1 porque XLSX usa 1-based indexing
         } else {
@@ -121,7 +164,7 @@ export class ExcelTemplateService {
           break;
         }
       }
-      
+
       // Asegurar que nunca retornemos menos de 3 (fila de headers)
       // Esto garantiza que startRow será al menos 4
       return Math.max(lastRow, 3);
@@ -184,8 +227,9 @@ export class ExcelTemplateService {
       let currentRow = startRow;
 
       // Columnas que se escriben como número en Excel (formato decimal 23000,00)
+      // AF (cantidad) se excluye: siempre entero, sin z '#.##0,00'
       const columnasNumericas = new Set([
-        'AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AO', 'AP', 'AQ', 'AR',
+        'AG', 'AH', 'AJ', 'AK', 'AL', 'AO', 'AP', 'AQ', 'AR',
         'BN', 'BO', 'BP',
         'BW', 'BY' // BW: monto liquidado, BY: monto por cuota
       ]);
@@ -201,6 +245,8 @@ export class ExcelTemplateService {
               if (num && columnasNumericas.has(col)) {
                 const rounded = Math.round((value as number) * 100) / 100;
                 worksheet[cellAddress] = { t: 'n', v: rounded, z: '#.##0,00' };
+              } else if (num && col === 'AF') {
+                worksheet[cellAddress] = { t: 'n', v: Math.round(value as number) };
               } else {
                 worksheet[cellAddress] = { t: 's', v: value.toString() };
               }

@@ -28,6 +28,21 @@ import * as fs from 'fs';
 import { prisma } from '../../../index';
 import { ftpPathsConfig } from '../../../config/ftp-paths.config';
 
+/** Columnas obligatorias del diccionario: vacías se rellenan con espacio para lectores externos. */
+const REQUIRED_VENTAS_EXCEL_KEYS = [
+    'AA', 'AB', 'AF', 'AG', 'AL', 'AN', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ',
+    'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 'BP', 'BQ', 'BR', 'BS',
+] as const;
+
+function fillRequiredVentasColumns(row: VentaExcelRow): void {
+    for (const k of REQUIRED_VENTAS_EXCEL_KEYS) {
+        const v = row[k as keyof VentaExcelRow];
+        if (v === null || v === undefined || (typeof v === 'string' && v === '')) {
+            (row as Record<string, string | number | null | undefined>)[k] = ' ';
+        }
+    }
+}
+
 export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventContext> {
     name = 'excel-handler';
     eventType = 'SALE_CREATED';
@@ -312,25 +327,18 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             console.warn(`⚠️ [ExcelHandler] No se encontró provincia en dirección de envío ni en cliente para venta #${venta.id_venta}`);
         }
 
-        // Columna AG: "MP" solo si es MercadoPago; transferencia o efectivo → vacío
-        const codigoPlataformaPago = (() => {
+        // Columna AG (plataforma de pago): MP / TRANS / EFECTIVO
+        const codigoPlataformaPagoDisplay = (() => {
             const metodo = (venta.metodo_pago || '').toLowerCase();
             if (metodo.includes('mercado') || metodo === 'mercadopago') return 'MP';
+            if (metodo.includes('transferencia') || metodo === 'transferencia') return 'TRANS';
+            if (metodo.includes('efectivo') || metodo === 'efectivo') return 'EFECTIVO';
             return '';
         })();
 
-        // Columna AK: "0" MercadoPago, "t" transferencia, "E" efectivo
-        const codigoMetodoPagoAK = (() => {
-            const metodo = (venta.metodo_pago || '').toLowerCase();
-            if (metodo.includes('mercado') || metodo === 'mercadopago') return '0';
-            if (metodo.includes('transferencia') || metodo === 'transferencia') return 't';
-            if (metodo.includes('efectivo') || metodo === 'efectivo') return 'E';
-            return '';
-        })();
-
-        // Columna AF: "C3" (código Andreani) solo si es envío con Andreani; si es retiro en local, vacío
+        // Columna AF Excel (BF interno): ANDREANI si hay envío Andreani; si no, RETIRO
         const esEnvioAndreani = !!(codigoEnvioAndreani || (andreaniData && !(andreaniData as any).skipped));
-        const construirTransporte = (): string => (esEnvioAndreani ? 'C3' : '');
+        const transporteDisplay = esEnvioAndreani ? 'ANDREANI' : 'RETIRO';
 
         // Sucursales Andreani desde contexto (respuesta del pre-envío)
         const sucursalDistribucionAndreani = andreaniData?.respuestaCompleta?.sucursalDeDistribucion?.descripcion ?? '';
@@ -485,6 +493,9 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             return totalConIva - totalNeto;
         };
 
+        const domicilioEnvioParaExcel = (): string =>
+            (direccionEnvio ? formatearDireccionEnvio() : formatearDireccionFacturacion());
+
         // Helpers para filas (venta cabecera / producto detalle)
         const buildVentaBaseRow = (): VentaExcelRow =>
             ({
@@ -496,29 +507,28 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AW: formatearDireccionFacturacion(), // COLUMNA W: Dirección de facturación formateada
                 AX: 'CF', // COLUMNA X: Condición fiscal fija "CF"
                 AY: nombreCompletoCliente, // Nombre cliente (repeat)
-                AZ: tipoYNumeroDoc, // COLUMNA Z (26): mismo formato que AV (22) — "DNI 42234462"
-                BA: formatearDireccionEnvio(), // COLUMNA AA (Excel): Dirección de envío formateada
+                AZ: tipoYNumeroDoc, // COLUMNA Z: mismo formato que V — "DNI 42234462"
+                BA: domicilioEnvioParaExcel(), // COLUMNA AA: envío; si no hay dirección de envío, facturación
                 BB: direccionEnvio?.ciudad || cliente?.ciudad || '', // Ciudad envío
                 BC: codigoProvinciaFacturacion, // COLUMNA AC (BC): mismo codi_provincia que columna T
                 BD: (direccionEnvio?.cod_postal || cliente?.cod_postal || '').toString(), // Código postal envío
                 BE: direccionEnvio?.pais || 'ARGENTINA', // País
-                BF: construirTransporte(), // COLUMNA AF: "C3" si Andreani, vacío si retiro en local
-                BG: codigoPlataformaPago, // COLUMNA AG: "MP" si MercadoPago, vacío si no
+                BF: transporteDisplay, // COLUMNA AF: ANDREANI | RETIRO
+                BG: codigoPlataformaPagoDisplay, // COLUMNA AG: MP | TRANS | EFECTIVO
                 BH: pagoMP?.payment_id || (venta as any).referencia_pago_manual || null, // Referencia pago: MP o manual (admin)
                 BI: pagoMP?.status_mp ? mapMPStatusToSpanish(pagoMP.status_mp) : null, // Estado del pago
                 BJ: pagoMP?.status_detail ? mapMPStatusDetailToSpanish(pagoMP.status_detail) : null, // Detalle del pago
                 BK: pagoMP?.payment_method_id ? mapPaymentMethodToSpanish(pagoMP.payment_method_id) : null, // Forma de pago
-                AK: codigoMetodoPagoAK, // COLUMNA AK: "0" MP, "t" transferencia, "E" efectivo
                 BL: pagoMP?.payment_type_id
                     ? mapPaymentTypeToSpanish(pagoMP.payment_type_id, pagoMP.card_info)
                     : null, // Tipo de pago
                 BM: pagoMP?.date_approved ? formatFechaVenta(pagoMP.date_approved) : null, // Fecha aprobación (mismo formato que columna B)
                 BN: venta.total_con_iva != null ? Number(venta.total_con_iva) : 0,
-                BO: venta.total_neto != null ? Number(venta.total_neto) : 0,
+                BO: venta.total_neto != null ? Number(venta.total_neto) : null, // Sin duplicar total_con_iva si falta neto
                 BP: calcularComisiones(),
                 BQ: pagoMP?.installments ? pagoMP.installments.toString() : null, // Cantidad cuotas
                 BR: pagoMP?.card_info?.last_four_digits || null, // Número tarjeta (últimos 4 dígitos)
-                BS: pagoMP?.card_info?.cardholder?.name || nombreCompletoCliente || null, // Titular tarjeta o nombre cliente
+                BS: pagoMP?.card_info?.cardholder?.name ?? null, // Solo dato real de MP (sin fallback)
                 BT: codigoEnvioAndreani ?? null, // COLUMNA AT Excel: código de envío Andreani
                 BU: sucursalDistribucionAndreani || null, // COLUMNA AU Excel: sucursal de distribución Andreani
                 BV: sucursalRendicionAndreani || null, // COLUMNA AV Excel: sucursal de rendición Andreani
@@ -549,6 +559,14 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             return Math.round((desc / base) * 100 * 100) / 100;
         };
 
+        /** Importe de descuento en dinero (col H / clave AH), negativo; 0 si no hay descuento. */
+        const importeDescuentoLinea = (d: any): number => {
+            if (d.descuento_aplicado == null) return 0;
+            const n = Number(d.descuento_aplicado);
+            if (!Number.isFinite(n) || n === 0) return 0;
+            return -Math.abs(n);
+        };
+
         const buildProductoRow = (detalle: any): VentaExcelRow => {
             const producto = detalle.producto;
             const bonificacionPct = detalle.bonificacion_porcentaje ?? producto?.bonificacion_porcentaje ?? null;
@@ -556,6 +574,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // A
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // B
                 AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1, // F (cantidad, número)
+                AH: importeDescuentoLinea(detalle), // H: importe descuento (negativo)
                 AN: producto?.codi_arti || '', // N: solo SKU (codi_arti)
                 AO: netoLineaDesdeFinal(detalle, producto), // O: neto del artículo (sin IVA)
                 AP: ivaLinea(detalle, producto), // P: IVA del artículo (monto)
@@ -577,6 +596,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 ...buildVentaBaseRow(),
                 AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1,
                 AG: detalle.sub_total != null ? Number(detalle.sub_total) : 0,
+                AH: importeDescuentoLinea(detalle), // H: importe descuento (negativo); Q sigue siendo %
                 AL: calcularEstado(detalle, totalDetalles),
                 AN: producto?.codi_arti || '', // N: solo SKU (codi_arti)
                 AO: netoLineaDesdeFinal(detalle, producto), // O: neto del artículo (sin IVA)
@@ -612,9 +632,8 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 ...buildVentaBaseRow(),
                 AC: `Paquete de ${cantidadProductosDistintos} productos`, // C
                 AG: totalConIvaNum, // G (número)
-                AH: -Math.abs(diferencia), // H (número)
+                AH: -Math.abs(diferencia), // H (número): descuento global a nivel pedido
                 AJ: -(Math.abs(diferencia) * 0.8378), // J (número)
-                // AK viene del base row (código medio de pago: "0"|"t"|"E")
                 AL: totalNetoNum, // L (número)
             };
 
@@ -623,6 +642,10 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             for (const detalle of venta.detalles) {
                 rows.push(buildProductoRow(detalle));
             }
+        }
+
+        for (const row of rows) {
+            fillRequiredVentasColumns(row);
         }
 
         return rows;
