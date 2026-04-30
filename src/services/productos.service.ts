@@ -53,7 +53,7 @@ export class ProductosService {
      */
     private calcularPrecioConIva(producto: any): number | null {
         const precioSinIva = this.getPrecioListaActiva(producto);
-        if (precioSinIva === null || precioSinIva < 0) return null;
+        if (precioSinIva === null || precioSinIva <= 0) return null;
         const iva = producto.iva;
         const porcentaje = iva?.porcentaje != null ? Number(iva.porcentaje) : 0;
         return precioSinIva * (1 + porcentaje / 100);
