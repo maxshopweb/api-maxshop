@@ -358,8 +358,9 @@ class MercadoPagoService {
             console.log(`🔍 [MercadoPagoService] Creando preferencia para venta #${venta.id_venta}`);
         }
 
-        if (!venta.total_neto) {
-            throw new Error('La venta debe tener un total_neto para crear la preferencia');
+        const totalNetoNum = venta.total_neto != null ? Number(venta.total_neto) : null;
+        if (totalNetoNum === null || !Number.isFinite(totalNetoNum) || totalNetoNum <= 0) {
+            throw new Error(`La venta #${venta.id_venta} tiene un total_neto inválido (${venta.total_neto}). Verificá que todos los productos tengan precio configurado.`);
         }
 
         if (!venta.detalles || venta.detalles.length === 0) {

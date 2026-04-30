@@ -166,7 +166,7 @@ export class VentasService {
             total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
-            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
@@ -274,7 +274,7 @@ export class VentasService {
             total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
-            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
@@ -359,7 +359,7 @@ export class VentasService {
             total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
-            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
@@ -474,8 +474,8 @@ export class VentasService {
             let precioFinalUnitario: number;
             if (data.tipo_venta === 'online') {
                 const desdeCatalogo = productosService.getPrecioFinalConIva(producto);
-                if (desdeCatalogo === null || desdeCatalogo < 0) {
-                    throw new Error(`Producto ${detalle.id_prod}: precio no disponible en catálogo`);
+                if (desdeCatalogo === null || desdeCatalogo <= 0) {
+                    throw new Error(`Producto ${detalle.id_prod}: precio no disponible en catálogo (precio calculado: ${desdeCatalogo})`);
                 }
                 precioFinalUnitario = roundMoney(desdeCatalogo);
                 const enviado = detalle.precio_unitario;
@@ -1621,7 +1621,7 @@ export class VentasService {
             total_sin_iva: venta.total_sin_iva ? Number(venta.total_sin_iva) : null,
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
-            total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
