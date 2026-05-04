@@ -1,4 +1,4 @@
-import { Client, FileInfo } from 'basic-ftp';
+import { Client, FileInfo, FTPError } from 'basic-ftp';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ftpConfig } from '../config/ftp.config';
@@ -16,7 +16,7 @@ export class FTPService {
 
   constructor() {
     this.client = new Client();
-    this.client.ftp.verbose = false; // Desactivar logs verbosos
+    this.client.ftp.verbose = process.env.NODE_ENV !== 'production';
   }
 
   /**
@@ -59,7 +59,7 @@ export class FTPService {
       console.error('⚠️  Error al desconectar del FTP:', error);
     } finally {
       this.client = new Client();
-      this.client.ftp.verbose = false;
+      this.client.ftp.verbose = process.env.NODE_ENV !== 'production';
       if (this.releaseLock) {
         this.releaseLock();
         this.releaseLock = null;
@@ -141,19 +141,22 @@ export class FTPService {
   }
 
   /**
-   * Verifica si un archivo existe en el FTP
+   * Verifica si un archivo existe en el FTP (SIZE sobre ruta absoluta; no depende del cwd).
    */
   async fileExists(remotePath: string): Promise<boolean> {
     try {
-      const dir = path.dirname(remotePath);
-      const fileName = path.basename(remotePath);
-      
-      await this.client.cd(dir);
-      const files = await this.client.list();
-      
-      return files.some(file => file.name === fileName && file.isFile);
-    } catch (error) {
-      // Si el directorio no existe o hay error, el archivo no existe
+      await this.client.size(remotePath);
+      return true;
+    } catch (error: unknown) {
+      if (error instanceof FTPError && error.code === 550) {
+        return false;
+      }
+      const msg = String(error instanceof Error ? error.message : error);
+      const lower = msg.toLowerCase();
+      if (msg.includes('550') || lower.includes('not found') || lower.includes('no such file')) {
+        return false;
+      }
+      console.warn(`⚠️ [FTP] fileExists(${remotePath}) — error inesperado: ${msg}`);
       return false;
     }
   }

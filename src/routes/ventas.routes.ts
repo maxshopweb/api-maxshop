@@ -87,6 +87,7 @@ router.post(
 router.get('/', ...adminAuth, ventasController.getAll.bind(ventasController));
 router.get('/stats', ...adminAuth, ventasController.getStats.bind(ventasController));
 router.get('/export', ...adminAuth, ventasController.exportVentas.bind(ventasController));
+router.get('/excel-ftp', ...adminAuth, ventasController.downloadVentasExcelFtp.bind(ventasController));
 router.get('/:id', ...adminAuth, ventasController.getById.bind(ventasController));
 router.post('/', ...adminAuth, ventasController.create.bind(ventasController));
 router.put('/:id', ...adminAuth, ventasController.update.bind(ventasController));

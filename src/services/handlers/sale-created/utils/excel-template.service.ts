@@ -32,6 +32,8 @@ const VENTAS_SHEET_ROW2: Record<string, string> = {
 const VENTAS_SHEET_ROW3: Record<string, string> = {
   A3: '# de venta    1',
   B3: 'Fecha de venta 2',
+  D3: 'Email',
+  E3: 'Teléfono',
   F3: 'Unidades 6',
   G3: 'Total 7 ',
   L3: 'Estado  12   Si v iene en cero quiere decir que el pedido tiene más de 1 artículo',

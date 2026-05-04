@@ -1,9 +1,13 @@
 import { Request, Response } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { asSingleString } from '../utils/validation.utils';
 import { VentasService } from '../services/ventas.service';
 import { paymentProcessingService } from '../services/payment-processing.service';
 import { IApiResponse } from '../types';
 import { IVentaFilters, ICreateVentaDTO, IUpdateVentaDTO, IVenta } from '../types';
+import ftpService from '../services/ftp.service';
+import { ftpPathsConfig } from '../config/ftp-paths.config';
 
 const ventasService = new VentasService();
 
@@ -66,6 +70,61 @@ export class VentasController {
                 success: false,
                 error: error.message || 'Error al exportar ventas',
             });
+        }
+    }
+
+    /** Descarga Ventas.xlsx desde el FTP (misma ruta que ExcelHandler). Solo admin. */
+    async downloadVentasExcelFtp(req: Request, res: Response): Promise<void> {
+        const localPath = path.join(
+            process.cwd(),
+            'backend',
+            'data',
+            'temp',
+            `Ventas_admin_${Date.now()}.xlsx`
+        );
+        let connected = false;
+        try {
+            await ftpService.connect();
+            connected = true;
+            const remotePath = ftpPathsConfig.ventasExcel;
+            if (!(await ftpService.fileExists(remotePath))) {
+                res.status(404).json({
+                    success: false,
+                    error: 'Excel no existen. Consulte al Administrador',
+                });
+                return;
+            }
+            const dir = path.dirname(localPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            await ftpService.downloadExcel(remotePath, localPath);
+            const buf = fs.readFileSync(localPath);
+            res.setHeader(
+                'Content-Type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            );
+            res.setHeader('Content-Disposition', 'attachment; filename="Ventas.xlsx"');
+            res.send(buf);
+        } catch (error: any) {
+            console.error('Error en downloadVentasExcelFtp:', error);
+            if (!res.headersSent) {
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Error al descargar el Excel del FTP',
+                });
+            }
+        } finally {
+            try {
+                if (fs.existsSync(localPath)) {
+                    fs.unlinkSync(localPath);
+                }
+            } catch {
+                /* ignore */
+            }
+            if (connected) {
+                await ftpService.disconnect();
+            }
         }
     }
 

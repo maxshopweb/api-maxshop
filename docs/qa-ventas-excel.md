@@ -20,6 +20,8 @@ Guía para generar **ventas de prueba realistas** y validar que el Excel quede b
 |-----------|-------------------|
 | A | Código de venta (`cod_interno` o `id` rellenado a 8 dígitos) |
 | B | Fecha en formato largo español |
+| D | Email del cliente (usuario o cliente) |
+| E | Teléfono del cliente (usuario o cliente) |
 | F | Cantidad (entero, sin formato decimal de moneda) |
 | G | Subtotal línea o total cabecera |
 | H | Importe de descuento en dinero (negativo) si aplica; en cabecera multi-producto, descuento global |
@@ -30,7 +32,7 @@ Guía para generar **ventas de prueba realistas** y validar que el Excel quede b
 | T–U–V–W | Provincia facturación (código), nombre, tipo+número doc, dirección facturación |
 | X–Y–Z | CF, nombre repetido, **mismo texto que V** (ej. `DNI 12345678`) |
 | AA–AE | Domicilio envío (si no hay dirección de envío en BD, se usa dirección de facturación del cliente) |
-| AF | `ANDREANI` si hay envío Andreani; si no, `RETIRO` |
+| AF | Código TABLTRAN: **`30`** si hay envío Andreani; si no, **`RE`** (retiro en local) |
 | AG | `MP` / `TRANS` / `EFECTIVO` según `metodo_pago` |
 | AH–AS | Datos de pago MP solo si existen; **AS titular tarjeta solo desde MP**, sin rellenar con el nombre del cliente |
 | AT–AV | Código y sucursales Andreani solo si la integración / BD aportan datos |
@@ -41,7 +43,7 @@ Las celdas obligatorias vacías se rellenan con **un espacio** (`' '`) para que 
 
 ## Escenario 1 — Efectivo + retiro en local + cliente completo
 
-**Objetivo:** fila con `AG = EFECTIVO`, `AF = RETIRO`, dirección y provincia completas, sin columnas MP ni Andreani (solo espacios donde no aplica).
+**Objetivo:** fila con `AG = EFECTIVO`, `AF = RE`, dirección y provincia completas, sin columnas MP ni Andreani (solo espacios donde no aplica).
 
 ### Pasos sugeridos
 
@@ -62,14 +64,14 @@ Las celdas obligatorias vacías se rellenan con **un espacio** (`' '`) para que 
 
 5. **Verificación**
    - Descargar `Ventas.xlsx` del FTP (ruta configurada en `ftp-paths.config.ts`).
-   - Abrir y comprobar fila de la venta: **AG = EFECTIVO**, **AF = RETIRO**, **V y Z iguales** (`DNI …` o `CUIT …`), **K vacío/espacio**, **H** con descuento en dinero si el detalle tiene `descuento_aplicado`, **Q** con % si aplica.
+   - Abrir y comprobar fila de la venta: **AG = EFECTIVO**, **AF = RE**, **D/E** email y teléfono si existen en BD, **V y Z iguales** (`DNI …` o `CUIT …`), **K vacío/espacio**, **H** con descuento en dinero si el detalle tiene `descuento_aplicado`, **Q** con % si aplica.
    - Comparar con `Venta_fgb_detallada.xlsx` que las columnas A–AS no queden “huecos” injustificados (espacio cuenta como celda presente).
 
 ---
 
 ## Escenario 2 — Transferencia + envío Andreani + cliente completo
 
-**Objetivo:** `AG = TRANS`, `AF = ANDREANI`, **AT–AU–AV** con datos de envío si el pre-envío / BD los aportan.
+**Objetivo:** `AG = TRANS`, `AF = 30`, **AT–AU–AV** (Excel) con datos de envío si el pre-envío / BD los aportan.
 
 ### Pasos sugeridos
 
@@ -82,7 +84,7 @@ Las celdas obligatorias vacías se rellenan con **un espacio** (`' '`) para que 
    - Si Excel corre sin Andreani en el mismo request, el handler ya busca `envios` en BD por `id_venta` y empresa Andreani.
 
 4. **Verificación**
-   - **AF = ANDREANI**, **AG = TRANS**.
+   - **AF = 30**, **AG = TRANS**.
    - Columnas **AT, AU, AV** con valores reales si la integración los devolvió; si no, deben quedar como espacio (no inventar datos).
 
 ---

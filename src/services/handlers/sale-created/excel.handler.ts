@@ -30,7 +30,7 @@ import { ftpPathsConfig } from '../../../config/ftp-paths.config';
 
 /** Columnas obligatorias del diccionario: vacías se rellenan con espacio para lectores externos. */
 const REQUIRED_VENTAS_EXCEL_KEYS = [
-    'AA', 'AB', 'AF', 'AG', 'AL', 'AN', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ',
+    'AA', 'AB', 'AD', 'AE', 'AF', 'AG', 'AL', 'AN', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ',
     'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 'BP', 'BQ', 'BR', 'BS',
 ] as const;
 
@@ -118,6 +118,22 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 // 6. Agregar filas de la venta
                 excelTemplateService.appendVentaRows(workbook, ventaRows, startRow);
 
+                // 6b. Resguardo local: copia del Excel descargado del FTP (estado antes del append) antes de guardar
+                if (fileExists && fs.existsSync(localPath)) {
+                    try {
+                        if (!fs.existsSync(this.TEMP_DIR)) {
+                            fs.mkdirSync(this.TEMP_DIR, { recursive: true });
+                        }
+                        const stamped = new Date().toISOString().replace(/[:.]/g, '-');
+                        const backupPath = path.join(this.TEMP_DIR, `Ventas_backup_${stamped}.xlsx`);
+                        fs.copyFileSync(localPath, backupPath);
+                        console.log(`💾 [ExcelHandler] Backup previo guardado: ${backupPath}`);
+                    } catch (copyErr) {
+                        console.warn(`⚠️ [ExcelHandler] No se pudo guardar backup previo a venta #${id_venta}:`, copyErr);
+                    }
+                    this.pruneVentasExcelBackups(5);
+                }
+
                 // 7. Guardar Excel localmente
                 excelTemplateService.saveExcel(workbook, localPath);
 
@@ -140,6 +156,12 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
 
                 console.log(`✅ [ExcelHandler] Excel generado y subido exitosamente para venta #${id_venta}`);
                 console.log(`📊 [ExcelHandler] Filas agregadas: ${ventaRows.length}, Archivo: ${wasNewFile ? 'NUEVO' : 'ACTUALIZADO'}`);
+                if (wasNewFile) {
+                    console.warn(
+                        `⚠️ [ExcelHandler] ATENCIÓN: Se creó un archivo NUEVO en el FTP para venta #${id_venta}. ` +
+                            `Si ya había ventas anteriores en el FTP, revisar logs de fileExists y el servidor FTP.`
+                    );
+                }
 
             } finally {
                 // 11. Desconectar del FTP
@@ -336,9 +358,9 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             return '';
         })();
 
-        // Columna AF Excel (BF interno): ANDREANI si hay envío Andreani; si no, RETIRO
+        // Columna AF Excel (BF interno): códigos TABLTRAN — 30 = Andreani, RE = retiro en local
         const esEnvioAndreani = !!(codigoEnvioAndreani || (andreaniData && !(andreaniData as any).skipped));
-        const transporteDisplay = esEnvioAndreani ? 'ANDREANI' : 'RETIRO';
+        const transporteDisplay = esEnvioAndreani ? '30' : 'RE';
 
         // Sucursales Andreani desde contexto (respuesta del pre-envío)
         const sucursalDistribucionAndreani = andreaniData?.respuestaCompleta?.sucursalDeDistribucion?.descripcion ?? '';
@@ -501,6 +523,8 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             ({
                 AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // COLUMNA A: # de venta (usar cod_interno, fallback a id_venta formateado)
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // Usar actualizado_en según mapeo
+                AD: usuarioCliente?.email || (cliente as any)?.email || null, // COLUMNA D: email
+                AE: usuarioCliente?.telefono || (cliente as any)?.telefono || null, // COLUMNA E: teléfono
                 AT: codigoProvinciaFacturacion, // COLUMNA T: código de provincia de la venta (lookup en tabla provincia)
                 AU: nombreCompletoCliente, // Nombre y apellido del cliente
                 AV: tipoYNumeroDoc, // COLUMNA V: Tipo y número de documento (usar numero_documento)
@@ -513,7 +537,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 BC: codigoProvinciaFacturacion, // COLUMNA AC (BC): mismo codi_provincia que columna T
                 BD: (direccionEnvio?.cod_postal || cliente?.cod_postal || '').toString(), // Código postal envío
                 BE: direccionEnvio?.pais || 'ARGENTINA', // País
-                BF: transporteDisplay, // COLUMNA AF: ANDREANI | RETIRO
+                BF: transporteDisplay, // COLUMNA AF: 30 = Andreani, RE = retiro (TABLTRAN)
                 BG: codigoPlataformaPagoDisplay, // COLUMNA AG: MP | TRANS | EFECTIVO
                 BH: pagoMP?.payment_id || (venta as any).referencia_pago_manual || null, // Referencia pago: MP o manual (admin)
                 BI: pagoMP?.status_mp ? mapMPStatusToSpanish(pagoMP.status_mp) : null, // Estado del pago
@@ -569,7 +593,6 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
 
         const buildProductoRow = (detalle: any): VentaExcelRow => {
             const producto = detalle.producto;
-            const bonificacionPct = detalle.bonificacion_porcentaje ?? producto?.bonificacion_porcentaje ?? null;
             return ({
                 AA: venta.cod_interno || venta.id_venta.toString().padStart(8, '0'), // A
                 AB: formatFechaVenta(venta.actualizado_en || venta.fecha), // B
@@ -581,7 +604,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0, // R (número)
                 AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea (V|O|P|Q|E)
-                AT: bonificacionPct != null ? Number(bonificacionPct) : null, // T: bonificación a aplicar (%)
+                // No escribir AT en filas de producto: AT = col T = provincia (evitar colisión con bonificación)
             }) as VentaExcelRow;
         };
 
@@ -591,7 +614,6 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
             const detalle = venta.detalles[i];
             const producto = detalle.producto;
 
-            const bonificacionPctLegacy = detalle.bonificacion_porcentaje ?? producto?.bonificacion_porcentaje ?? null;
             const legacyRow: VentaExcelRow = {
                 ...buildVentaBaseRow(),
                 AF: detalle.cantidad != null ? Number(detalle.cantidad) : 1,
@@ -604,7 +626,7 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
                 AQ: porcentajeDescuentoLinea(detalle), // Q: % descuento sobre monto original
                 AR: detalle.precio_unitario != null ? Number(detalle.precio_unitario) : 0,
                 AS: producto?.lista_precio_activa ?? 'V', // S: lista de precio por línea (V|O|P|Q|E)
-                AT: bonificacionPctLegacy != null ? Number(bonificacionPctLegacy) : null, // T: bonificación a aplicar (%)
+                // AT = provincia desde buildVentaBaseRow; no sobrescribir con bonificación
             };
 
             rows.push(legacyRow);
@@ -649,5 +671,26 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
         }
 
         return rows;
+    }
+
+    /** Mantiene solo los `maxKeep` backups más recientes (nombre con timestamp ISO ordenable). */
+    private pruneVentasExcelBackups(maxKeep: number): void {
+        try {
+            if (!fs.existsSync(this.TEMP_DIR)) return;
+            const names = fs
+                .readdirSync(this.TEMP_DIR)
+                .filter((f) => f.startsWith('Ventas_backup_') && f.endsWith('.xlsx'))
+                .sort()
+                .reverse();
+            for (const name of names.slice(maxKeep)) {
+                try {
+                    fs.unlinkSync(path.join(this.TEMP_DIR, name));
+                } catch (unlinkErr) {
+                    console.warn(`⚠️ [ExcelHandler] No se pudo eliminar backup viejo ${name}:`, unlinkErr);
+                }
+            }
+        } catch (e) {
+            console.warn(`⚠️ [ExcelHandler] pruneVentasExcelBackups:`, e);
+        }
     }
 }
