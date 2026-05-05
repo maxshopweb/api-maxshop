@@ -147,22 +147,22 @@ export class ExcelTemplateService {
       if (!worksheet) {
         return 3; // Si no existe la hoja, retornar fila de headers
       }
+      const ref = worksheet['!ref'];
+      if (!ref) return 3;
+      const range = XLSX.utils.decode_range(ref);
 
-      // Convertir a JSON para iterar
-      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-
-      // La fila 3 es la de headers (índice 2), empezar desde fila 4 (índice 3)
+      // Fila 4 en Excel (1-based) => índice 3 (0-based)
+      const startRowIdx = 3;
       let lastRow = 3; // Fila de headers (mínimo permitido)
 
-      // CRÍTICO: Ignorar cualquier dato antes de la fila 4
-      // Iterar SOLO desde fila 4 (índice 3) hacia abajo
-      for (let i = 3; i < data.length; i++) {
-        const row = data[i] as any[];
-        // Si la columna A (índice 0) tiene valor, es una fila con datos
-        if (row && row[0] !== null && row[0] !== undefined && row[0] !== '') {
-          lastRow = i + 1; // +1 porque XLSX usa 1-based indexing
+      // Buscar por dirección real de celda A{fila}, no por índices relativos de sheet_to_json.
+      for (let r = startRowIdx; r <= range.e.r; r++) {
+        const aCell = worksheet[XLSX.utils.encode_cell({ r, c: 0 })];
+        const value = aCell?.v;
+        if (value !== null && value !== undefined && String(value).trim() !== '') {
+          lastRow = r + 1; // convertir 0-based -> 1-based
         } else {
-          // Si encontramos una fila vacía, la anterior era la última
+          // La exportación es secuencial en columna A; al primer hueco, cortar.
           break;
         }
       }
@@ -187,12 +187,16 @@ export class ExcelTemplateService {
         return false;
       }
 
-      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null }) as any[][];
-      for (let i = 3; i < data.length; i++) {
-        const row = data[i];
-        if (!row) continue;
-        const cod = row[0];
-        if (cod !== null && cod !== undefined && String(cod).trim() === codVenta.trim()) {
+      const ref = worksheet['!ref'];
+      if (!ref) return false;
+      const range = XLSX.utils.decode_range(ref);
+      const target = codVenta.trim();
+
+      // Fila 4 en Excel (1-based) => índice 3 (0-based)
+      for (let r = 3; r <= range.e.r; r++) {
+        const aCell = worksheet[XLSX.utils.encode_cell({ r, c: 0 })];
+        const cod = aCell?.v;
+        if (cod !== null && cod !== undefined && String(cod).trim() === target) {
           return true;
         }
       }
