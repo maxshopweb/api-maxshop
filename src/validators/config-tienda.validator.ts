@@ -42,6 +42,11 @@ export function configTiendaUpdateValidators(): ValidationChain[] {
       .isNumeric()
       .withMessage('cuotas_sin_interes_minimo debe ser numérico')
       .toFloat(),
+    body('modo_mantenimiento')
+      .optional()
+      .isBoolean({ strict: true })
+      .withMessage('modo_mantenimiento debe ser booleano')
+      .toBoolean(),
     body('datos_bancarios')
       .optional()
       .custom((v) => v === null || (typeof v === 'object' && v !== null && !Array.isArray(v)))

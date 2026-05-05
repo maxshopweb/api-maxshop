@@ -20,6 +20,12 @@ export interface IConfigTienda {
   cuotas_sin_interes_activo: boolean;
   cuotas_sin_interes_minimo: number | null;
   datos_bancarios: IDatosBancarios | null;
+  modo_mantenimiento: boolean;
+  /** Identidad de tienda (pública, para UI / mantenimiento) */
+  nombre: string | null;
+  direccion: string | null;
+  logo: string | null;
+  telefono: string | null;
 }
 
 export interface IUpdateConfigTiendaDTO {
@@ -29,4 +35,5 @@ export interface IUpdateConfigTiendaDTO {
   cuotas_sin_interes_activo?: boolean;
   cuotas_sin_interes_minimo?: number;
   datos_bancarios?: Partial<IDatosBancarios> | null;
+  modo_mantenimiento?: boolean;
 }

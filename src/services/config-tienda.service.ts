@@ -19,6 +19,11 @@ const DEFAULTS: IConfigTienda = {
   cuotas_sin_interes_activo: true,
   cuotas_sin_interes_minimo: 80000,
   datos_bancarios: null,
+  modo_mantenimiento: false,
+  nombre: null,
+  direccion: null,
+  logo: null,
+  telefono: null,
 };
 
 type NegocioRow = {
@@ -27,7 +32,11 @@ type NegocioRow = {
   cuotas_sin_interes: unknown;
   cuotas_sin_interes_activo: boolean | null;
   cuotas_sin_interes_minimo: unknown;
+  modo_mantenimiento?: boolean | null;
   nombre?: string | null;
+  direccion?: string | null;
+  logo?: string | null;
+  telefono?: string | null;
   cuit?: string | null;
   banco?: string | null;
   tipo_cuenta?: string | null;
@@ -87,6 +96,11 @@ function fromDb(row: NegocioRow): IConfigTienda {
     cuotas_sin_interes_minimo:
       row.cuotas_sin_interes_minimo != null ? Number(row.cuotas_sin_interes_minimo) : null,
     datos_bancarios: mapToDatosBancarios(row),
+    modo_mantenimiento: row.modo_mantenimiento ?? false,
+    nombre: toStr(row.nombre),
+    direccion: toStr(row.direccion),
+    logo: toStr(row.logo),
+    telefono: toStr(row.telefono),
   };
 }
 
@@ -103,6 +117,10 @@ export class ConfigTiendaService {
     cuotas_sin_interes: true,
     cuotas_sin_interes_activo: true,
     cuotas_sin_interes_minimo: true,
+    modo_mantenimiento: true,
+    direccion: true,
+    logo: true,
+    telefono: true,
     ...BANK_SELECT,
   } as const;
 
@@ -122,6 +140,11 @@ export class ConfigTiendaService {
       cuotas_sin_interes_minimo:
         config.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo,
       datos_bancarios: config.datos_bancarios,
+      modo_mantenimiento: config.modo_mantenimiento ?? DEFAULTS.modo_mantenimiento,
+      nombre: config.nombre ?? DEFAULTS.nombre,
+      direccion: config.direccion ?? DEFAULTS.direccion,
+      logo: config.logo ?? DEFAULTS.logo,
+      telefono: config.telefono ?? DEFAULTS.telefono,
     };
   }
 
@@ -171,7 +194,8 @@ export class ConfigTiendaService {
       cuotasActivo === currentCuotasActivo &&
       cuotasMinNum === currentCuotasMin;
     const noBankUpdate = dto.datos_bancarios === undefined;
-    if (reglasUnchanged && noBankUpdate) return current;
+    const noMaintenanceUpdate = dto.modo_mantenimiento === undefined;
+    if (reglasUnchanged && noBankUpdate && noMaintenanceUpdate) return current;
 
     const updateData: Record<string, unknown> = {
       envio_gratis_minimo: String(envioNum),
@@ -180,6 +204,10 @@ export class ConfigTiendaService {
       cuotas_sin_interes_activo: cuotasActivo,
       cuotas_sin_interes_minimo: String(cuotasMinNum),
     };
+
+    if (dto.modo_mantenimiento !== undefined) {
+      updateData.modo_mantenimiento = dto.modo_mantenimiento;
+    }
 
     // Datos bancarios (solo si viene en el DTO)
     if (dto.datos_bancarios !== undefined) {
@@ -236,6 +264,7 @@ export class ConfigTiendaService {
       cuotas_sin_interes: String(dto.cuotas_sin_interes ?? 3),
       cuotas_sin_interes_activo: dto.cuotas_sin_interes_activo ?? true,
       cuotas_sin_interes_minimo: String(dto.cuotas_sin_interes_minimo ?? 80000),
+      modo_mantenimiento: dto.modo_mantenimiento ?? false,
     };
     if (dto.datos_bancarios && typeof dto.datos_bancarios === 'object') {
       const db = dto.datos_bancarios;

@@ -13,6 +13,7 @@ const ALLOWED_KEYS: (keyof IUpdateConfigTiendaDTO)[] = [
   'cuotas_sin_interes_activo',
   'cuotas_sin_interes_minimo',
   'datos_bancarios',
+  'modo_mantenimiento',
 ];
 
 function toUpdateDto(body: unknown): IUpdateConfigTiendaDTO {
@@ -30,6 +31,8 @@ function toUpdateDto(body: unknown): IUpdateConfigTiendaDTO {
   if ('cuotas_sin_interes_minimo' in src && src.cuotas_sin_interes_minimo !== undefined)
     dto.cuotas_sin_interes_minimo = Number(src.cuotas_sin_interes_minimo);
   if ('datos_bancarios' in src) dto.datos_bancarios = src.datos_bancarios as IUpdateConfigTiendaDTO['datos_bancarios'];
+  if ('modo_mantenimiento' in src && src.modo_mantenimiento !== undefined)
+    dto.modo_mantenimiento = Boolean(src.modo_mantenimiento);
   return dto;
 }
 

@@ -306,6 +306,7 @@ model negocio {
   cbu                       String?  @db.VarChar(22)
   alias                     String?  @db.VarChar(50)
   instrucciones             String?  @db.VarChar(500)
+  modo_mantenimiento        Boolean  @default(false)
 }
 
 model productos {
