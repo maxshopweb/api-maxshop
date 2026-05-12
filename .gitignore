@@ -16,3 +16,4 @@ data/
 /agents/skills/AGENTS.md
 /agents/skills/metadata.json
 /agents/skills/test-cases.json
+.agents/skills/
