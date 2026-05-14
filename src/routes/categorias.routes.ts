@@ -22,11 +22,14 @@ const adminAuth = [
 // ========================================
 
 router.get('/', categoriasController.getAllCategorias.bind(categoriasController));
+router.get('/active', categoriasController.getAllActiveCategorias.bind(categoriasController));
 router.get('/siguiente-codigo', categoriasController.getSiguienteCodigo.bind(categoriasController));
 router.get('/codigo/:codigo', categoriasController.getCategoriaByCodigo.bind(categoriasController));
 router.get('/:id', categoriasController.getCategoriaById.bind(categoriasController));
 router.post('/', adminAuth, categoriasController.createCategoria.bind(categoriasController));
 router.put('/:id', adminAuth, categoriasController.updateCategoria.bind(categoriasController));
+router.patch('/:id/activo', adminAuth, categoriasController.toggleActivo.bind(categoriasController));
+router.patch('/toggle-all', adminAuth, categoriasController.toggleAllActivos.bind(categoriasController));
 router.delete('/:id', adminAuth, categoriasController.deleteCategoria.bind(categoriasController));
 
 export default router;

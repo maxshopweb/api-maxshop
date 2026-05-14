@@ -18,11 +18,14 @@ const adminAuth = [
 ];
 
 router.get('/', gruposController.getAll.bind(gruposController));
+router.get('/active', gruposController.getAllActive.bind(gruposController));
 router.get('/siguiente-codigo', gruposController.getSiguienteCodigo.bind(gruposController));
 router.get('/codigo/:codigo', gruposController.getByCodigo.bind(gruposController));
 router.get('/:id', gruposController.getById.bind(gruposController));
 router.post('/', adminAuth, gruposController.create.bind(gruposController));
 router.put('/:id', adminAuth, gruposController.update.bind(gruposController));
+router.patch('/:id/activo', adminAuth, gruposController.toggleActivo.bind(gruposController));
+router.patch('/toggle-all', adminAuth, gruposController.toggleAllActivos.bind(gruposController));
 router.delete('/:id', adminAuth, gruposController.delete.bind(gruposController));
 
 export default router;

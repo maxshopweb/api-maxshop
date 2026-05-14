@@ -72,6 +72,68 @@ export class GruposService {
         })) as IGrupo[];
     }
 
+    async getAllActive(): Promise<IGrupo[]> {
+        const grupos = await prisma.grupo.findMany({
+            where: { activo: true },
+            orderBy: { nombre: 'asc' }
+        });
+        return grupos.map((grupo: IGrupo) => ({
+            ...grupo,
+            nombre: grupo.nombre ? grupo.nombre.toUpperCase() : grupo.nombre
+        })) as IGrupo[];
+    }
+
+    async toggleActivo(id: number, activo: boolean, ctx?: AdminAuditContext): Promise<IGrupo> {
+        const anterior = await prisma.grupo.findUnique({ where: { id_grupo: id } });
+        if (!anterior) {
+            throw new Error('Grupo no encontrado');
+        }
+        const actualizado = await prisma.grupo.update({
+            where: { id_grupo: id },
+            data: {
+                activo,
+                actualizado_en: new Date()
+            }
+        });
+        if (ctx) {
+            await auditService.record({
+                action: activo ? 'GRUPO_ENABLE' : 'GRUPO_DISABLE',
+                table: 'grupos',
+                description: `Grupo ${activo ? 'habilitado' : 'deshabilitado'}: ${actualizado.codi_grupo} — ${actualizado.nombre ?? ''}`,
+                previousData: anterior as unknown as Record<string, unknown>,
+                currentData: actualizado as unknown as Record<string, unknown>,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+        return actualizado as IGrupo;
+    }
+
+    async toggleAllActivos(activo: boolean, ctx?: AdminAuditContext): Promise<{ count: number }> {
+        const result = await prisma.grupo.updateMany({
+            where: {},
+            data: { activo, actualizado_en: new Date() }
+        });
+        if (ctx) {
+            await auditService.record({
+                action: activo ? 'GRUPO_ENABLE_ALL' : 'GRUPO_DISABLE_ALL',
+                table: 'grupos',
+                description: `Se ${activo ? 'habilitaron' : 'deshabilitaron'} todos los grupos (${result.count})`,
+                previousData: null,
+                currentData: { count: result.count },
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+        return { count: result.count };
+    }
+
     async getById(id: number): Promise<IGrupo | null> {
         const grupo = await prisma.grupo.findFirst({
             where: { id_grupo: id }

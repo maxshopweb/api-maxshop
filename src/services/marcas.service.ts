@@ -52,6 +52,68 @@ export class MarcasService {
         })) as IMarca[];
     }
 
+    async getAllActive(): Promise<IMarca[]> {
+        const marcas = await prisma.marca.findMany({
+            where: { activo: true },
+            orderBy: { nombre: 'asc' }
+        });
+        return marcas.map((marca: IMarca) => ({
+            ...marca,
+            nombre: marca.nombre ? marca.nombre.toUpperCase() : marca.nombre
+        })) as IMarca[];
+    }
+
+    async toggleActivo(id: number, activo: boolean, ctx?: AdminAuditContext): Promise<IMarca> {
+        const anterior = await prisma.marca.findUnique({ where: { id_marca: id } });
+        if (!anterior) {
+            throw new Error('Marca no encontrada');
+        }
+        const actualizada = await prisma.marca.update({
+            where: { id_marca: id },
+            data: {
+                activo,
+                actualizado_en: new Date()
+            }
+        });
+        if (ctx) {
+            await auditService.record({
+                action: activo ? 'MARCA_ENABLE' : 'MARCA_DISABLE',
+                table: 'marcas',
+                description: `Marca ${activo ? 'habilitada' : 'deshabilitada'}: ${actualizada.codi_marca} — ${actualizada.nombre ?? ''}`,
+                previousData: anterior as unknown as Record<string, unknown>,
+                currentData: actualizada as unknown as Record<string, unknown>,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+        return actualizada as IMarca;
+    }
+
+    async toggleAllActivos(activo: boolean, ctx?: AdminAuditContext): Promise<{ count: number }> {
+        const result = await prisma.marca.updateMany({
+            where: {},
+            data: { activo, actualizado_en: new Date() }
+        });
+        if (ctx) {
+            await auditService.record({
+                action: activo ? 'MARCA_ENABLE_ALL' : 'MARCA_DISABLE_ALL',
+                table: 'marcas',
+                description: `Se ${activo ? 'habilitaron' : 'deshabilitaron'} todas las marcas (${result.count})`,
+                previousData: null,
+                currentData: { count: result.count },
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+        return { count: result.count };
+    }
+
     async getById(id: number): Promise<IMarca | null> {
         const marca = await prisma.marca.findFirst({
             where: { id_marca: id }
@@ -105,7 +167,9 @@ export class MarcasService {
             where: { id_marca: id },
             data: {
                 nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
-                descripcion: data.descripcion  
+                descripcion: data.descripcion,
+                activo: data.activo,
+                actualizado_en: data.activo !== undefined ? new Date() : undefined
             }
         });
         if (ctx) {

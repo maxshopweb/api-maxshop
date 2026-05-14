@@ -270,4 +270,90 @@ export class MarcasController {
             });
         }
     }
+
+    async getAllActive(req: Request, res: Response): Promise<void> {
+        try {
+            const marcas = await marcasService.getAllActive();
+            res.json({
+                success: true,
+                data: marcas
+            });
+        } catch (error) {
+            console.error('Error en getAllActive:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener marcas activas'
+            });
+        }
+    }
+
+    async toggleActivo(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            const { activo } = req.body;
+
+            if (isNaN(id)) {
+                res.status(400).json({ success: false, error: 'ID inválido' });
+                return;
+            }
+
+            if (typeof activo !== 'boolean') {
+                res.status(400).json({ success: false, error: 'El campo activo es requerido y debe ser booleano' });
+                return;
+            }
+
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+
+            const marca = await marcasService.toggleActivo(id, activo, auditContext);
+            res.json({
+                success: true,
+                data: marca,
+                message: `Marca ${activo ? 'habilitada' : 'deshabilitada'} exitosamente`
+            });
+        } catch (error) {
+            console.error('Error en toggleActivo:', error);
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Error al togglear estado'
+            });
+        }
+    }
+
+    async toggleAllActivos(req: Request, res: Response): Promise<void> {
+        try {
+            const { activo } = req.body;
+
+            if (typeof activo !== 'boolean') {
+                res.status(400).json({ success: false, error: 'El campo activo es requerido y debe ser booleano' });
+                return;
+            }
+
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+
+            const result = await marcasService.toggleAllActivos(activo, auditContext);
+            res.json({
+                success: true,
+                data: result,
+                message: `${result.count} marca(s) ${activo ? 'habilitada(s)' : 'deshabilitada(s)'} exitosamente`
+            });
+        } catch (error) {
+            console.error('Error en toggleAllActivos:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al togglear todos los estados'
+            });
+        }
+    }
 }
