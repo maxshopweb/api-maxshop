@@ -30,6 +30,7 @@ export interface ICreateCategoriaDTO {
 export interface IUpdateCategoriaDTO {
     nombre?: string;
     descripcion?: string;
+    activo?: boolean;
 }
 
 export interface ICreateSubcategoriaDTO {

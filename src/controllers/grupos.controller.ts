@@ -278,5 +278,91 @@ export class GruposController {
             });
         }
     }
+
+    async getAllActive(req: Request, res: Response): Promise<void> {
+        try {
+            const grupos = await gruposService.getAllActive();
+            res.json({
+                success: true,
+                data: grupos
+            });
+        } catch (error) {
+            console.error('Error en getAllActive:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener grupos activos'
+            });
+        }
+    }
+
+    async toggleActivo(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            const { activo } = req.body;
+
+            if (isNaN(id)) {
+                res.status(400).json({ success: false, error: 'ID inválido' });
+                return;
+            }
+
+            if (typeof activo !== 'boolean') {
+                res.status(400).json({ success: false, error: 'El campo activo es requerido y debe ser booleano' });
+                return;
+            }
+
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+
+            const grupo = await gruposService.toggleActivo(id, activo, auditContext);
+            res.json({
+                success: true,
+                data: grupo,
+                message: `Grupo ${activo ? 'habilitado' : 'deshabilitado'} exitosamente`
+            });
+        } catch (error) {
+            console.error('Error en toggleActivo:', error);
+            res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Error al togglear estado'
+            });
+        }
+    }
+
+    async toggleAllActivos(req: Request, res: Response): Promise<void> {
+        try {
+            const { activo } = req.body;
+
+            if (typeof activo !== 'boolean') {
+                res.status(400).json({ success: false, error: 'El campo activo es requerido y debe ser booleano' });
+                return;
+            }
+
+            const auditContext = req.authenticatedUser
+                ? {
+                      userId: req.authenticatedUser.id,
+                      userAgent: req.headers['user-agent']?.toString() ?? null,
+                      endpoint: req.originalUrl,
+                  }
+                : undefined;
+
+            const result = await gruposService.toggleAllActivos(activo, auditContext);
+            res.json({
+                success: true,
+                data: result,
+                message: `${result.count} grupo(s) ${activo ? 'habilitado(s)' : 'deshabilitado(s)'} exitosamente`
+            });
+        } catch (error) {
+            console.error('Error en toggleAllActivos:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al togglear todos los estados'
+            });
+        }
+    }
 }
 

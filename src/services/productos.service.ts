@@ -235,8 +235,8 @@ export class ProductosService {
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (publicado !== undefined) whereClause.publicado = publicado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
-        // Oferta = lista Especial (lista_precio_activa 'O')
-        if (oferta === true) whereClause.lista_precio_activa = 'O';
+        // Filtro oferta: lista Especial (O) + campaña (Q), alineado con tienda
+        if (oferta === true) whereClause.lista_precio_activa = { in: ['O', 'Q'] };
 
         // Filtros usando códigos del CSV
         // Si id_marca es un número, buscar el código primero
@@ -1493,8 +1493,8 @@ export class ProductosService {
         }
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
-        // Oferta = lista Especial (lista_precio_activa 'O')
-        if (oferta === true) whereClause.lista_precio_activa = 'O';
+        // Filtro oferta: lista Especial (O) + campaña (Q)
+        if (oferta === true) whereClause.lista_precio_activa = { in: ['O', 'Q'] };
 
         // Contar total
         const total = await prisma.productos.count({ where: whereClause });
@@ -1529,7 +1529,9 @@ export class ProductosService {
             if (codi_grupo) conditions.push(Prisma.sql`p.codi_grupo = ${codi_grupo}`);
             if (destacado !== undefined) conditions.push(Prisma.sql`p.destacado = ${destacado}`);
             if (financiacion !== undefined) conditions.push(Prisma.sql`p.financiacion = ${financiacion}`);
-            if (oferta === true) conditions.push(Prisma.sql`UPPER(COALESCE(p.lista_precio_activa, '')) = 'O'`);
+            if (oferta === true) {
+                conditions.push(Prisma.sql`UPPER(COALESCE(p.lista_precio_activa, '')) IN ('O', 'Q')`);
+            }
             if (precio_min !== undefined || precio_max !== undefined) {
                 const gte = precio_min !== undefined ? precio_min : null;
                 const lte = precio_max !== undefined ? precio_max : null;

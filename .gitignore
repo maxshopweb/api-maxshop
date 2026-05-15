@@ -11,3 +11,9 @@ data/
 
 .DS_Store
 
+/agents/skills/*
+/agents/skills/README.md
+/agents/skills/AGENTS.md
+/agents/skills/metadata.json
+/agents/skills/test-cases.json
+.agents/skills/

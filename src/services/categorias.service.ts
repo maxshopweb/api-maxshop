@@ -59,6 +59,68 @@ export class CategoriasService {
         })) as ICategoria[];
     }
 
+    async getAllActive(): Promise<ICategoria[]> {
+        const categorias = await prisma.categoria.findMany({
+            where: { activo: true },
+            orderBy: { nombre: 'asc' }
+        });
+        return categorias.map((cat: ICategoria) => ({
+            ...cat,
+            nombre: cat.nombre ? cat.nombre.toUpperCase() : cat.nombre
+        })) as ICategoria[];
+    }
+
+    async toggleActivo(id: number, activo: boolean, ctx?: AdminAuditContext): Promise<ICategoria> {
+        const anterior = await prisma.categoria.findUnique({ where: { id_cat: id } });
+        if (!anterior) {
+            throw new Error('Categoría no encontrada');
+        }
+        const actualizada = await prisma.categoria.update({
+            where: { id_cat: id },
+            data: {
+                activo,
+                actualizado_en: new Date()
+            }
+        });
+        if (ctx) {
+            await auditService.record({
+                action: activo ? 'CATEGORIA_ENABLE' : 'CATEGORIA_DISABLE',
+                table: 'categorias',
+                description: `Categoría ${activo ? 'habilitada' : 'deshabilitada'}: ${actualizada.codi_categoria} — ${actualizada.nombre ?? ''}`,
+                previousData: anterior as unknown as Record<string, unknown>,
+                currentData: actualizada as unknown as Record<string, unknown>,
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+        return actualizada as ICategoria;
+    }
+
+    async toggleAllActivos(activo: boolean, ctx?: AdminAuditContext): Promise<{ count: number }> {
+        const result = await prisma.categoria.updateMany({
+            where: {},
+            data: { activo, actualizado_en: new Date() }
+        });
+        if (ctx) {
+            await auditService.record({
+                action: activo ? 'CATEGORIA_ENABLE_ALL' : 'CATEGORIA_DISABLE_ALL',
+                table: 'categorias',
+                description: `Se ${activo ? 'habilitaron' : 'deshabilitaron'} todas las categorías (${result.count})`,
+                previousData: null,
+                currentData: { count: result.count },
+                userId: ctx.userId,
+                userAgent: ctx.userAgent ?? null,
+                endpoint: ctx.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+        return { count: result.count };
+    }
+
     async getCategoriaById(id: number): Promise<ICategoria | null> {
         const categoria = await prisma.categoria.findFirst({
             where: { id_cat: id }
@@ -112,7 +174,9 @@ export class CategoriasService {
             where: { id_cat: id },
             data: {
                 nombre: data.nombre ? data.nombre.toUpperCase() : data.nombre,
-                descripcion: data.descripcion
+                descripcion: data.descripcion,
+                activo: data.activo,
+                actualizado_en: data.activo !== undefined ? new Date() : undefined
             }
         });
         if (ctx) {
