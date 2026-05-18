@@ -72,7 +72,7 @@ export const bannersController = {
         res.status(400).json({ success: false, error: 'No se envió imagen. Use el campo "image".' });
         return;
       }
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) {
         res.status(400).json({ success: false, error: 'ID de banner inválido.' });
         return;
@@ -92,7 +92,7 @@ export const bannersController = {
   /** PATCH /banners/:id/activo — Activa o desactiva. Body: { activo: boolean } */
   async toggleActivo(req: Request, res: Response): Promise<void> {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) {
         res.status(400).json({ success: false, error: 'ID de banner inválido.' });
         return;
@@ -117,7 +117,7 @@ export const bannersController = {
   /** PATCH /banners/:id — Actualiza orden y/o link. Hace swap automático si el orden ya existe. */
   async update(req: Request, res: Response): Promise<void> {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) {
         res.status(400).json({ success: false, error: 'ID de banner inválido.' });
         return;
@@ -142,7 +142,7 @@ export const bannersController = {
   /** DELETE /banners/:id — Elimina banner y su archivo en disco. */
   async remove(req: Request, res: Response): Promise<void> {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) {
         res.status(400).json({ success: false, error: 'ID de banner inválido.' });
         return;

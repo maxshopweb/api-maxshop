@@ -197,6 +197,38 @@ Definido en: `src/schemas/checkout.schema.ts` (exportado como `checkoutBodySchem
 
 ---
 
+## Instalación con pnpm (recomendado)
+
+El proyecto usa **pnpm** con `onlyBuiltDependencies` en `package.json` para permitir scripts nativos (Prisma, bcrypt). No mezcles `npm install` y `pnpm install` en el mismo folder.
+
+```bash
+cd api-maxshop
+rm -rf node_modules
+pnpm install          # ejecuta postinstall → prisma generate
+npm run build
+npm test
+```
+
+Si ves `ERR_PNPM_IGNORED_BUILDS`, los paquetes ya están listados en `package.json` → `pnpm.onlyBuiltDependencies`. Borrá `node_modules` y volvé a instalar.
+
+**Jest:** versiones alineadas vía `pnpm.overrides` (jest 30.4.2). Si falla `clearMocksOnScope`, reinstalá limpio con pnpm.
+
+**No instalar** `@types/csv-parse`: `csv-parse` v6 trae tipos propios; el stub en DefinitelyTyped rompe `tsc` con `typeRoots` custom.
+
+### Client (Next.js)
+
+```bash
+cd client
+rm -rf node_modules
+pnpm install          # sharp, esbuild, firebase
+pnpm run build
+pnpm test
+```
+
+`pnpm.onlyBuiltDependencies` incluye: `sharp`, `esbuild`, `@firebase/util`, `protobufjs`.
+
+---
+
 ## Configuración
 
 - **Runner:** Jest 30 + `ts-jest`, entorno `node`

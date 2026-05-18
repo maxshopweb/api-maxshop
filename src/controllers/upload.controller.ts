@@ -21,7 +21,7 @@ const uploadController = {
         });
         return;
       }
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) {
         res.status(400).json({ success: false, error: 'ID de producto inválido.' });
         return;
@@ -59,7 +59,7 @@ const uploadController = {
         });
         return;
       }
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) {
         res.status(400).json({ success: false, error: 'ID de producto inválido.' });
         return;

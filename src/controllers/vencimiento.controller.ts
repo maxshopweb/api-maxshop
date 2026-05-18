@@ -42,7 +42,7 @@ export async function expirarVentas(
  */
 export async function aprobarDesdeVencido(req: Request, res: Response): Promise<void> {
   try {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(String(req.params.id), 10);
     if (Number.isNaN(id)) {
       res.status(400).json({ success: false, error: 'ID de venta inválido' });
       return;
