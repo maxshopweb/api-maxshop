@@ -228,6 +228,67 @@ describe('PaymentWebhookService', () => {
     });
   });
 
+  describe('mapeo de estados MP', () => {
+    function setupNewPayment(status: string) {
+      mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status }));
+      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
+      prisma.mercado_pago_payments.create.mockResolvedValue({});
+      prisma.venta.update.mockResolvedValue({});
+      paymentProcessingService.confirmPayment.mockResolvedValue({});
+    }
+
+    it.each([['pending'], ['in_process']] as const)(
+      'status %s registra pago sin confirmPayment ni cambio de venta',
+      async (mpStatus) => {
+        setupNewPayment(mpStatus);
+        await service.processWebhook(buildWebhook());
+        expect(paymentProcessingService.confirmPayment).not.toHaveBeenCalled();
+        expect(prisma.mercado_pago_payments.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ status_mp: mpStatus, venta_id: ID_VENTA }),
+        });
+        expect(prisma.venta.update).not.toHaveBeenCalled();
+      }
+    );
+
+    it('status authorized → confirmPayment y estado aprobado', async () => {
+      setupNewPayment('authorized');
+      await service.processWebhook(buildWebhook());
+      expect(paymentProcessingService.confirmPayment).toHaveBeenCalledWith(ID_VENTA, expect.any(Object));
+    });
+
+    it.each([
+      ['cancelled', 'cancelado'],
+      ['refunded', 'cancelado'],
+      ['charged_back', 'cancelado'],
+    ] as const)('status %s → venta %s sin confirmPayment', async (mpStatus, estadoVenta) => {
+      setupNewPayment(mpStatus);
+      await service.processWebhook(buildWebhook());
+      expect(paymentProcessingService.confirmPayment).not.toHaveBeenCalled();
+      expect(prisma.venta.update).toHaveBeenCalledWith({
+        where: { id_venta: ID_VENTA },
+        data: expect.objectContaining({ estado_pago: estadoVenta }),
+      });
+    });
+
+    it('transición pending → approved actualiza pago y confirma', async () => {
+      mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status: 'approved' }));
+      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.mercado_pago_payments.findUnique.mockResolvedValue({
+        id: 1,
+        status_mp: 'pending',
+        updated_at: new Date(),
+      });
+      prisma.mercado_pago_payments.update.mockResolvedValue({});
+      prisma.venta.update.mockResolvedValue({});
+      paymentProcessingService.confirmPayment.mockResolvedValue({});
+
+      const r = await service.processWebhook(buildWebhook());
+      expect(r.action).toBe('updated');
+      expect(paymentProcessingService.confirmPayment).toHaveBeenCalled();
+    });
+  });
+
   describe('flujo rechazado', () => {
     it('NO llama a confirmPayment cuando MP devuelve rejected', async () => {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status: 'rejected' }));
@@ -300,23 +361,38 @@ describe('PaymentWebhookService', () => {
 
   describe('lock de procesamiento', () => {
     it('el segundo webhook del mismo paymentId mientras el primero corre retorna skipped (lock activo)', async () => {
-      mercadoPagoService.getPayment.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(buildMpPayment()), 50)));
-      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
-      prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
-      prisma.mercado_pago_payments.create.mockResolvedValue({});
-      prisma.venta.update.mockResolvedValue({});
-      paymentProcessingService.confirmPayment.mockImplementation(() => new Promise((r) => setTimeout(r, 100)));
+      jest.useFakeTimers();
+      try {
+        mercadoPagoService.getPayment.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(() => resolve(buildMpPayment()), 50);
+            })
+        );
+        prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+        prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
+        prisma.mercado_pago_payments.create.mockResolvedValue({});
+        prisma.venta.update.mockResolvedValue({});
+        paymentProcessingService.confirmPayment.mockImplementation(
+          () =>
+            new Promise((r) => {
+              setTimeout(r, 100);
+            })
+        );
 
-      const [r1, r2] = await Promise.all([
-        service.processWebhook(buildWebhook()),
-        service.processWebhook(buildWebhook()),
-      ]);
+        const p1 = service.processWebhook(buildWebhook());
+        const p2 = service.processWebhook(buildWebhook());
+        await jest.runAllTimersAsync();
+        const [r1, r2] = await Promise.all([p1, p2]);
 
-      const skipped = r1.action === 'skipped' ? r1 : r2;
-      const processed = r1.action !== 'skipped' ? r1 : r2;
-      expect(skipped.action).toBe('skipped');
-      expect(processed.action).toBe('created');
-      expect(paymentProcessingService.confirmPayment).toHaveBeenCalledTimes(1);
+        const skipped = r1.action === 'skipped' ? r1 : r2;
+        const processed = r1.action !== 'skipped' ? r1 : r2;
+        expect(skipped.action).toBe('skipped');
+        expect(processed.action).toBe('created');
+        expect(paymentProcessingService.confirmPayment).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 });

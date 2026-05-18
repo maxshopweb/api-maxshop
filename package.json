@@ -8,6 +8,9 @@
     "start": "node dist/index.js",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:payment": "jest -- payment",
+    "test:ci": "jest --ci --forceExit --detectOpenHandles",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
     "sincronizar-bases": "ts-node src/scripts/sincronizar-bases.ts"

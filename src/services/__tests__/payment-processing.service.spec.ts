@@ -34,6 +34,7 @@
 import { PaymentProcessingService } from '../payment-processing.service';
 import mailService from '../../mail';
 import { prisma } from '../../index';
+import { productosMocks } from '../__mocks__/productos.service';
 
 // -----------------------------------------------------------------------------
 // Estado compartido para mocks (permite que VentasService mock devuelva getById
@@ -81,12 +82,7 @@ jest.mock('../ventas.service', () => ({
   })),
 }));
 
-jest.mock('../productos.service', () => ({
-  ProductosService: jest.fn().mockImplementation(() => ({
-    assertStockDisponibleParaLineas: jest.fn().mockResolvedValue(undefined),
-    updateStock: jest.fn().mockResolvedValue(undefined),
-  })),
-}));
+jest.mock('../productos.service', () => require('../__mocks__/productos.service'));
 
 // -----------------------------------------------------------------------------
 // Datos de prueba reutilizables
@@ -159,6 +155,8 @@ describe('PaymentProcessingService.confirmPayment', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    productosMocks.assertStockDisponibleParaLineas.mockResolvedValue(undefined);
+    productosMocks.updateStock.mockResolvedValue(undefined);
     service = new PaymentProcessingService();
   });
 
@@ -195,6 +193,53 @@ describe('PaymentProcessingService.confirmPayment', () => {
 
       expect(result.estado_pago).toBe('aprobado');
       expect(ventasState.getById).toHaveBeenCalledWith(ID_VENTA);
+      expect(productosMocks.assertStockDisponibleParaLineas).toHaveBeenCalledWith([
+        { id_prod: 10, cantidad: 2 },
+      ]);
+      expect(productosMocks.updateStock).toHaveBeenCalledWith(10, -2);
+    });
+
+    it('rechaza si no hay stock disponible', async () => {
+      productosMocks.assertStockDisponibleParaLineas.mockRejectedValueOnce(
+        new Error('Stock insuficiente')
+      );
+
+      const ventaPendiente = buildVentaPendiente();
+      ventasState.getById.mockResolvedValue(ventaPendiente);
+
+      await expect(service.confirmPayment(ID_VENTA)).rejects.toThrow(/stock/i);
+      expect(prisma.venta.update).not.toHaveBeenCalled();
+      expect(productosMocks.updateStock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza venta cancelada', async () => {
+      ventasState.getById.mockResolvedValue(
+        buildVentaPendiente({ estado_pago: 'cancelado' })
+      );
+
+      await expect(service.confirmPayment(ID_VENTA)).rejects.toThrow(/cancelada/i);
+      expect(prisma.venta.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza venta en estado no confirmable', async () => {
+      ventasState.getById.mockResolvedValue(
+        buildVentaPendiente({ estado_pago: 'rechazado' })
+      );
+
+      await expect(service.confirmPayment(ID_VENTA)).rejects.toThrow(/pendiente o vencido/i);
+    });
+
+    it('confirma venta en estado vencido', async () => {
+      const ventaVencida = buildVentaPendiente({ estado_pago: 'vencido' });
+      const ventaAprobada = buildVentaAprobadaSinEnvio();
+
+      ventasState.getById
+        .mockResolvedValueOnce(ventaVencida)
+        .mockResolvedValueOnce(ventaAprobada)
+        .mockResolvedValue(ventaAprobada);
+
+      const result = await service.confirmPayment(ID_VENTA);
+      expect(result.estado_pago).toBe('aprobado');
     });
 
     it('no envía email ni ejecuta handlers si la venta ya estaba aprobada (idempotencia)', async () => {
@@ -286,6 +331,23 @@ describe('PaymentProcessingService.confirmPayment', () => {
       expect(call.trackingCode).toBeUndefined();
       expect(call.carrier).toBeUndefined();
       expect(call.esRetiroEnTienda).toBe(true);
+    });
+
+    it('si el email falla, confirmPayment igual resuelve', async () => {
+      const ventaPendiente = buildVentaPendiente();
+      const ventaAprobada = buildVentaAprobadaSinEnvio();
+
+      ventasState.getById
+        .mockResolvedValueOnce(ventaPendiente)
+        .mockResolvedValueOnce(ventaAprobada)
+        .mockResolvedValue(ventaAprobada);
+
+      (mailService.sendOrderConfirmation as jest.Mock).mockRejectedValueOnce(
+        new Error('SMTP error')
+      );
+
+      const result = await service.confirmPayment(ID_VENTA);
+      expect(result.estado_pago).toBe('aprobado');
     });
   });
 });
