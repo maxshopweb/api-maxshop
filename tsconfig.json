@@ -10,7 +10,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "typeRoots": ["./node_modules/@types"]
+    "typeRoots": ["./node_modules/@types"],
+    "noImplicitReturns": true,
   },
   "include": ["src/**/*", "src/types/express.ts"],
   "exclude": ["node_modules"]
