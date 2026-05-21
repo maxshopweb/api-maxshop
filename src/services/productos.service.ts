@@ -10,6 +10,7 @@ import path from 'path';
 import cacheService from './cache.service';
 import csvImporterService from './sincronizacion/csv-importer.service';
 import sincronizacionService from './sincronizacion/sincronizacion.service';
+import { buildPrecioPresentacion } from './pricing.service';
 
 export type ProductoAuditContext = {
     userId: string;
@@ -79,10 +80,33 @@ export class ProductosService {
     }
 
     /**
-     * Precio unitario final con IVA — misma regla que `precio` en catálogo.
+     * Precio de lista activa con IVA (sin bonificación).
      */
     getPrecioFinalConIva(producto: any): number | null {
         return this.calcularPrecioConIva(producto);
+    }
+
+    /**
+     * Precio unitario final a pagar (lista con IVA − bonificación del producto).
+     * Fuente de verdad para catálogo y validación de checkout online.
+     */
+    getPrecioFinalAPagar(producto: any): number | null {
+        const lista = this.calcularPrecioConIva(producto);
+        if (lista == null || lista <= 0) return null;
+        const ivaPct = producto.iva?.porcentaje != null ? Number(producto.iva.porcentaje) : 0;
+        const presentacion = buildPrecioPresentacion(
+            lista,
+            producto.bonificacion_porcentaje,
+            ivaPct
+        );
+        return presentacion?.precioFinalConIva ?? null;
+    }
+
+    /** Presentación completa de precios para normalizar producto en API. */
+    getPrecioPresentacion(producto: any) {
+        const lista = this.calcularPrecioConIva(producto);
+        const ivaPct = producto.iva?.porcentaje != null ? Number(producto.iva.porcentaje) : 0;
+        return buildPrecioPresentacion(lista, producto.bonificacion_porcentaje, ivaPct);
     }
 
     /** Map codi_lista -> lista para enriquecer producto con lista_activa (sin N+1) */
@@ -120,16 +144,23 @@ export class ProductosService {
 
         const stockRaw = producto.stock != null ? Number(producto.stock) : 0;
         const stock = Number.isFinite(stockRaw) ? Math.max(0, Math.trunc(stockRaw)) : 0;
-        const precioActivo = this.calcularPrecioConIva(producto);
-        const precioVentaRef = codiLista !== 'V' ? this.getPrecioVentaConIva(producto) : null;
+        const presentacion = this.getPrecioPresentacion(producto);
+        const tieneBonificacion = presentacion?.tieneBonificacion === true;
+        // Referencia lista Venta (V): solo para comparar oferta/campaña, nunca mezclar con bonificación.
+        const precioVentaRef =
+            !tieneBonificacion && codiLista !== 'V' ? this.getPrecioVentaConIva(producto) : null;
         const normalized: any = {
             ...producto,
             nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
             bonificacion_porcentaje: producto.bonificacion_porcentaje != null ? Number(producto.bonificacion_porcentaje) : null,
-            precio: precioActivo,
-            precio_sin_iva: this.getPrecioListaActiva(producto),
+            precio: presentacion?.precioFinalConIva ?? this.calcularPrecioConIva(producto),
+            precio_sin_iva: presentacion?.precioSinIvaFinal ?? this.getPrecioListaActiva(producto),
+            ...(tieneBonificacion && {
+                precio_anterior: presentacion!.precioListaConIva,
+                monto_bonificacion: presentacion!.montoBonificacionUnitario,
+            }),
             lista_activa: lista_activa ?? undefined,
-            ...(precioVentaRef != null && { precio_venta_referencia: precioVentaRef }),
+            ...(precioVentaRef != null && precioVentaRef > 0 && { precio_venta_referencia: precioVentaRef }),
             stock
         };
 

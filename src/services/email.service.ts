@@ -127,25 +127,44 @@ class EmailService {
             ? 'Tu pedido fue reservado exitosamente. Realiza el pago según las instrucciones que recibirás.'
             : 'Tu pedido está siendo procesado. Te notificaremos cuando sea confirmado.';
 
+        const tieneBonificacionVenta = venta.detalles?.some(
+            (d) => d.bonificacion_porcentaje != null && Number(d.bonificacion_porcentaje) > 0
+        );
+
         const productosHTML = venta.detalles
-            ?.map(
-                (detalle) => `
+            ?.map((detalle) => {
+                const cantidad = detalle.cantidad && detalle.cantidad > 0 ? detalle.cantidad : 1;
+                const subTotal = detalle.sub_total ?? 0;
+                const precioFinalUnit = subTotal / cantidad;
+                const boniPct =
+                    detalle.bonificacion_porcentaje != null && Number(detalle.bonificacion_porcentaje) > 0
+                        ? Number(detalle.bonificacion_porcentaje)
+                        : null;
+                const boniLinea =
+                    detalle.descuento_aplicado != null && detalle.descuento_aplicado > 0
+                        ? detalle.descuento_aplicado
+                        : 0;
+                const boniLabel =
+                    boniPct != null && boniLinea > 0
+                        ? `<br><span style="color:#b45309;font-size:12px;">Bonificación ${boniPct}%: -$${boniLinea.toFixed(2)}</span>`
+                        : '';
+                return `
             <tr>
                 <td style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
                     ${detalle.producto?.nombre || 'Producto sin nombre'}
                 </td>
                 <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; text-align: center;">
-                    ${detalle.cantidad || 0}
+                    ${cantidad}
                 </td>
                 <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; text-align: right;">
-                    $${(detalle.precio_unitario || 0).toFixed(2)}
+                    $${precioFinalUnit.toFixed(2)}${boniLabel}
                 </td>
                 <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; text-align: right;">
-                    $${(detalle.sub_total || 0).toFixed(2)}
+                    $${subTotal.toFixed(2)}
                 </td>
             </tr>
-        `
-            )
+        `;
+            })
             .join('') || '';
 
         return `
@@ -221,7 +240,7 @@ class EmailService {
                                     ${venta.descuento_total && venta.descuento_total > 0
                                         ? `
                                     <tr>
-                                        <td style="padding: 5px 0; color: #666666;">Descuento:</td>
+                                        <td style="padding: 5px 0; color: #666666;">${tieneBonificacionVenta ? 'Bonificación total:' : 'Descuento:'}</td>
                                         <td style="padding: 5px 0; text-align: right; color: #22c55e;">
                                             -$${venta.descuento_total.toFixed(2)}
                                         </td>

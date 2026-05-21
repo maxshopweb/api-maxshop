@@ -13,6 +13,7 @@ import { ConfigTiendaService } from './config-tienda.service';
 import { ProductosService } from './productos.service';
 import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from './venta-envio.validation';
 import { getAndreaniModoManual } from '../config/andreani.config';
+import { computeLineaVentaPricing, normalizeBonificacionPct } from './pricing.service';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
@@ -323,7 +324,16 @@ export class VentasService {
                     : null,
             } : null,
             direcciones: (venta as any).direcciones || [],
-            mercado_pago_payments: (venta as any).mercado_pago_payments || undefined,
+            mercado_pago_payments: ((venta as any).mercado_pago_payments || []).map((p: any) => ({
+                ...p,
+                id: p.id != null ? String(p.id) : p.id,
+                webhook_id: p.webhook_id != null ? String(p.webhook_id) : p.webhook_id,
+                transaction_amount: p.transaction_amount != null ? Number(p.transaction_amount) : p.transaction_amount,
+                total_paid_amount: p.total_paid_amount != null ? Number(p.total_paid_amount) : p.total_paid_amount,
+                net_received_amount: p.net_received_amount != null ? Number(p.net_received_amount) : p.net_received_amount,
+                commission_amount: p.commission_amount != null ? Number(p.commission_amount) : p.commission_amount,
+                installment_amount: p.installment_amount != null ? Number(p.installment_amount) : p.installment_amount,
+            })),
         };
 
         // Guardar en cache
@@ -433,16 +443,12 @@ export class VentasService {
             await productosService.assertStockDisponibleParaLineas(data.detalles);
         }
 
-        // Totales: precio unitario en línea = precio FINAL con IVA (igual que catálogo).
-        // - online: siempre desde catálogo (productos); opcional validar precio_unitario del cliente.
-        // - presencial/otro: precio_unitario del DTO = final con IVA (acuerdo / carga manual).
+        // Pricing unificado: lista con IVA, bonificación explícita, precio final = catálogo / cobro.
         let totalSinIva = 0;
         let totalConIva = 0;
         let descuentoTotal = 0;
 
-        type LineaResuelta = {
-            precioFinalUnitario: number;
-            porcentajeIva: number;
+        type LineaResuelta = ReturnType<typeof computeLineaVentaPricing> & {
             bonificacion_porcentaje: number | null;
         };
         const lineasResueltas: LineaResuelta[] = [];
@@ -470,18 +476,23 @@ export class VentasService {
 
             const boniProducto = producto.bonificacion_porcentaje != null ? Number(producto.bonificacion_porcentaje) : null;
             const porcentajeIva = producto.iva?.porcentaje != null ? Number(producto.iva.porcentaje) : 0;
+            const bonificacionPctRaw = (detalle as { bonificacion_porcentaje?: number }).bonificacion_porcentaje ?? boniProducto ?? null;
 
-            let precioFinalUnitario: number;
+            let precioListaConIva: number;
             if (data.tipo_venta === 'online') {
-                const desdeCatalogo = productosService.getPrecioFinalConIva(producto);
-                if (desdeCatalogo === null || desdeCatalogo <= 0) {
-                    throw new Error(`Producto ${detalle.id_prod}: precio no disponible en catálogo (precio calculado: ${desdeCatalogo})`);
+                const lista = productosService.getPrecioFinalConIva(producto);
+                if (lista === null || lista <= 0) {
+                    throw new Error(`Producto ${detalle.id_prod}: precio no disponible en catálogo (precio calculado: ${lista})`);
                 }
-                precioFinalUnitario = roundMoney(desdeCatalogo);
+                precioListaConIva = roundMoney(lista);
+                const precioFinalEsperado = productosService.getPrecioFinalAPagar(producto);
+                if (precioFinalEsperado == null || precioFinalEsperado <= 0) {
+                    throw new Error(`Producto ${detalle.id_prod}: precio final no disponible`);
+                }
                 const enviado = detalle.precio_unitario;
                 if (enviado != null && enviado > 0) {
-                    const tol = Math.max(2, precioFinalUnitario * 0.005);
-                    if (Math.abs(Number(enviado) - precioFinalUnitario) > tol) {
+                    const tol = Math.max(2, precioFinalEsperado * 0.005);
+                    if (Math.abs(Number(enviado) - precioFinalEsperado) > tol) {
                         throw new Error(
                             `Producto ${detalle.id_prod}: el precio del carrito no coincide con el catálogo. Actualizá el carrito e intentá de nuevo.`
                         );
@@ -491,30 +502,24 @@ export class VentasService {
                 if (detalle.precio_unitario === undefined || detalle.precio_unitario === null) {
                     throw new Error(`Detalle producto ${detalle.id_prod}: precio_unitario es requerido para ventas no online`);
                 }
-                precioFinalUnitario = roundMoney(Number(detalle.precio_unitario));
+                precioListaConIva = roundMoney(Number(detalle.precio_unitario));
             }
 
-            const cantidad = detalle.cantidad;
-            const baseLinea = precioFinalUnitario * cantidad;
-            const bonificacionPctRaw = (detalle as any).bonificacion_porcentaje ?? boniProducto ?? null;
-            const bonificacionPct = bonificacionPctRaw != null
-                ? Math.max(0, Math.min(100, Number(bonificacionPctRaw)))
-                : null;
-            const descuentoBonificacion = bonificacionPct != null ? (baseLinea * bonificacionPct) / 100 : 0;
-            const descuentoManual = detalle.descuento_aplicado || 0;
-            const descuento = descuentoManual + descuentoBonificacion;
-            const subtotalFinal = roundMoney(precioFinalUnitario * cantidad - descuento);
-            const factorIva = 1 + porcentajeIva / 100;
-            const subtotalNeto = roundMoney(factorIva > 0 ? subtotalFinal / factorIva : subtotalFinal);
+            const lineaPricing = computeLineaVentaPricing({
+                precioListaConIva,
+                bonificacionPctRaw,
+                porcentajeIva,
+                cantidad: detalle.cantidad,
+                descuentoManual: data.tipo_venta === 'online' ? 0 : (detalle.descuento_aplicado || 0),
+            });
 
-            totalSinIva += subtotalNeto;
-            totalConIva += subtotalFinal;
-            descuentoTotal += descuento;
+            totalSinIva += lineaPricing.subTotalNetoLinea;
+            totalConIva += lineaPricing.subTotalLinea;
+            descuentoTotal += lineaPricing.descuentoAplicadoLinea;
 
             lineasResueltas.push({
-                precioFinalUnitario,
-                porcentajeIva,
-                bonificacion_porcentaje: boniProducto,
+                ...lineaPricing,
+                bonificacion_porcentaje: normalizeBonificacionPct(bonificacionPctRaw),
             });
         }
 
@@ -585,23 +590,14 @@ export class VentasService {
                     venta_detalle: {
                         create: data.detalles.map((detalle, index) => {
                             const resolved = lineasResueltas[index];
-                            const baseLinea = resolved.precioFinalUnitario * detalle.cantidad;
-                            const bonificacionPctRaw = (detalle as any).bonificacion_porcentaje ?? resolved.bonificacion_porcentaje ?? null;
-                            const bonificacionPct = bonificacionPctRaw != null
-                                ? Math.max(0, Math.min(100, Number(bonificacionPctRaw)))
-                                : null;
-                            const descuentoBonificacion = bonificacionPct != null ? (baseLinea * bonificacionPct) / 100 : 0;
-                            const descuentoManual = detalle.descuento_aplicado || 0;
-                            const descuentoLinea = descuentoManual + descuentoBonificacion;
-                            const subTotalLinea = roundMoney(resolved.precioFinalUnitario * detalle.cantidad - descuentoLinea);
                             return {
                                 id_prod: detalle.id_prod,
                                 cantidad: detalle.cantidad,
-                                precio_unitario: resolved.precioFinalUnitario,
-                                descuento_aplicado: descuentoLinea,
-                                sub_total: subTotalLinea,
+                                precio_unitario: resolved.precioUnitarioLista,
+                                descuento_aplicado: resolved.descuentoAplicadoLinea,
+                                sub_total: resolved.subTotalLinea,
                                 evento_aplicado: detalle.evento_aplicado || null,
-                                bonificacion_porcentaje: bonificacionPct,
+                                bonificacion_porcentaje: resolved.bonificacion_porcentaje,
                             };
                         }),
                     },

@@ -12,6 +12,7 @@
  */
 
 import { IVenta, IVentaDetalle } from '../types';
+import { amountsMatch, roundMoney, sumPreferenceItems } from '../utils/money.utils';
 
 // ============================================
 // TIPOS E INTERFACES
@@ -367,38 +368,7 @@ class MercadoPagoService {
             throw new Error('La venta debe tener detalles para crear la preferencia');
         }
 
-        // Construir items desde los detalles de la venta
-        const items: PreferenceItem[] = venta.detalles.map((detalle: IVentaDetalle) => {
-            const nombre = detalle.producto?.nombre || `Producto ${detalle.id_prod}`;
-            
-            // Validar que picture_url sea una URL válida (no una ruta de archivo local)
-            let pictureUrl: string | undefined = undefined;
-            if (detalle.producto?.img_principal) {
-                const imgPath = detalle.producto.img_principal;
-                // Si es una URL válida (http/https), usarla. Si es una ruta local, ignorarla.
-                if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
-                    pictureUrl = imgPath;
-                } else {
-                    // Si es una ruta local, intentar construir una URL completa si hay una base URL configurada
-                    const baseUrl = process.env.IMAGES_BASE_URL || process.env.FRONTEND_URL;
-                    if (baseUrl && !imgPath.includes('\\') && !imgPath.includes('F:\\')) {
-                        // Solo construir URL si no es una ruta de Windows absoluta
-                        pictureUrl = `${baseUrl}${imgPath.startsWith('/') ? '' : '/'}${imgPath}`;
-                    }
-                    // Si no se puede construir una URL válida, dejarlo como undefined
-                }
-            }
-            
-            return {
-                id: detalle.id_prod?.toString(),
-                title: nombre.length > 256 ? nombre.substring(0, 256) : nombre,
-                description: detalle.producto?.descripcion?.substring(0, 256) || undefined,
-                quantity: detalle.cantidad || 1,
-                unit_price: Number(detalle.precio_unitario) || 0,
-                currency_id: 'ARS',
-                picture_url: pictureUrl,
-            };
-        });
+        const items = MercadoPagoService.buildPreferenceItemsFromVenta(venta, totalNetoNum);
 
         // External reference para vincular con la venta
         const external_reference = `venta_${venta.id_venta}`;
@@ -573,13 +543,13 @@ class MercadoPagoService {
             throw new Error('Debe haber al menos un item para crear la preferencia');
         }
 
-        // Construir items
+        // precio_unitario debe ser el precio final por unidad (post bonificación), coherente con venta.sub_total
         const preferenceItems: PreferenceItem[] = items.map((item) => ({
             id: item.id_prod.toString(),
             title: (item.nombre || `Producto ${item.id_prod}`).substring(0, 256),
             description: item.descripcion?.substring(0, 256),
             quantity: item.cantidad,
-            unit_price: item.precio_unitario,
+            unit_price: roundMoney(item.precio_unitario),
             currency_id: 'ARS',
             picture_url: item.imagen || undefined,
         }));
@@ -663,6 +633,84 @@ class MercadoPagoService {
     // ============================================
     // UTILIDADES
     // ============================================
+
+    /**
+     * Subtotal final de una línea (post bonificación/descuento) — lo que debe cobrarse.
+     */
+    static getDetalleSubtotalFinal(detalle: IVentaDetalle): number {
+        const cantidad = detalle.cantidad != null && detalle.cantidad > 0 ? detalle.cantidad : 1;
+        if (detalle.sub_total != null) {
+            const sub = Number(detalle.sub_total);
+            if (Number.isFinite(sub) && sub >= 0) {
+                return roundMoney(sub);
+            }
+        }
+        const unit = Number(detalle.precio_unitario) || 0;
+        const desc = Number(detalle.descuento_aplicado) || 0;
+        return roundMoney(unit * cantidad - desc);
+    }
+
+    /**
+     * Precio unitario efectivo para Mercado Pago (sub_total / cantidad).
+     */
+    static getDetalleUnitPriceForMp(detalle: IVentaDetalle): number {
+        const cantidad = detalle.cantidad != null && detalle.cantidad > 0 ? detalle.cantidad : 1;
+        return roundMoney(MercadoPagoService.getDetalleSubtotalFinal(detalle) / cantidad);
+    }
+
+    static resolvePictureUrl(imgPath: string | null | undefined): string | undefined {
+        if (!imgPath) return undefined;
+        if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+            return imgPath;
+        }
+        const baseUrl = process.env.IMAGES_BASE_URL || process.env.FRONTEND_URL;
+        if (baseUrl && !imgPath.includes('\\') && !imgPath.includes('F:\\')) {
+            return `${baseUrl}${imgPath.startsWith('/') ? '' : '/'}${imgPath}`;
+        }
+        return undefined;
+    }
+
+    /**
+     * Ítems de preferencia MP: precio final por línea + envío si total_neto lo incluye.
+     */
+    static buildPreferenceItemsFromVenta(venta: IVenta, totalNeto: number): PreferenceItem[] {
+        const detalles = venta.detalles || [];
+        const items: PreferenceItem[] = detalles.map((detalle: IVentaDetalle) => {
+            const nombre = detalle.producto?.nombre || `Producto ${detalle.id_prod}`;
+            const cantidad = detalle.cantidad != null && detalle.cantidad > 0 ? detalle.cantidad : 1;
+            return {
+                id: detalle.id_prod?.toString(),
+                title: nombre.length > 256 ? nombre.substring(0, 256) : nombre,
+                description: detalle.producto?.descripcion?.substring(0, 256) || undefined,
+                quantity: cantidad,
+                unit_price: MercadoPagoService.getDetalleUnitPriceForMp(detalle),
+                currency_id: 'ARS',
+                picture_url: MercadoPagoService.resolvePictureUrl(detalle.producto?.img_principal),
+            };
+        });
+
+        const linesTotal = sumPreferenceItems(items);
+        const envioMonto = roundMoney(totalNeto - linesTotal);
+        if (envioMonto > 0.01) {
+            items.push({
+                id: 'envio',
+                title: 'Envío',
+                quantity: 1,
+                unit_price: envioMonto,
+                currency_id: 'ARS',
+            });
+        }
+
+        const preferenceTotal = sumPreferenceItems(items);
+        if (!amountsMatch(preferenceTotal, totalNeto)) {
+            throw new Error(
+                `La venta #${venta.id_venta} no puede cobrarse en MP: suma de ítems ($${preferenceTotal}) ` +
+                `no coincide con total_neto ($${roundMoney(totalNeto)}).`
+            );
+        }
+
+        return items;
+    }
 
     /**
      * Extrae el ID de venta desde un external_reference

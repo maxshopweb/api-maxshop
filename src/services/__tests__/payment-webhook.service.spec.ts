@@ -41,6 +41,17 @@ const { paymentProcessingService } = require('../payment-processing.service');
 // -----------------------------------------------------------------------------
 const PAYMENT_ID = '123456789';
 const ID_VENTA = 100;
+const VENTA_TOTAL_NETO = 5000;
+
+function mockVentaPendiente(overrides: Record<string, unknown> = {}) {
+  return {
+    id_venta: ID_VENTA,
+    estado_pago: 'pendiente',
+    total_neto: VENTA_TOTAL_NETO,
+    observaciones: null,
+    ...overrides,
+  };
+}
 
 function buildWebhook(opts: { action?: string; type?: string; id?: string | number } = {}) {
   return {
@@ -157,7 +168,7 @@ describe('PaymentWebhookService', () => {
   describe('idempotencia', () => {
     it('NO procesa dos veces el mismo paymentId con el mismo status (skipped)', async () => {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment());
-      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
       prisma.mercado_pago_payments.findUnique.mockResolvedValue({
         id: 1,
         status_mp: 'approved',
@@ -177,7 +188,7 @@ describe('PaymentWebhookService', () => {
 
     it('SÍ procesa si el pago existe pero con otro status (updated)', async () => {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status: 'approved' }));
-      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
       prisma.mercado_pago_payments.findUnique.mockResolvedValue({
         id: 1,
         status_mp: 'pending',
@@ -197,14 +208,14 @@ describe('PaymentWebhookService', () => {
   describe('flujo aprobado', () => {
     beforeEach(() => {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment());
-      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
       prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
       prisma.mercado_pago_payments.create.mockResolvedValue({});
       prisma.venta.update.mockResolvedValue({});
       paymentProcessingService.confirmPayment.mockResolvedValue({});
     });
 
-    it('llama a confirmPayment cuando MP devuelve approved', async () => {
+    it('llama a confirmPayment cuando MP devuelve approved y monto coincide con total_neto', async () => {
       const r = await service.processWebhook(buildWebhook());
       expect(r.success).toBe(true);
       expect(r.action).toBe('created');
@@ -213,6 +224,25 @@ describe('PaymentWebhookService', () => {
         metodoPago: 'mercadopago',
         transactionId: PAYMENT_ID,
       }));
+    });
+
+    it('no confirma si transaction_amount no coincide con total_neto', async () => {
+      prisma.venta.findUnique.mockResolvedValue(
+        mockVentaPendiente({ total_neto: 1089 })
+      );
+      mercadoPagoService.getPayment.mockResolvedValue(
+        buildMpPayment({ transaction_amount: 1210 })
+      );
+
+      const r = await service.processWebhook(buildWebhook());
+      expect(r.success).toBe(true);
+      expect(paymentProcessingService.confirmPayment).not.toHaveBeenCalled();
+      expect(prisma.venta.update).toHaveBeenCalledWith({
+        where: { id_venta: ID_VENTA },
+        data: expect.objectContaining({
+          observaciones: expect.stringContaining('no coincide con total_neto'),
+        }),
+      });
     });
 
     it('guarda el pago en mercado_pago_payments con payment_id y venta_id correctos', async () => {
@@ -231,7 +261,7 @@ describe('PaymentWebhookService', () => {
   describe('mapeo de estados MP', () => {
     function setupNewPayment(status: string) {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status }));
-      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
       prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
       prisma.mercado_pago_payments.create.mockResolvedValue({});
       prisma.venta.update.mockResolvedValue({});
@@ -273,7 +303,7 @@ describe('PaymentWebhookService', () => {
 
     it('transición pending → approved actualiza pago y confirma', async () => {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status: 'approved' }));
-      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
       prisma.mercado_pago_payments.findUnique.mockResolvedValue({
         id: 1,
         status_mp: 'pending',
@@ -292,7 +322,7 @@ describe('PaymentWebhookService', () => {
   describe('flujo rechazado', () => {
     it('NO llama a confirmPayment cuando MP devuelve rejected', async () => {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status: 'rejected' }));
-      prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
       prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
       prisma.mercado_pago_payments.create.mockResolvedValue({});
       prisma.venta.update.mockResolvedValue({});
@@ -369,7 +399,7 @@ describe('PaymentWebhookService', () => {
               setTimeout(() => resolve(buildMpPayment()), 50);
             })
         );
-        prisma.venta.findUnique.mockResolvedValue({ id_venta: ID_VENTA, estado_pago: 'pendiente' });
+        prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
         prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
         prisma.mercado_pago_payments.create.mockResolvedValue({});
         prisma.venta.update.mockResolvedValue({});
