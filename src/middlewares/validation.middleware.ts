@@ -70,7 +70,7 @@ export function handleValidationErrors(req: Request, res: Response, next: NextFu
         });
     }
     
-    next();
+    return next();
 }
 
 /**
@@ -146,6 +146,6 @@ export function validatePayloadSize(maxSize: number = 1024 * 1024) { // 1MB por 
             });
         }
         
-        next();
+        return next();
     };
 }
