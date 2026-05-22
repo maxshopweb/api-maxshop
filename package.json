@@ -23,7 +23,18 @@
       "@prisma/engines",
       "bcrypt"
     ],
+    "packageExtensions": {
+      "@types/compression": {
+        "dependencies": {
+          "@types/express": "4.17.21"
+        }
+      }
+    },
     "overrides": {
+      "@types/express": "4.17.21",
+      "@types/express-serve-static-core": "4.19.8",
+      "@types/multer>@types/express": "4.17.21",
+      "@types/compression>@types/express": "4.17.21",
       "jest": "30.4.2",
       "jest-runtime": "30.4.2",
       "jest-mock": "30.4.2",
@@ -44,7 +55,6 @@
     "@types/cookie-parser": "^1.4.9",
     "@types/cors": "^2.8.19",
     "@types/express": "4.17.21",
-    "@types/express-serve-static-core": "5.0.6",
     "@types/ioredis": "^4.28.10",
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
@@ -66,7 +76,7 @@
   "dependencies": {
     "@prisma/client": "^6.17.1",
     "@types/csv-stringify": "^1.4.3",
-    "@types/multer": "^2.0.0",
+      "@types/multer": "1.4.12",
     "axios": "^1.13.2",
     "basic-ftp": "^5.1.0",
     "bcrypt": "^6.0.0",
