@@ -30,9 +30,13 @@ export interface IProductos {
     lista_precio_activa?: string | null; // V|O|P|Q|E
     /** Lista activa resuelta (nombre, tipo) para que el front distinga oferta/campaña/normal */
     lista_activa?: IListaActivaInfo | null;
-    /** Precio final con IVA aplicado (calculado en backend para el front) */
+    /** Precio final con IVA a pagar (bonificación ya aplicada). */
     precio?: number | null;
-    /** Precio base sin impuestos (lista activa) */
+    /** Precio de lista con IVA antes de bonificación (para tachado en tienda). */
+    precio_anterior?: number | null;
+    /** Monto de bonificación por unidad (precio_anterior − precio). */
+    monto_bonificacion?: number | null;
+    /** Precio base sin impuestos del precio final */
     precio_sin_iva?: number | null;
     /** Precio lista Venta (V) con IVA; solo cuando lista activa no es Venta, para mostrar tachado */
     precio_venta_referencia?: number | null;

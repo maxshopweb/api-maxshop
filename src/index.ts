@@ -1,4 +1,4 @@
-import express, { Application } from 'express';
+import express, { Application, RequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -96,7 +96,7 @@ app.use(compression({
         return compression.filter(req, res);
     },
     level: 6, // Balance entre compresión y velocidad
-}));
+}) as unknown as RequestHandler);
 
 // ============================================
 // PARSING Y VALIDACIÓN

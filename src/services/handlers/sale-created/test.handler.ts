@@ -7,6 +7,7 @@
 
 import { IEventHandler, EventContext } from '../handler.interface';
 import { SaleCreatedPayload } from '../../../domain/events/sale.events';
+import { amountsMatch, roundMoney } from '../../../utils/money.utils';
 
 export class TestHandler implements IEventHandler<SaleCreatedPayload, EventContext> {
     name = 'test-handler';
@@ -23,11 +24,27 @@ export class TestHandler implements IEventHandler<SaleCreatedPayload, EventConte
         
         // Mostrar datos de venta si están disponibles
         if (payload.venta) {
+            const venta = payload.venta;
+            const totalNeto = venta.total_neto != null ? Number(venta.total_neto) : null;
+            const sumDetalles = roundMoney(
+                (venta.detalles || []).reduce((sum, d) => sum + Number(d.sub_total ?? 0), 0)
+            );
+            const costoEnvio = venta.envio?.costo_envio != null ? Number(venta.envio.costo_envio) : 0;
+            const expectedNeto = roundMoney(sumDetalles + costoEnvio);
+
             console.log(`📊 [TestHandler] Venta completa disponible:`, {
-                total_neto: payload.venta.total_neto,
-                metodo_pago: payload.venta.metodo_pago,
-                detalles_count: payload.venta.detalles?.length || 0,
+                total_neto: venta.total_neto,
+                metodo_pago: venta.metodo_pago,
+                detalles_count: venta.detalles?.length || 0,
+                sum_detalles: sumDetalles,
+                costo_envio: costoEnvio,
             });
+
+            if (totalNeto != null && !amountsMatch(totalNeto, expectedNeto)) {
+                console.warn(
+                    `⚠️ [TestHandler] Integridad de montos: total_neto ($${totalNeto}) ≠ suma líneas + envío ($${expectedNeto}) en venta #${payload.id_venta}`
+                );
+            }
         }
         
         // Agregar datos al contexto (ejemplo de cómo otros handlers pueden usarlo)

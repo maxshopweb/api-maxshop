@@ -12,7 +12,9 @@ Desde `api-maxshop`:
 
 | Comando | Qué hace |
 |---------|----------|
-| `npm test` | Todos los tests (6 suites, 72 tests) |
+| `npm test` | Todos los tests (8 suites, 86+ tests) |
+| `npm test -- pricing.service` | Solo cálculo unificado de precios / bonificación |
+| `npm test -- money.utils` | Solo utilidades de montos |
 | `npm run test:ci` | CI: `--ci --forceExit --detectOpenHandles` |
 | `npm run test:coverage` | Reporte de cobertura en `coverage/` |
 | `npm run test:payment` | Solo specs relacionados con `payment` en el nombre |
@@ -54,10 +56,13 @@ api-maxshop/
 │       ├── __mocks__/
 │       │   └── productos.service.ts    # Mock manual para asserts de stock
 │       └── __tests__/
+│           ├── pricing.service.spec.ts
 │           ├── mercado-pago.service.spec.ts
 │           ├── payment-processing.service.spec.ts
 │           ├── payment-webhook.service.spec.ts
 │           └── factura-sync.service.spec.ts
+│       └── utils/__tests__/
+│           └── money.utils.spec.ts
 │       └── andreani/__tests__/
 │           └── andreani.api.service.spec.ts
 ```
@@ -92,7 +97,8 @@ api-maxshop/
 |------|--------|
 | Validación | Payload sin `action` o `data.id`; ignora `type` distinto de `payment`; ignora acciones sin `"payment"` |
 | Idempotencia | Mismo `paymentId` + mismo `status_mp` → `skipped`; distinto status → `updated` |
-| Aprobado | `approved` → `confirmPayment` + registro en `mercado_pago_payments` |
+| Aprobado | `approved` → valida `transaction_amount` ≈ `total_neto` → `confirmPayment` + registro en `mercado_pago_payments` |
+| Monto distinto | `approved` pero monto MP ≠ `total_neto` → no `confirmPayment`, nota en `observaciones`, venta sigue `pendiente` |
 | Estados MP | `pending` / `in_process` → registra pago, no confirma, no cambia venta |
 | | `authorized` → confirma como aprobado |
 | | `cancelled` / `refunded` / `charged_back` → venta `cancelado`, sin confirmar |
@@ -122,7 +128,10 @@ api-maxshop/
 ### `createPreferenceFromVenta`
 
 - Happy path: items, `external_reference`, `currency_id: ARS`, `back_urls`
-- Errores: `total_neto` inválido, sin detalles
+- **Precio final:** `unit_price` = `sub_total / cantidad` (no `precio_unitario` de lista); caso bonificación 10% (venta #49: cobra 1089, no 1210)
+- Validación: suma ítems + envío debe coincidir con `total_neto` antes de llamar a MP
+- Ítem **Envío** separado si `total_neto` > suma de líneas
+- Errores: `total_neto` inválido, sin detalles, desajuste de totales
 - Imágenes: ignora rutas locales Windows; acepta URLs `https://`
 - Payer: sandbox sin email; producción con email
 - Cuotas: `payment_methods.installments` cuando `maxInstallments > 1`
@@ -130,7 +139,7 @@ api-maxshop/
 
 **Mocks:** `createPreference` espiado (sin HTTP real). Variables de entorno: `MERCADOPAGO_ENV`, `MERCADOPAGO_ACCESS_TOKEN_TEST`.
 
-**Tests:** 18 · **Uso:** `npm test -- mercado-pago`
+**Uso:** `npm test -- mercado-pago`
 
 ---
 
@@ -169,7 +178,27 @@ Definido en: `src/schemas/checkout.schema.ts` (exportado como `checkoutBodySchem
 
 ---
 
-## 6. Andreani API (`andreani.api.service.spec.ts`)
+## 6. Pricing / bonificación (`pricing.service.spec.ts`)
+
+**Qué prueba:** Cálculo unificado de precios (`buildPrecioPresentacion`, `computeLineaVentaPricing`).
+
+- Producto lista $1210 con 10% bonificación → final $1089
+- Línea de venta: `precio_unitario` lista, `descuento_aplicado` = monto bonificación, `sub_total` = final
+- Coherencia con catálogo, carrito online y cobro MP (`sub_total / cantidad`)
+
+**Uso:** `npm test -- pricing.service`
+
+---
+
+## 7. Money utils (`money.utils.spec.ts`)
+
+**Qué prueba:** `roundMoney`, `amountsMatch`, `sumPreferenceItems` (integridad de montos MP/ventas).
+
+**Uso:** `npm test -- money.utils`
+
+---
+
+## 8. Andreani API (`andreani.api.service.spec.ts`)
 
 **Qué prueba:** Cliente HTTP de **Andreani** (token, reintentos, parsing). No cubre lógica de negocio (pre-envío, cotización en checkout).
 
@@ -187,13 +216,15 @@ Definido en: `src/schemas/checkout.schema.ts` (exportado como `checkoutBodySchem
 | Archivo | Tests | Qué garantiza |
 |---------|-------|----------------|
 | `payment-processing.service.spec.ts` | 12 | Confirmación: stock, estados, email, idempotencia |
-| `payment-webhook.service.spec.ts` | 21 | Webhook MP: estados, idempotencia, errores, lock |
-| `mercado-pago.service.spec.ts` | 18 | Preferencia MP desde venta + utilidades |
+| `payment-webhook.service.spec.ts` | — | Webhook MP: estados, monto vs total_neto, idempotencia, lock |
+| `mercado-pago.service.spec.ts` | — | Preferencia MP con precio final + utilidades |
+| `pricing.service.spec.ts` | — | Lista, bonificación visible, subtotal final (caso #49) |
+| `money.utils.spec.ts` | 3 | Redondeo y comparación de montos |
 | `ventas.checkout.schema.spec.ts` | 6 | Payload válido/inválido del checkout |
 | `factura-sync.service.spec.ts` | 7 | Sync facturas FTP |
 | `andreani.api.service.spec.ts` | 8 | Cliente HTTP Andreani |
 
-**Total API:** 72 tests en 6 suites.
+**Total API:** ejecutar `npm test` para el conteo actual (incluye pricing MP y validación de monto en webhook).
 
 ---
 

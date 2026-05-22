@@ -9,7 +9,7 @@ const router = Router();
  * Convierte un archivo DBF subido a CSV
  * Body: multipart/form-data con campo 'dbfFile'
  */
-router.post('/convert', dbfConverterController.convertDBF);
+router.post('/convert', ...dbfConverterController.convertDBF);
 
 /**
  * POST /api/dbf-converter/sincronizar

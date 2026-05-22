@@ -20,6 +20,7 @@
 
 import { prisma } from '../index';
 import { mercadoPagoService, MercadoPagoService, MercadoPagoPaymentResponse } from './mercado-pago.service';
+import { amountsMatch, roundMoney } from '../utils/money.utils';
 import { paymentProcessingService } from './payment-processing.service';
 import { 
     IMercadoPagoWebhookEvent, 
@@ -250,7 +251,7 @@ class PaymentWebhookService {
                 // 7. Verificar que la venta existe
                 const ventaExistente = await prisma.venta.findUnique({
                     where: { id_venta: idVenta },
-                    select: { id_venta: true, estado_pago: true },
+                    select: { id_venta: true, estado_pago: true, total_neto: true, observaciones: true },
                 });
 
                 if (!ventaExistente) {
@@ -321,16 +322,35 @@ class PaymentWebhookService {
                     // Si el pago fue APROBADO, usar PaymentProcessingService
                     // Este servicio maneja: descuento de stock, envío a Andreani, emails, Event Bus
                     if (nuevoEstadoVenta === 'aprobado') {
-                        console.log(`💰 [PaymentWebhookService] Pago APROBADO - Confirmando venta #${idVenta}`);
-                        
-                        await paymentProcessingService.confirmPayment(idVenta, {
-                            metodoPago: 'mercadopago',
-                            transactionId: paymentId,
-                            paymentDate: fullPaymentData.date_approved 
-                                ? new Date(fullPaymentData.date_approved) 
-                                : new Date(),
-                            notas: `Pago MP #${paymentId} - ${fullPaymentData.payment_method_id || fullPaymentData.payment_type_id}`,
-                        });
+                        const expectedTotal = ventaExistente.total_neto != null
+                            ? Number(ventaExistente.total_neto)
+                            : NaN;
+                        const paidAmount = Number(fullPaymentData.transaction_amount);
+
+                        if (!amountsMatch(paidAmount, expectedTotal)) {
+                            const msg =
+                                `[MP] Monto cobrado $${roundMoney(paidAmount)} no coincide con total_neto $${roundMoney(expectedTotal)} (pago #${paymentId})`;
+                            console.error(`❌ [PaymentWebhookService] Venta #${idVenta}: ${msg}`);
+                            await prisma.venta.update({
+                                where: { id_venta: idVenta },
+                                data: {
+                                    observaciones: [ventaExistente.observaciones, msg]
+                                        .filter(Boolean)
+                                        .join('\n'),
+                                    actualizado_en: new Date(),
+                                },
+                            });
+                        } else {
+                            console.log(`💰 [PaymentWebhookService] Pago APROBADO - Confirmando venta #${idVenta}`);
+                            await paymentProcessingService.confirmPayment(idVenta, {
+                                metodoPago: 'mercadopago',
+                                transactionId: paymentId,
+                                paymentDate: fullPaymentData.date_approved
+                                    ? new Date(fullPaymentData.date_approved)
+                                    : new Date(),
+                                notas: `Pago MP #${paymentId} - ${fullPaymentData.payment_method_id || fullPaymentData.payment_type_id}`,
+                            });
+                        }
                     } else {
                         // Para otros estados, solo actualizar el estado de la venta
                         await prisma.venta.update({

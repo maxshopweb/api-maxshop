@@ -16,6 +16,7 @@ function buildVenta(overrides: Record<string, unknown> = {}) {
         id_prod: 10,
         cantidad: 2,
         precio_unitario: 750,
+        sub_total: 1500,
         producto: {
           id_prod: 10,
           nombre: 'Producto Test',
@@ -42,6 +43,38 @@ const BACK_URLS = {
   failure: 'https://shop.example.com/checkout/resultado?status=rejected',
   pending: 'https://shop.example.com/checkout/resultado?status=pending',
 };
+
+describe('MercadoPagoService — pricing estático', () => {
+  it('getDetalleUnitPriceForMp usa sub_total / cantidad', () => {
+    expect(
+      MercadoPagoService.getDetalleUnitPriceForMp({
+        id_detalle: 1,
+        cantidad: 1,
+        precio_unitario: 1210,
+        descuento_aplicado: 121,
+        sub_total: 1089,
+      } as any)
+    ).toBe(1089);
+  });
+
+  it('buildPreferenceItemsFromVenta valida total_neto', () => {
+    const venta = {
+      id_venta: 1,
+      total_neto: 1089,
+      detalles: [
+        {
+          id_prod: 1,
+          cantidad: 1,
+          precio_unitario: 1210,
+          sub_total: 1089,
+          producto: { nombre: 'P' },
+        },
+      ],
+    };
+    const items = MercadoPagoService.buildPreferenceItemsFromVenta(venta as any, 1089);
+    expect(items[0].unit_price).toBe(1089);
+  });
+});
 
 describe('MercadoPagoService — utilidades estáticas', () => {
   it.each([
@@ -116,8 +149,71 @@ describe('MercadoPagoService — createPreferenceFromVenta', () => {
     expect(req.items).toHaveLength(1);
     expect(req.items[0].currency_id).toBe('ARS');
     expect(req.items[0].quantity).toBe(2);
+    expect(req.items[0].unit_price).toBe(750);
     expect(req.external_reference).toBe('venta_42');
     expect(req.back_urls?.success).toBe(BACK_URLS.success);
+  });
+
+  it('cobra precio final con bonificación (caso venta #49: lista 1210, boni 121, paga 1089)', async () => {
+    const venta = buildVenta({
+      id_venta: 49,
+      total_neto: 1089,
+      detalles: [
+        {
+          id_prod: 8182,
+          cantidad: 1,
+          precio_unitario: 1210,
+          descuento_aplicado: 121,
+          sub_total: 1089,
+          bonificacion_porcentaje: 10,
+          producto: { id_prod: 8182, nombre: 'HIDROLAVADORA' },
+        },
+      ],
+    });
+    await service.createPreferenceFromVenta({ venta: venta as any, backUrls: BACK_URLS });
+    const req = mockCreatePreference.mock.calls[0][0];
+    expect(req.items[0].unit_price).toBe(1089);
+    expect(req.items[0].quantity).toBe(1);
+    expect(req.items[0].unit_price * req.items[0].quantity).toBe(1089);
+  });
+
+  it('rechaza si suma de ítems no coincide con total_neto', async () => {
+    const venta = buildVenta({
+      total_neto: 50,
+      detalles: [
+        {
+          id_prod: 10,
+          cantidad: 1,
+          precio_unitario: 100,
+          sub_total: 100,
+          producto: { id_prod: 10, nombre: 'X' },
+        },
+      ],
+    });
+    await expect(
+      service.createPreferenceFromVenta({ venta: venta as any, backUrls: BACK_URLS })
+    ).rejects.toThrow(/no coincide con total_neto/i);
+    expect(mockCreatePreference).not.toHaveBeenCalled();
+  });
+
+  it('agrega ítem Envío cuando total_neto incluye costo de envío', async () => {
+    const venta = buildVenta({
+      total_neto: 1600,
+      detalles: [
+        {
+          id_prod: 10,
+          cantidad: 1,
+          precio_unitario: 1500,
+          sub_total: 1500,
+          producto: { id_prod: 10, nombre: 'Prod' },
+        },
+      ],
+    });
+    await service.createPreferenceFromVenta({ venta: venta as any, backUrls: BACK_URLS });
+    const req = mockCreatePreference.mock.calls[0][0];
+    expect(req.items).toHaveLength(2);
+    expect(req.items[1].title).toBe('Envío');
+    expect(req.items[1].unit_price).toBe(100);
   });
 
   it('rechaza total_neto inválido', async () => {
@@ -136,11 +232,13 @@ describe('MercadoPagoService — createPreferenceFromVenta', () => {
 
   it('ignora imagen local Windows en picture_url', async () => {
     const venta = buildVenta({
+      total_neto: 100,
       detalles: [
         {
           id_prod: 10,
           cantidad: 1,
           precio_unitario: 100,
+          sub_total: 100,
           producto: {
             id_prod: 10,
             nombre: 'Local',

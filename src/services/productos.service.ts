@@ -10,6 +10,7 @@ import path from 'path';
 import cacheService from './cache.service';
 import csvImporterService from './sincronizacion/csv-importer.service';
 import sincronizacionService from './sincronizacion/sincronizacion.service';
+import { buildPrecioPresentacion } from './pricing.service';
 
 export type ProductoAuditContext = {
     userId: string;
@@ -79,10 +80,33 @@ export class ProductosService {
     }
 
     /**
-     * Precio unitario final con IVA — misma regla que `precio` en catálogo.
+     * Precio de lista activa con IVA (sin bonificación).
      */
     getPrecioFinalConIva(producto: any): number | null {
         return this.calcularPrecioConIva(producto);
+    }
+
+    /**
+     * Precio unitario final a pagar (lista con IVA − bonificación del producto).
+     * Fuente de verdad para catálogo y validación de checkout online.
+     */
+    getPrecioFinalAPagar(producto: any): number | null {
+        const lista = this.calcularPrecioConIva(producto);
+        if (lista == null || lista <= 0) return null;
+        const ivaPct = producto.iva?.porcentaje != null ? Number(producto.iva.porcentaje) : 0;
+        const presentacion = buildPrecioPresentacion(
+            lista,
+            producto.bonificacion_porcentaje,
+            ivaPct
+        );
+        return presentacion?.precioFinalConIva ?? null;
+    }
+
+    /** Presentación completa de precios para normalizar producto en API. */
+    getPrecioPresentacion(producto: any) {
+        const lista = this.calcularPrecioConIva(producto);
+        const ivaPct = producto.iva?.porcentaje != null ? Number(producto.iva.porcentaje) : 0;
+        return buildPrecioPresentacion(lista, producto.bonificacion_porcentaje, ivaPct);
     }
 
     /** Map codi_lista -> lista para enriquecer producto con lista_activa (sin N+1) */
@@ -120,16 +144,23 @@ export class ProductosService {
 
         const stockRaw = producto.stock != null ? Number(producto.stock) : 0;
         const stock = Number.isFinite(stockRaw) ? Math.max(0, Math.trunc(stockRaw)) : 0;
-        const precioActivo = this.calcularPrecioConIva(producto);
-        const precioVentaRef = codiLista !== 'V' ? this.getPrecioVentaConIva(producto) : null;
+        const presentacion = this.getPrecioPresentacion(producto);
+        const tieneBonificacion = presentacion?.tieneBonificacion === true;
+        // Referencia lista Venta (V): solo para comparar oferta/campaña, nunca mezclar con bonificación.
+        const precioVentaRef =
+            !tieneBonificacion && codiLista !== 'V' ? this.getPrecioVentaConIva(producto) : null;
         const normalized: any = {
             ...producto,
             nombre: producto.nombre ? producto.nombre.toUpperCase() : producto.nombre,
             bonificacion_porcentaje: producto.bonificacion_porcentaje != null ? Number(producto.bonificacion_porcentaje) : null,
-            precio: precioActivo,
-            precio_sin_iva: this.getPrecioListaActiva(producto),
+            precio: presentacion?.precioFinalConIva ?? this.calcularPrecioConIva(producto),
+            precio_sin_iva: presentacion?.precioSinIvaFinal ?? this.getPrecioListaActiva(producto),
+            ...(tieneBonificacion && {
+                precio_anterior: presentacion!.precioListaConIva,
+                monto_bonificacion: presentacion!.montoBonificacionUnitario,
+            }),
             lista_activa: lista_activa ?? undefined,
-            ...(precioVentaRef != null && { precio_venta_referencia: precioVentaRef }),
+            ...(precioVentaRef != null && precioVentaRef > 0 && { precio_venta_referencia: precioVentaRef }),
             stock
         };
 
@@ -158,6 +189,31 @@ export class ProductosService {
     // Función auxiliar para normalizar array de productos
     private normalizeProductos(productos: any[], listasMap?: Map<string, IListaPrecio>): IProductos[] {
         return productos.map(p => this.normalizeProducto(p, listasMap));
+    }
+
+    /** Re-aplica reglas de precio actuales sobre respuestas cacheadas (deploy / bonificación). */
+    private revalidateCachedProducto(producto: IProductos, listasMap: Map<string, IListaPrecio>): IProductos {
+        return this.normalizeProducto(producto, listasMap);
+    }
+
+    private revalidateCachedProductos(productos: IProductos[], listasMap: Map<string, IListaPrecio>): IProductos[] {
+        return this.normalizeProductos(productos, listasMap);
+    }
+
+    private async revalidateCachedPaginated(
+        cached: IPaginatedResponse<IProductos>
+    ): Promise<IPaginatedResponse<IProductos>> {
+        const listasMap = await this.getListasMap();
+        return {
+            ...cached,
+            data: this.revalidateCachedProductos(cached.data, listasMap),
+        };
+    }
+
+    private productoCacheTimestamp(producto: { actualizado_en?: Date | string | null }): number {
+        if (!producto.actualizado_en) return 0;
+        const t = new Date(producto.actualizado_en).getTime();
+        return Number.isFinite(t) ? t : 0;
     }
 
     /**
@@ -316,9 +372,8 @@ export class ProductosService {
         
         const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
         if (cached) {
-            return cached;
+            return this.revalidateCachedPaginated(cached);
         }
-
 
         const {
             page = 1,
@@ -587,13 +642,20 @@ export class ProductosService {
 
     async getById(id: number): Promise<IProductos | null> {
         const cachekey = `producto:${id}`;
-        
-        const cached = await cacheService.get<IProductos>(cachekey);
 
-        if (cached) {
-            return cached;
+        const cached = await cacheService.get<IProductos>(cachekey);
+        const dbStamp = await prisma.productos.findFirst({
+            where: { id_prod: id, estado: 1 },
+            select: { actualizado_en: true },
+        });
+        if (!dbStamp) {
+            return null;
         }
 
+        if (cached && this.productoCacheTimestamp(cached) >= this.productoCacheTimestamp(dbStamp)) {
+            const listasMap = await this.getListasMap();
+            return this.revalidateCachedProducto(cached, listasMap);
+        }
 
         const producto = await prisma.productos.findFirst({
             where: {
@@ -611,7 +673,6 @@ export class ProductosService {
         const listasMap = await this.getListasMap();
         const result = producto ? this.normalizeProducto(producto, listasMap) : null;
 
-        // Guardar en cache si existe
         if (result) {
             await cacheService.set(cachekey, result, this.TTL_PRODUCTO);
         }
@@ -621,12 +682,21 @@ export class ProductosService {
 
     async getByCodigo(codi_arti: string): Promise<IProductos | null> {
         const cacheKey = `producto:codigo:${codi_arti}`;
-        
+
         const cached = await cacheService.get<IProductos>(cacheKey);
-        if (cached) {
-            return cached;
+        const productoDb = await prisma.productos.findUnique({
+            where: { codi_arti },
+            select: { actualizado_en: true, estado: true },
+        });
+
+        if (!productoDb || productoDb.estado !== 1) {
+            return null;
         }
 
+        if (cached && this.productoCacheTimestamp(cached) >= this.productoCacheTimestamp(productoDb)) {
+            const listasMap = await this.getListasMap();
+            return this.revalidateCachedProducto(cached, listasMap);
+        }
 
         const producto = await prisma.productos.findUnique({
             where: {
@@ -647,7 +717,6 @@ export class ProductosService {
         const listasMap = await this.getListasMap();
         const result = this.normalizeProducto(producto, listasMap);
 
-        // Guardar en cache
         if (result) {
             await cacheService.set(cacheKey, result, this.TTL_PRODUCTO);
         }
@@ -772,6 +841,7 @@ export class ProductosService {
         await cacheService.delete(`producto:${result.id_prod}`);
         await cacheService.delete(`producto:codigo:${result.codi_arti}`);
         await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.deletePattern('productos:tienda:*');
         await cacheService.delete('productos:stock-bajo');
         await cacheService.delete('productos:con-imagenes:*');
 
@@ -863,6 +933,7 @@ export class ProductosService {
             await cacheService.delete(`producto:codigo:${result.codi_arti}`);
         }
         await cacheService.deletePattern('productos:destacados:*');
+        await cacheService.deletePattern('productos:tienda:*');
         await cacheService.delete('productos:stock-bajo');
         await cacheService.delete('productos:con-imagenes:*');
         // Invalidar cache de ventas porque incluyen productos actualizados
@@ -1151,9 +1222,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<IProductos[]>(cacheKey);
         if (cached) {
-            return cached;
+            const listasMap = await this.getListasMap();
+            return this.revalidateCachedProductos(cached, listasMap);
         }
-
 
         const productos = await prisma.productos.findMany({
             where: {
@@ -1187,9 +1258,9 @@ export class ProductosService {
         
         const cached = await cacheService.get<IProductos[]>(cacheKey);
         if (cached) {
-            return cached;
+            const listasMap = await this.getListasMap();
+            return this.revalidateCachedProductos(cached, listasMap);
         }
-
 
         // Obtener todos los productos activos con stock y stock_min
         const productos = await prisma.productos.findMany({
@@ -1487,9 +1558,8 @@ export class ProductosService {
         
         const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
         if (cached) {
-            return cached;
+            return this.revalidateCachedPaginated(cached);
         }
-
 
         // Obtener la ruta del directorio de imágenes (relativa a src/)
         const imagenesDir = path.join(process.cwd(), 'src/resources/IMAGENES/img-art');
@@ -1581,7 +1651,7 @@ export class ProductosService {
         const cacheKey = `productos:tienda:${JSON.stringify(filters || {})}`;
         const cached = await cacheService.get<IPaginatedResponse<IProductos>>(cacheKey);
         if (cached) {
-            return cached;
+            return this.revalidateCachedPaginated(cached);
         }
 
         const {
