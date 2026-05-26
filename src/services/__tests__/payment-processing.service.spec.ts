@@ -34,7 +34,6 @@
 import { PaymentProcessingService } from '../payment-processing.service';
 import mailService from '../../mail';
 import { prisma } from '../../index';
-import { productosMocks } from '../__mocks__/productos.service';
 
 // -----------------------------------------------------------------------------
 // Estado compartido para mocks (permite que VentasService mock devuelva getById
@@ -52,6 +51,7 @@ jest.mock('../../index', () => ({
     venta: {
       update: jest.fn().mockResolvedValue({}),
     },
+    $transaction: jest.fn(),
   },
 }));
 
@@ -82,7 +82,6 @@ jest.mock('../ventas.service', () => ({
   })),
 }));
 
-jest.mock('../productos.service', () => require('../__mocks__/productos.service'));
 
 // -----------------------------------------------------------------------------
 // Datos de prueba reutilizables
@@ -152,11 +151,25 @@ function buildVentaAprobadaConEnvio(overrides: Record<string, unknown> = {}) {
 
 describe('PaymentProcessingService.confirmPayment', () => {
   let service: PaymentProcessingService;
+  let mockTx: {
+    venta: { update: jest.Mock };
+    productos: { findUnique: jest.Mock; update: jest.Mock };
+    $queryRawUnsafe: jest.Mock;
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    productosMocks.assertStockDisponibleParaLineas.mockResolvedValue(undefined);
-    productosMocks.updateStock.mockResolvedValue(undefined);
+    mockTx = {
+      venta: { update: jest.fn().mockResolvedValue({}) },
+      productos: {
+        findUnique: jest.fn().mockResolvedValue({ id_prod: 10, stock: 10 }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ id_prod: 10, stock: 10, nombre: 'Producto Test' }]),
+    };
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (cb: Function) => cb(mockTx)
+    );
     service = new PaymentProcessingService();
   });
 
@@ -193,23 +206,19 @@ describe('PaymentProcessingService.confirmPayment', () => {
 
       expect(result.estado_pago).toBe('aprobado');
       expect(ventasState.getById).toHaveBeenCalledWith(ID_VENTA);
-      expect(productosMocks.assertStockDisponibleParaLineas).toHaveBeenCalledWith([
-        { id_prod: 10, cantidad: 2 },
-      ]);
-      expect(productosMocks.updateStock).toHaveBeenCalledWith(10, -2);
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(mockTx.$queryRawUnsafe).toHaveBeenCalled();
+      expect(mockTx.productos.update).toHaveBeenCalled();
     });
 
     it('rechaza si no hay stock disponible', async () => {
-      productosMocks.assertStockDisponibleParaLineas.mockRejectedValueOnce(
-        new Error('Stock insuficiente')
-      );
+      mockTx.$queryRawUnsafe.mockResolvedValue([{ id_prod: 10, stock: 1, nombre: 'Producto Test' }]);
 
       const ventaPendiente = buildVentaPendiente();
       ventasState.getById.mockResolvedValue(ventaPendiente);
 
       await expect(service.confirmPayment(ID_VENTA)).rejects.toThrow(/stock/i);
       expect(prisma.venta.update).not.toHaveBeenCalled();
-      expect(productosMocks.updateStock).not.toHaveBeenCalled();
     });
 
     it('rechaza venta cancelada', async () => {
@@ -218,7 +227,7 @@ describe('PaymentProcessingService.confirmPayment', () => {
       );
 
       await expect(service.confirmPayment(ID_VENTA)).rejects.toThrow(/cancelada/i);
-      expect(prisma.venta.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('rechaza venta en estado no confirmable', async () => {

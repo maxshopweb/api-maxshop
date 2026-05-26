@@ -2,6 +2,7 @@ import { IVenta } from '../types';
 import { ProductosService } from './productos.service';
 import mailService from '../mail';
 import { prisma } from '../index';
+import { Prisma } from '@prisma/client';
 import cacheService from './cache.service';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
 import { handlerExecutorService } from './handlers/handler-executor.service';
@@ -50,7 +51,7 @@ export class PaymentProcessingService {
     ): Promise<IVenta> {
         try {
 
-            // 1. Obtener venta completa
+            // 1. Obtener venta completa (fuera de tx, solo lectura + cache)
             const ventasService = this.getVentasService();
             const venta = await ventasService.getById(idVenta);
 
@@ -76,26 +77,32 @@ export class PaymentProcessingService {
                 `No se puede confirmar el pago (venta #${idVenta})`
             );
 
-            // 3. Validar stock antes de descontar
-            await this.validateStock(venta);
+            // 3-5. Ejecutar operaciones críticas en una transacción atómica
+            // Con isolationLevel: 'Serializable' para evitar race conditions
+            await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+                // 3. Validar stock con FOR UPDATE (pessimistic lock)
+                await this.validateStockWithLock(venta, tx);
 
-            // 4. Descontar stock de productos
-            await this.decreaseStock(venta);
+                // 4. Descontar stock de productos
+                await this.decreaseStockTx(venta, tx);
 
-            // 5. Actualizar estado de pago a 'aprobado' directamente con Prisma
-            // NO usar ventasService.update() para evitar bucle infinito
-            await prisma.venta.update({
-                where: { id_venta: idVenta },
-                data: {
-                    estado_pago: 'aprobado',
-                    observaciones: paymentData?.notas 
-                        ? `${venta.observaciones || ''}\n[Pago confirmado] ${paymentData.notas}`.trim()
-                        : venta.observaciones || null,
-                    actualizado_en: new Date(),
-                },
+                // 5. Actualizar estado de pago a 'aprobado'
+                await tx.venta.update({
+                    where: { id_venta: idVenta },
+                    data: {
+                        estado_pago: 'aprobado',
+                        observaciones: paymentData?.notas
+                            ? `${venta.observaciones || ''}\n[Pago confirmado] ${paymentData.notas}`.trim()
+                            : venta.observaciones || null,
+                        actualizado_en: new Date(),
+                    },
+                });
+            }, {
+                isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+                timeout: 10000,
             });
 
-            // Invalidar cache
+            // Invalidar cache (fuera de tx)
             await cacheService.delete(`venta:${idVenta}`);
             await cacheService.deletePattern('ventas:*');
 
@@ -139,49 +146,79 @@ export class PaymentProcessingService {
     }
 
     /**
-     * Stock desde BD (misma regla que VentasService.create online); no usa producto embebido en getById.
+     * Valida stock con pessimistic lock (FOR UPDATE) dentro de una transacción.
      */
-    private async validateStock(venta: IVenta): Promise<void> {
+    private async validateStockWithLock(venta: IVenta, tx: Prisma.TransactionClient): Promise<void> {
         if (!venta.detalles || venta.detalles.length === 0) {
             throw new Error('La venta no tiene detalles');
         }
 
-        const lineas: Array<{ id_prod: number; cantidad: number }> = [];
+        const cantidadPorId = new Map<number, number>();
         for (const d of venta.detalles) {
             if (d.id_prod == null) {
                 throw new Error(`Producto no encontrado en detalle ${d.id_detalle ?? 'sin id'}`);
             }
-            lineas.push({ id_prod: d.id_prod, cantidad: d.cantidad ?? 0 });
+            const c = Number(d.cantidad);
+            if (!Number.isFinite(c) || c <= 0) continue;
+            cantidadPorId.set(d.id_prod, (cantidadPorId.get(d.id_prod) ?? 0) + c);
         }
 
-        await this.productosService.assertStockDisponibleParaLineas(lineas);
+        if (cantidadPorId.size === 0) return;
+
+        const ids = [...cantidadPorId.keys()];
+
+        // FOR UPDATE lock pesimista: evita race conditions
+        const productos = await tx.$queryRawUnsafe<Array<{ id_prod: number; stock: number; nombre: string | null }>>(
+            `SELECT id_prod, stock, nombre FROM productos WHERE id_prod = ANY($1) FOR UPDATE`,
+            ids
+        );
+
+        const byId = new Map(productos.map((p) => [p.id_prod, p]));
+        for (const [id_prod, cantidadRequerida] of cantidadPorId) {
+            const producto = byId.get(id_prod);
+            if (!producto) {
+                throw new Error(`Producto ${id_prod} no encontrado`);
+            }
+            const stockActual = producto.stock != null ? Number(producto.stock) : 0;
+            if (stockActual < cantidadRequerida) {
+                const nombre = producto.nombre?.trim() || `Producto #${id_prod}`;
+                throw new Error(
+                    `Stock insuficiente para "${nombre}". Disponible: ${stockActual}, solicitado: ${cantidadRequerida}`
+                );
+            }
+        }
     }
 
     /**
-     * Descuenta el stock de todos los productos de la venta
+     * Descuenta el stock de todos los productos de la venta dentro de la transacción.
      */
-    private async decreaseStock(venta: IVenta): Promise<void> {
-        if (!venta.detalles || venta.detalles.length === 0) {
-            return;
-        }
+    private async decreaseStockTx(venta: IVenta, tx: Prisma.TransactionClient): Promise<void> {
+        if (!venta.detalles || venta.detalles.length === 0) return;
 
         for (const detalle of venta.detalles) {
-            if (!detalle.producto || !detalle.id_prod) {
-                continue;
-            }
+            if (!detalle.id_prod) continue;
 
             const cantidad = detalle.cantidad || 0;
-            if (cantidad <= 0) {
-                continue;
+            if (cantidad <= 0) continue;
+
+            const producto = await tx.productos.findUnique({
+                where: { id_prod: detalle.id_prod },
+                select: { id_prod: true, stock: true },
+            });
+
+            if (!producto) continue;
+
+            const stockActual = producto.stock ? Number(producto.stock) : 0;
+            const nuevoStock = stockActual - cantidad;
+
+            if (nuevoStock < 0) {
+                throw new Error(`Stock insuficiente. Producto #${detalle.id_prod}: stock actual ${stockActual}, intentando reducir ${cantidad}`);
             }
 
-            try {
-                // updateStock recibe cantidad positiva para sumar, negativa para restar
-                await this.productosService.updateStock(detalle.id_prod, -cantidad);
-            } catch (error: any) {
-                console.error(`❌ [PaymentProcessing] Error al descontar stock del producto #${detalle.id_prod}:`, error);
-                throw new Error(`Error al descontar stock: ${error.message}`);
-            }
+            await tx.productos.update({
+                where: { id_prod: detalle.id_prod },
+                data: { stock: nuevoStock },
+            });
         }
     }
 

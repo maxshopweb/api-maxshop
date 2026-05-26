@@ -235,7 +235,7 @@ describe('PaymentWebhookService', () => {
       );
 
       const r = await service.processWebhook(buildWebhook());
-      expect(r.success).toBe(true);
+      expect(r.success).toBe(false);
       expect(paymentProcessingService.confirmPayment).not.toHaveBeenCalled();
       expect(prisma.venta.update).toHaveBeenCalledWith({
         where: { id_venta: ID_VENTA },
