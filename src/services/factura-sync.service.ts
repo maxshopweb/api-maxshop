@@ -519,6 +519,66 @@ export class FacturaSyncService {
     }
 
     /**
+     * Envía manualmente una factura PDF al cliente (sin FTP).
+     * Usado desde el admin cuando se sube el PDF directamente.
+     */
+    async enviarFacturaManual(
+        ventaId: number,
+        facturaPath: string,
+        auditContext?: FacturaSyncAuditContext
+    ): Promise<void> {
+        const venta = await this.getVentaCompleta(ventaId);
+        if (!venta) {
+            throw new Error(`Venta #${ventaId} no encontrada`);
+        }
+
+        const clienteEmail = venta.cliente?.usuario?.email || venta.usuario?.email;
+        if (!clienteEmail) {
+            throw new Error(`No se encontró email para venta #${ventaId}`);
+        }
+
+        const clienteNombre = venta.cliente?.usuario?.nombre || venta.usuario?.nombre || 'Cliente';
+        const clienteApellido = venta.cliente?.usuario?.apellido || venta.usuario?.apellido || '';
+
+        await this.enviarEmailConFactura(venta, facturaPath, clienteEmail, clienteNombre, clienteApellido);
+
+        await prisma.venta.update({
+            where: { id_venta: ventaId },
+            data: { estado_pago: 'facturado' },
+        });
+
+        const pendiente = await prisma.ventas_pendientes_factura.findUnique({
+            where: { venta_id: ventaId },
+        });
+
+        if (pendiente) {
+            await prisma.ventas_pendientes_factura.update({
+                where: { venta_id: ventaId },
+                data: {
+                    estado: 'completado',
+                    factura_encontrada: true,
+                    procesado_en: new Date(),
+                    fecha_ultimo_intento: new Date(),
+                },
+            });
+        }
+
+        if (auditContext) {
+            await auditService.record({
+                action: 'FACTURA_ENVIO_MANUAL',
+                table: 'venta',
+                description: `Factura enviada manualmente a ${clienteEmail}`,
+                currentData: { ventaId, clienteEmail },
+                userId: auditContext.userId,
+                userAgent: auditContext.userAgent ?? null,
+                endpoint: auditContext.endpoint ?? null,
+                status: 'SUCCESS',
+                adminAudit: true,
+            });
+        }
+    }
+
+    /**
      * Actualiza intentos cuando no se encuentra la factura
      */
     private async actualizarIntento(ventaId: number, encontrado: boolean): Promise<void> {
