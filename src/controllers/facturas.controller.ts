@@ -6,6 +6,7 @@
 import { Request, Response } from 'express';
 import facturaSyncService, { SyncFacturasResult } from '../services/factura-sync.service';
 import { prisma } from '../index';
+import * as fs from 'fs';
 
 export class FacturasController {
     /**
@@ -36,6 +37,64 @@ export class FacturasController {
                 message: 'Error al sincronizar facturas',
                 error: error.message || String(error),
             });
+        }
+    }
+
+    /**
+     * Envía manualmente una factura PDF al cliente (admin sube el archivo)
+     * POST /api/facturas/:ventaId/enviar-manual
+     */
+    async enviarManual(req: Request, res: Response): Promise<void> {
+        const ventaId = Number(req.params.ventaId);
+        const file = req.file;
+
+        if (!ventaId || Number.isNaN(ventaId)) {
+            res.status(400).json({ success: false, message: 'ID de venta inválido' });
+            return;
+        }
+
+        if (!file) {
+            res.status(400).json({ success: false, message: 'Debe adjuntar un archivo PDF' });
+            return;
+        }
+
+        if (file.mimetype !== 'application/pdf' && !file.originalname.toLowerCase().endsWith('.pdf')) {
+            if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+            res.status(400).json({ success: false, message: 'Solo se permiten archivos PDF' });
+            return;
+        }
+
+        try {
+            console.log(`📧 [FacturasController] Envío manual de factura para venta #${ventaId}...`);
+
+            const auditContext = req.authenticatedUser
+                ? {
+                    userId: req.authenticatedUser.id,
+                    userAgent: req.headers['user-agent']?.toString() ?? null,
+                    endpoint: req.originalUrl,
+                }
+                : undefined;
+
+            await facturaSyncService.enviarFacturaManual(ventaId, file.path, auditContext);
+
+            res.status(200).json({
+                success: true,
+                message: 'Factura enviada correctamente',
+            });
+        } catch (error: any) {
+            console.error(`❌ [FacturasController] Error en envío manual venta #${ventaId}:`, error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Error al enviar la factura',
+            });
+        } finally {
+            if (file.path && fs.existsSync(file.path)) {
+                try {
+                    fs.unlinkSync(file.path);
+                } catch {
+                    // ignore cleanup errors
+                }
+            }
         }
     }
 
