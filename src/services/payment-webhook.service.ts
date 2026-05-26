@@ -22,6 +22,7 @@ import { prisma } from '../index';
 import { mercadoPagoService, MercadoPagoService, MercadoPagoPaymentResponse } from './mercado-pago.service';
 import { amountsMatch, roundMoney } from '../utils/money.utils';
 import { paymentProcessingService } from './payment-processing.service';
+import { lockService } from './lock.service';
 import { 
     IMercadoPagoWebhookEvent, 
     MP_STATUS_TO_VENTA_STATUS, 
@@ -32,12 +33,6 @@ import {
 // ============================================
 // TIPOS E INTERFACES
 // ============================================
-
-interface ProcessingLock {
-    paymentId: string;
-    timestamp: number;
-    expiresAt: number;
-}
 
 interface WebhookProcessResult {
     success: boolean;
@@ -85,66 +80,10 @@ interface PaymentDataForPrisma {
 // ============================================
 
 class PaymentWebhookService {
-    // Mapa en memoria para locks de procesamiento
-    // En producción con múltiples instancias, usar Redis
-    private processingLocks: Map<string, ProcessingLock> = new Map();
-    private lockTimeoutMs = 30000; // 30 segundos
-    
-    // Limpiar locks expirados cada minuto
-    private cleanupInterval: NodeJS.Timeout;
+    private lockTimeoutMs = 30000;
 
     constructor() {
-        this.cleanupInterval = setInterval(() => this.cleanupExpiredLocks(), 60000);
-        console.log('✅ [PaymentWebhookService] Inicializado');
-    }
-
-    /**
-     * Limpia locks expirados del mapa
-     */
-    private cleanupExpiredLocks(): void {
-        const now = Date.now();
-        let cleaned = 0;
-        
-        for (const [key, lock] of this.processingLocks.entries()) {
-            if (lock.expiresAt < now) {
-                this.processingLocks.delete(key);
-                cleaned++;
-            }
-        }
-        
-        if (cleaned > 0) {
-            console.log(`🧹 [PaymentWebhookService] Limpiados ${cleaned} locks expirados`);
-        }
-    }
-
-    /**
-     * Intenta adquirir un lock para procesar un pago
-     * Previene procesamiento paralelo del mismo webhook
-     */
-    private acquireLock(paymentId: string): boolean {
-        const now = Date.now();
-        const existingLock = this.processingLocks.get(paymentId);
-        
-        // Si hay un lock activo, no adquirir
-        if (existingLock && existingLock.expiresAt > now) {
-            return false;
-        }
-        
-        // Crear nuevo lock
-        this.processingLocks.set(paymentId, {
-            paymentId,
-            timestamp: now,
-            expiresAt: now + this.lockTimeoutMs,
-        });
-        
-        return true;
-    }
-
-    /**
-     * Libera el lock de un pago
-     */
-    private releaseLock(paymentId: string): void {
-        this.processingLocks.delete(paymentId);
+        console.log('✅ [PaymentWebhookService] Inicializado (lock distribuido)');
     }
 
     /**
@@ -198,8 +137,8 @@ class PaymentWebhookService {
 
             const paymentId = webhookData.data.id.toString();
 
-            // 3. Intentar adquirir lock
-            if (!this.acquireLock(paymentId)) {
+            // 3. Intentar adquirir lock distribuido (Redis con fallback in-memory)
+            if (!(await lockService.acquireLock(`webhook:${paymentId}`, this.lockTimeoutMs))) {
                 if (process.env.NODE_ENV !== 'production') {
                     console.log(`⏳ [PaymentWebhookService] Pago ${paymentId} ya está siendo procesado (lock activo)`);
                 }
@@ -334,12 +273,14 @@ class PaymentWebhookService {
                             await prisma.venta.update({
                                 where: { id_venta: idVenta },
                                 data: {
+                                    estado_pago: 'cancelado',
                                     observaciones: [ventaExistente.observaciones, msg]
                                         .filter(Boolean)
                                         .join('\n'),
                                     actualizado_en: new Date(),
                                 },
                             });
+                            throw new Error(msg);
                         } else {
                             console.log(`💰 [PaymentWebhookService] Pago APROBADO - Confirmando venta #${idVenta}`);
                             await paymentProcessingService.confirmPayment(idVenta, {
@@ -381,8 +322,7 @@ class PaymentWebhookService {
                 };
 
             } finally {
-                // Siempre liberar el lock
-                this.releaseLock(paymentId);
+                await lockService.releaseLock(`webhook:${paymentId}`);
             }
 
         } catch (error: any) {
@@ -627,13 +567,8 @@ class PaymentWebhookService {
         };
     }
 
-    /**
-     * Destructor - limpia el intervalo de limpieza
-     */
     destroy(): void {
-        if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-        }
+        lockService.destroy();
     }
 }
 
