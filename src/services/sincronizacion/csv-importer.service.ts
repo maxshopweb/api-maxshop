@@ -1225,14 +1225,16 @@ export class CSVImporterService {
   }
 
   /**
-   * Etapa 3: Actualiza solo datos maestros de productos desde MAESARTI.csv (nombre, categoría, marca, etc.).
-   * No toca precios ni stock. Solo actualiza productos existentes; no crea nuevos.
+   * Etapa 3: Actualiza solo datos maestros de productos desde MAESARTI.csv.
+   * No toca precios ni stock. Inserta productos nuevos como inactivos.
    */
-  async actualizarSoloDatosMaestrosProductos(csvDir: string): Promise<{ actualizados: number }> {
+  async actualizarSoloDatosMaestrosProductos(
+    csvDir: string
+  ): Promise<{ actualizados: number; insertados: number }> {
     const csvPath = path.join(csvDir, 'MAESARTI.csv');
     if (!fs.existsSync(csvPath)) {
       console.warn('⚠️ [actualizarSoloDatosMaestrosProductos] No existe MAESARTI.csv');
-      return { actualizados: 0 };
+      return { actualizados: 0, insertados: 0 };
     }
 
     const categoriasSet = new Set<string>(
@@ -1259,12 +1261,28 @@ export class CSVImporterService {
     const contenido = fs.readFileSync(csvPath, 'utf-8');
     const registros = this.parsearCSV(contenido);
     const header = registros[0];
-    if (!header) return { actualizados: 0 };
+    if (!header) return { actualizados: 0, insertados: 0 };
     const indices = this.obtenerIndicesColumnas(header);
-    if (indices['CODIARTI'] === undefined) return { actualizados: 0 };
+    if (indices['CODIARTI'] === undefined) return { actualizados: 0, insertados: 0 };
 
     let actualizados = 0;
     const imageUpdates: { codi_arti: string; imgPath: string }[] = [];
+    const mapaProductosParseados = new Map<
+      string,
+      {
+        codi_arti: string;
+        nombre: string | null;
+        modelo: string | null;
+        codi_grupo: string | null;
+        codi_categoria: string | null;
+        codi_marca: string | null;
+        codi_impuesto: string | null;
+        unidad_medida: string | null;
+        unidades_por_producto: number | null;
+        codi_barras: string | null;
+        img_principal: string | null;
+      }
+    >();
 
     for (let rowNum = 1; rowNum < registros.length; rowNum++) {
       const row = registros[rowNum];
@@ -1275,13 +1293,16 @@ export class CSVImporterService {
         if (!codiarti) continue;
 
         const codi_arti_truncado = codiarti.substring(0, 10);
+        const nombre = this.truncarString(
+          this.limpiarCampo(row[indices['DESCARTI'] ?? 3]),
+          255
+        );
         const codigrar = this.truncarString(this.limpiarCampo(row[indices['CODIGRAR'] ?? 2]), 4);
         const codicate = this.truncarString(this.limpiarCampo(row[indices['CODICATE'] ?? -1] || ''), 4);
         const codimarc = this.truncarString(this.limpiarCampo(row[indices['CODIMARC'] ?? -1] || ''), 3);
         const codiimp1 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP1'] ?? 7]), 2);
         const codiimp2 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP2'] ?? 8]), 2);
         const codiimp3 = this.truncarString(this.limpiarCampo(row[indices['CODIIMP3'] ?? -1] || ''), 2);
-        const actiarti = this.truncarString(this.limpiarCampo(row[indices['ACTIARTI'] ?? -1] || ''), 1);
         const imagarti = this.limpiarCampo(row[indices['IMAGARTI'] ?? -1] || '');
         const unmearti = this.truncarString(this.limpiarCampo(row[indices['UNMEARTI'] ?? 4] || ''), 3);
         const unenarti = this.parsearNumero(row[indices['UNENARTI'] ?? 6]);
@@ -1296,30 +1317,41 @@ export class CSVImporterService {
         else if (codiimp2 && impuestosKeys.has(codiimp2)) codi_impuesto = codiimp2;
         else if (codiimp3 && impuestosKeys.has(codiimp3)) codi_impuesto = codiimp3;
 
+        let imgPrincipal: string | null = null;
         const parsedCsvImage = this.parseCsvImagePath(imagarti);
         if (parsedCsvImage.status === 'ok' && this.validateImportedPathExists(parsedCsvImage.value)) {
           imageUpdates.push({ codi_arti: codi_arti_truncado, imgPath: parsedCsvImage.value });
+          imgPrincipal = parsedCsvImage.value;
         }
 
-        // No actualizar nombre en updates: solo se setea en el primer insert (create). Evita que el sync pise nombres editados en el panel.
+        mapaProductosParseados.set(codi_arti_truncado, {
+          codi_arti: codi_arti_truncado,
+          nombre,
+          modelo,
+          codi_grupo,
+          codi_categoria,
+          codi_marca,
+          codi_impuesto,
+          unidad_medida: unmearti || null,
+          unidades_por_producto: unenarti != null ? unenarti : null,
+          codi_barras: partarti || null,
+          img_principal: imgPrincipal,
+        });
+
+        // No actualizar nombre, categoría, grupo ni marca en productos existentes.
         const result = await prisma.productos.updateMany({
           where: { codi_arti: codi_arti_truncado, ...this.whereProductoPermiteSyncErp() },
           data: {
-            codi_grupo,
-            codi_categoria,
-            codi_marca,
             codi_impuesto,
             modelo,
             unidad_medida: unmearti || null,
             unidades_por_producto: unenarti != null ? unenarti : null,
             codi_barras: partarti || null,
-            activo: actiarti === 'A' ? 'A' : (actiarti || 'I'),
-            estado: actiarti === 'A' ? 1 : 0,
             actualizado_en: new Date(),
           },
         });
         actualizados += result.count;
-      } catch (error) {
+      } catch {
         // seguir con la siguiente fila
       }
     }
@@ -1341,8 +1373,50 @@ export class CSVImporterService {
       }
     }
 
-    console.log(`📝 [actualizarSoloDatosMaestrosProductos] ${actualizados} producto(s) actualizado(s)`);
-    return { actualizados };
+    const todosLosCodigos = Array.from(mapaProductosParseados.keys());
+    let insertados = 0;
+    if (todosLosCodigos.length > 0) {
+      const existentes = await prisma.productos.findMany({
+        where: { codi_arti: { in: todosLosCodigos } },
+        select: { codi_arti: true },
+      });
+      const existentesSet = new Set(existentes.map((p) => p.codi_arti));
+      const nuevos = todosLosCodigos.filter((c) => !existentesSet.has(c));
+
+      for (const codi of nuevos) {
+        const datos = mapaProductosParseados.get(codi);
+        if (!datos) continue;
+        try {
+          await prisma.productos.create({
+            data: {
+              codi_arti: datos.codi_arti,
+              nombre: datos.nombre,
+              modelo: datos.modelo,
+              codi_grupo: datos.codi_grupo,
+              codi_categoria: datos.codi_categoria,
+              codi_marca: datos.codi_marca,
+              codi_impuesto: datos.codi_impuesto,
+              unidad_medida: datos.unidad_medida,
+              unidades_por_producto: datos.unidades_por_producto,
+              codi_barras: datos.codi_barras,
+              img_principal: datos.img_principal,
+              lista_precio_activa: 'V',
+              activo: 'I',
+              estado: 0,
+              publicado: false,
+            },
+          });
+          insertados++;
+        } catch (error) {
+          console.error(`⚠️ [actualizarSoloDatosMaestrosProductos] Error insertando ${codi}:`, error);
+        }
+      }
+    }
+
+    console.log(
+      `📝 [actualizarSoloDatosMaestrosProductos] ${actualizados} actualizado(s), ${insertados} insertado(s)`
+    );
+    return { actualizados, insertados };
   }
 
   /**
@@ -1803,9 +1877,6 @@ export class CSVImporterService {
         // Listas V,O,P,Q desde CSV (producto no está en modo edición manual).
         // No tocamos precio_manual ni lista_precio_activa (lista E u otras elecciones del usuario).
         const updateData: Record<string, unknown> = {
-          codi_grupo: producto.codi_grupo,
-          codi_categoria: producto.codi_categoria,
-          codi_marca: producto.codi_marca,
           codi_impuesto: producto.codi_impuesto,
           modelo: producto.modelo ?? null,
           precio_venta: producto.precio_venta,
@@ -1813,6 +1884,7 @@ export class CSVImporterService {
           precio_pvp: producto.precio_pvp,
           precio_campanya: producto.precio_campanya,
           // No actualizar lista_precio_activa ni precio_manual: el usuario puede tener lista E
+          // No actualizar codi_grupo, codi_categoria, codi_marca: pueden haber sido editados en el panel
           unidad_medida: producto.unidad_medida,
           unidades_por_producto: producto.unidades_por_producto,
           codi_barras: producto.codi_barras,
@@ -1892,8 +1964,9 @@ export class CSVImporterService {
             stock: producto.stock,
             stock_min: producto.stock_min,
             img_principal: imgPrincipalCreate,
-            activo: producto.activo,
-            estado: producto.estado,
+            activo: 'I',
+            estado: 0,
+            publicado: false,
           },
         });
       } catch (error: any) {

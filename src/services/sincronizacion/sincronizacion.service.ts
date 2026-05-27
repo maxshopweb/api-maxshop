@@ -517,6 +517,41 @@ export class SincronizacionService {
       }
     }
   }
+
+  /**
+   * Descarga y convierte un DBF específico desde FTP (on-demand).
+   */
+  private async descargarDbfDesdeFtp(dbfEsperado: string): Promise<void> {
+    this.asegurarDirectorios();
+    await ftpService.connect();
+    try {
+      const ftpFiles = await ftpService.listDBFFiles();
+      const match = ftpFiles.find((f) => f.name.toUpperCase() === dbfEsperado.toUpperCase());
+      if (!match) {
+        throw new Error(`No se encontró ${dbfEsperado} en el servidor FTP.`);
+      }
+      await this.descargarYConvertirSoloCambiados([match.name], ftpFiles);
+    } finally {
+      await ftpService.disconnect();
+    }
+  }
+
+  /**
+   * On-demand: descarga MAESSTOK.DBF y actualiza solo stock en BD.
+   */
+  async sincronizarSoloStockOnDemand(): Promise<{ actualizados: number }> {
+    await this.descargarDbfDesdeFtp('MAESSTOK.DBF');
+    return csvImporterService.actualizarSoloStock(CSV_OUTPUT_DIR);
+  }
+
+  /**
+   * On-demand: descarga MAESPREC.DBF y actualiza solo precios en BD.
+   */
+  async sincronizarSoloPreciosOnDemand(): Promise<{ actualizados: number }> {
+    await this.descargarDbfDesdeFtp('MAESPREC.DBF');
+    this.normalizeMaesprecCsvFilename();
+    return csvImporterService.actualizarSoloPrecios(CSV_OUTPUT_DIR);
+  }
 }
 
 export default new SincronizacionService();

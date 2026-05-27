@@ -49,12 +49,16 @@ export class ExcelHandler implements IEventHandler<SaleCreatedPayload, EventCont
     description = 'Genera Excel de ventas y lo sube al FTP';
     priority = 30; // Ejecutar después de Andreani
     enabled = true;
-    runOnPending = true;
+    runOnPending = false;
 
     private readonly REMOTE_PATH = ftpPathsConfig.ventasExcel;
     private readonly TEMP_DIR = path.join(process.cwd(), 'backend', 'data', 'temp');
 
     async handle(payload: SaleCreatedPayload, context: EventContext): Promise<void> {
+        if (payload.estado_pago !== 'aprobado') {
+            return;
+        }
+
         const { id_venta, venta } = payload;
 
         try {

@@ -87,4 +87,34 @@ router.get(
   sincronizacionController.obtenerRun.bind(sincronizacionController)
 );
 
+/**
+ * POST /api/sincronizacion/on-demand/catalogo
+ * Sincronización completa on-demand (FTP → CSV → BD).
+ */
+router.post(
+  '/on-demand/catalogo',
+  ...adminAuth,
+  sincronizacionController.sincronizarCatalogoOnDemand.bind(sincronizacionController)
+);
+
+/**
+ * POST /api/sincronizacion/on-demand/precios
+ * Descarga MAESPREC.DBF y actualiza solo precios.
+ */
+router.post(
+  '/on-demand/precios',
+  ...adminAuth,
+  sincronizacionController.sincronizarSoloPreciosOnDemand.bind(sincronizacionController)
+);
+
+/**
+ * POST /api/sincronizacion/on-demand/stock
+ * Descarga MAESSTOK.DBF y actualiza solo stock.
+ */
+router.post(
+  '/on-demand/stock',
+  ...adminAuth,
+  sincronizacionController.sincronizarSoloStockOnDemand.bind(sincronizacionController)
+);
+
 export default router;

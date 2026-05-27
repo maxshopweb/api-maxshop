@@ -9,14 +9,63 @@ import { ftpConfig } from '../config/ftp.config';
  */
 type ReleaseFn = () => void;
 
+const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
 export class FTPService {
   private client: Client;
   private lock: Promise<void> = Promise.resolve();
   private releaseLock: ReleaseFn | null = null;
+  private lockTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.client = new Client();
     this.client.ftp.verbose = process.env.NODE_ENV !== 'production';
+  }
+
+  private clearLockTimeout(): void {
+    if (this.lockTimeoutId) {
+      clearTimeout(this.lockTimeoutId);
+      this.lockTimeoutId = null;
+    }
+  }
+
+  private forceReleaseLock(): void {
+    this.clearLockTimeout();
+    try {
+      this.client.close();
+    } catch {
+      // ignorar
+    }
+    this.client = new Client();
+    this.client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    if (this.releaseLock) {
+      this.releaseLock();
+      this.releaseLock = null;
+    }
+  }
+
+  private async withRetry<T>(
+    label: string,
+    fn: () => Promise<T>,
+    maxRetries = 3,
+    baseDelayMs = 1000
+  ): Promise<T> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        if (attempt < maxRetries) {
+          const delay = baseDelayMs * Math.pow(2, attempt - 1);
+          console.warn(
+            `[FTP] ${label} intento ${attempt}/${maxRetries} fallido. Retry en ${delay}ms`
+          );
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -40,6 +89,11 @@ export class FTPService {
         secure: ftpConfig.secure,
       });
       this.releaseLock = release!;
+      this.clearLockTimeout();
+      this.lockTimeoutId = setTimeout(() => {
+        console.error('[FTPService] Lock timeout (5 min), forzando liberacion');
+        this.forceReleaseLock();
+      }, LOCK_TIMEOUT_MS);
       console.log('✅ Conectado al servidor FTP');
     } catch (error) {
       release!();
@@ -58,6 +112,7 @@ export class FTPService {
     } catch (error) {
       console.error('⚠️  Error al desconectar del FTP:', error);
     } finally {
+      this.clearLockTimeout();
       this.client = new Client();
       this.client.ftp.verbose = process.env.NODE_ENV !== 'production';
       if (this.releaseLock) {
@@ -93,26 +148,23 @@ export class FTPService {
    * Descarga un archivo .DBF del FTP a un directorio local temporal
    */
   async downloadFile(remoteFileName: string, localDir: string): Promise<string> {
-    try {
-      // Asegurar que el directorio existe
+    return this.withRetry(`downloadFile(${remoteFileName})`, async () => {
       if (!fs.existsSync(localDir)) {
         fs.mkdirSync(localDir, { recursive: true });
       }
 
       const localFilePath = path.join(localDir, remoteFileName);
-      
-      // Cambiar al directorio remoto
       await this.client.cd(ftpConfig.remotePath);
-      
-      // Descargar el archivo
       await this.client.downloadTo(localFilePath, remoteFileName);
-      
+
       console.log(`✅ Descargado: ${remoteFileName} → ${localFilePath}`);
       return localFilePath;
-    } catch (error) {
+    }).catch((error) => {
       console.error(`❌ Error al descargar ${remoteFileName}:`, error);
-      throw new Error(`Error al descargar archivo: ${error instanceof Error ? error.message : String(error)}`);
-    }
+      throw new Error(
+        `Error al descargar archivo: ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
   }
 
   /**
@@ -166,21 +218,17 @@ export class FTPService {
    */
   async downloadExcel(remotePath: string, localPath: string): Promise<void> {
     try {
-      // Asegurar que el directorio local existe
-      const localDir = path.dirname(localPath);
-      if (!fs.existsSync(localDir)) {
-        fs.mkdirSync(localDir, { recursive: true });
-      }
+      await this.withRetry(`downloadExcel(${remotePath})`, async () => {
+        const localDir = path.dirname(localPath);
+        if (!fs.existsSync(localDir)) {
+          fs.mkdirSync(localDir, { recursive: true });
+        }
 
-      const remoteDir = path.dirname(remotePath);
-      const remoteFileName = path.basename(remotePath);
-      
-      // Cambiar al directorio remoto
-      await this.client.cd(remoteDir);
-      
-      // Descargar el archivo
-      await this.client.downloadTo(localPath, remoteFileName);
-      
+        const remoteDir = path.dirname(remotePath);
+        const remoteFileName = path.basename(remotePath);
+        await this.client.cd(remoteDir);
+        await this.client.downloadTo(localPath, remoteFileName);
+      });
       console.log(`✅ [FTP] Descargado Excel: ${remotePath} → ${localPath}`);
     } catch (error) {
       console.error(`❌ [FTP] Error al descargar Excel ${remotePath}:`, error);
@@ -197,29 +245,28 @@ export class FTPService {
         throw new Error(`Archivo local no existe: ${localPath}`);
       }
 
-      const remoteDir = path.dirname(remotePath);
-      const remoteFileName = path.basename(remotePath);
-      
-      // Asegurar que el directorio remoto existe (crear si no existe)
-      try {
-        await this.client.cd(remoteDir);
-      } catch (error) {
-        // Si el directorio no existe, intentar crearlo
-        const dirs = remoteDir.split('/').filter(d => d);
-        let currentPath = '';
-        for (const dir of dirs) {
-          currentPath += `/${dir}`;
-          try {
-            await this.client.cd(currentPath);
-          } catch {
-            await this.client.ensureDir(currentPath);
+      await this.withRetry(`uploadExcel(${remotePath})`, async () => {
+        const remoteDir = path.dirname(remotePath);
+        const remoteFileName = path.basename(remotePath);
+
+        try {
+          await this.client.cd(remoteDir);
+        } catch {
+          const dirs = remoteDir.split('/').filter((d) => d);
+          let currentPath = '';
+          for (const dir of dirs) {
+            currentPath += `/${dir}`;
+            try {
+              await this.client.cd(currentPath);
+            } catch {
+              await this.client.ensureDir(currentPath);
+            }
           }
         }
-      }
-      
-      // Subir el archivo
-      await this.client.uploadFrom(localPath, remoteFileName);
-      
+
+        await this.client.uploadFrom(localPath, remoteFileName);
+      });
+
       console.log(`✅ [FTP] Subido Excel: ${localPath} → ${remotePath}`);
     } catch (error) {
       console.error(`❌ [FTP] Error al subir Excel ${remotePath}:`, error);
@@ -237,25 +284,28 @@ export class FTPService {
         throw new Error(`Archivo local no existe: ${localPath}`);
       }
 
-      const remoteDir = path.dirname(remotePath);
-      const remoteFileName = path.basename(remotePath);
+      await this.withRetry(`uploadFile(${remotePath})`, async () => {
+        const remoteDir = path.dirname(remotePath);
+        const remoteFileName = path.basename(remotePath);
 
-      try {
-        await this.client.cd(remoteDir);
-      } catch {
-        const dirs = remoteDir.split('/').filter(d => d);
-        let currentPath = '';
-        for (const dir of dirs) {
-          currentPath += `/${dir}`;
-          try {
-            await this.client.cd(currentPath);
-          } catch {
-            await this.client.ensureDir(currentPath);
+        try {
+          await this.client.cd(remoteDir);
+        } catch {
+          const dirs = remoteDir.split('/').filter((d) => d);
+          let currentPath = '';
+          for (const dir of dirs) {
+            currentPath += `/${dir}`;
+            try {
+              await this.client.cd(currentPath);
+            } catch {
+              await this.client.ensureDir(currentPath);
+            }
           }
         }
-      }
 
-      await this.client.uploadFrom(localPath, remoteFileName);
+        await this.client.uploadFrom(localPath, remoteFileName);
+      });
+
       console.log(`✅ [FTP] Subido archivo: ${localPath} → ${remotePath}`);
     } catch (error) {
       console.error(`❌ [FTP] Error al subir archivo ${remotePath}:`, error);

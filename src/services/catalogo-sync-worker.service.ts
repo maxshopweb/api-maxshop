@@ -20,6 +20,10 @@ export class CatalogoSyncWorker {
   private isRunning = false;
   private readonly CRON_SCHEDULE = `*/${CRON_CADA_MINUTOS} * * * *`; // Cada 20 minutos
 
+  get isSyncRunning(): boolean {
+    return this.isRunning;
+  }
+
   /**
    * Inicia el worker: ejecuta una sync al arranque (con delay) y programa cada 20 min.
    */

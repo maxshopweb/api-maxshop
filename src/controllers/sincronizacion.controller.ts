@@ -4,6 +4,7 @@ import csvImporterService from '../services/sincronizacion/csv-importer.service'
 import syncRunService from '../services/sync-run.service';
 import { ProductosService } from '../services/productos.service';
 import { auditService } from '../services/audit.service';
+import catalogoSyncWorker from '../services/catalogo-sync-worker.service';
 import * as path from 'path';
 
 const productosService = new ProductosService();
@@ -31,6 +32,17 @@ function validateConfirmacionForce(req: Request): { ok: true } | { ok: false; er
   return { ok: true };
 }
 
+function rejectIfAutoSyncRunning(res: Response): boolean {
+  if (catalogoSyncWorker.isSyncRunning) {
+    res.status(409).json({
+      success: false,
+      error: 'Hay una sincronizacion automatica en curso. Intente nuevamente en unos minutos.',
+    });
+    return true;
+  }
+  return false;
+}
+
 export class SincronizacionController {
   /**
    * POST /api/sincronizacion/completa
@@ -41,6 +53,8 @@ export class SincronizacionController {
    * - confirmacion: "${CONFIRMACION_FORCE_ERP_TOTAL}"
    */
   async sincronizarCompleto(req: Request, res: Response): Promise<void> {
+    if (rejectIfAutoSyncRunning(res)) return;
+
     const tInicio = Date.now();
     const force = wantsForceOverwrite(req);
     let filasFlagsReseteadas = 0;
@@ -348,6 +362,69 @@ export class SincronizacionController {
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       res.status(500).json({ success: false, message: 'Error al obtener stats', error: errMsg });
+    }
+  }
+
+  /**
+   * POST /api/sincronizacion/on-demand/catalogo
+   * Sincronización completa on-demand (FTP → CSV → BD).
+   */
+  async sincronizarCatalogoOnDemand(req: Request, res: Response): Promise<void> {
+    if (rejectIfAutoSyncRunning(res)) return;
+    await this.sincronizarCompleto(req, res);
+  }
+
+  /**
+   * POST /api/sincronizacion/on-demand/precios
+   * Descarga MAESPREC.DBF y actualiza solo precios.
+   */
+  async sincronizarSoloPreciosOnDemand(req: Request, res: Response): Promise<void> {
+    void req;
+    if (rejectIfAutoSyncRunning(res)) return;
+
+    try {
+      console.log('💰 Iniciando sincronización on-demand de precios...');
+      const resultado = await sincronizacionService.sincronizarSoloPreciosOnDemand();
+      res.json({
+        success: true,
+        message: `Precios actualizados: ${resultado.actualizados} producto(s)`,
+        data: resultado,
+      });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error en sync on-demand de precios:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al sincronizar precios',
+        error: errMsg,
+      });
+    }
+  }
+
+  /**
+   * POST /api/sincronizacion/on-demand/stock
+   * Descarga MAESSTOK.DBF y actualiza solo stock.
+   */
+  async sincronizarSoloStockOnDemand(req: Request, res: Response): Promise<void> {
+    void req;
+    if (rejectIfAutoSyncRunning(res)) return;
+
+    try {
+      console.log('📦 Iniciando sincronización on-demand de stock...');
+      const resultado = await sincronizacionService.sincronizarSoloStockOnDemand();
+      res.json({
+        success: true,
+        message: `Stock actualizado: ${resultado.actualizados} producto(s)`,
+        data: resultado,
+      });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error en sync on-demand de stock:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al sincronizar stock',
+        error: errMsg,
+      });
     }
   }
 }
