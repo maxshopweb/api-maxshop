@@ -14,6 +14,7 @@ import { ProductosService } from './productos.service';
 import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from './venta-envio.validation';
 import { getAndreaniModoManual } from '../config/andreani.config';
 import { computeLineaVentaPricing, normalizeBonificacionPct } from './pricing.service';
+import { ventasExcelExportService, VENTA_EXCEL_INCLUDE } from './ventas-excel-export.service';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
@@ -27,22 +28,19 @@ export class VentasService {
     private TTL_VENTA = 3600; // 1 hora
     private TTL_LISTA = 1800; // 30 minutos
 
-    async getAll(filters: IVentaFilters): Promise<IPaginatedResponse<IVenta>> {
-        const cacheKey = `ventas:all:${JSON.stringify(filters)}`;
-        
-        const cached = await cacheService.get<IPaginatedResponse<IVenta>>(cacheKey);
-        if (cached) {
-            return cached;
-        }
+    /** Límite máximo de ventas por exportación Excel (configurable vía env). */
+    private readonly VENTAS_EXPORT_MAX = Number(process.env.VENTAS_EXPORT_MAX ?? 5000);
 
+    /**
+     * Construye cláusula WHERE reutilizable para listado, stats y export Excel.
+     */
+    buildWhereClause(filters: IVentaFilters): Prisma.ventaWhereInput {
         const {
-            page = 1,
-            limit = 25,
-            order_by = 'fecha',
-            order = 'desc',
             busqueda,
             id_cliente,
             id_usuario,
+            id_venta,
+            cod_interno,
             fecha_desde,
             fecha_hasta,
             estado_pago,
@@ -54,17 +52,32 @@ export class VentasService {
             incluir_canceladas = false,
         } = filters;
 
-        const whereClause: any = {};
+        const whereClause: Prisma.ventaWhereInput = {};
 
-        // Búsqueda por ID de venta, cliente (nombre, email) o DNI/CUIT (numero_documento)
+        if (id_venta) {
+            whereClause.id_venta = id_venta;
+        }
+
+        if (cod_interno) {
+            const term = cod_interno.trim();
+            if (term.length > 0) {
+                whereClause.cod_interno = { contains: term, mode: 'insensitive' };
+            }
+        }
+
         if (busqueda) {
             const term = busqueda.trim();
             const onlyDigits = term.replace(/\D/g, '');
-            const docConditions: any[] = [];
-            if (term.length > 0) docConditions.push({ numero_documento: { contains: term, mode: 'insensitive' as const } });
-            if (onlyDigits.length > 0 && onlyDigits !== term) docConditions.push({ numero_documento: { contains: onlyDigits, mode: 'insensitive' as const } });
+            const docConditions: Prisma.usuariosWhereInput[] = [];
+            if (term.length > 0) {
+                docConditions.push({ numero_documento: { contains: term, mode: 'insensitive' } });
+            }
+            if (onlyDigits.length > 0 && onlyDigits !== term) {
+                docConditions.push({ numero_documento: { contains: onlyDigits, mode: 'insensitive' } });
+            }
             whereClause.OR = [
-                { id_venta: { equals: parseInt(term) || -1 } },
+                { id_venta: { equals: parseInt(term, 10) || -1 } },
+                { cod_interno: { contains: term, mode: 'insensitive' } },
                 {
                     cliente: {
                         usuarios: {
@@ -83,7 +96,6 @@ export class VentasService {
         if (id_cliente) whereClause.id_cliente = id_cliente;
         if (id_usuario) whereClause.id_usuario = id_usuario;
 
-        // Filtros por fecha
         if (fecha_desde || fecha_hasta) {
             whereClause.fecha = {};
             if (fecha_desde) {
@@ -110,7 +122,6 @@ export class VentasService {
             whereClause.estado_pago = estado_pago;
         }
 
-        // Filtros por rango de total
         if (total_min !== undefined || total_max !== undefined) {
             whereClause.total_neto = {};
             if (total_min !== undefined) {
@@ -121,7 +132,25 @@ export class VentasService {
             }
         }
 
-        // Ordenamiento
+        return whereClause;
+    }
+
+    async getAll(filters: IVentaFilters): Promise<IPaginatedResponse<IVenta>> {
+        const cacheKey = `ventas:all:${JSON.stringify(filters)}`;
+        
+        const cached = await cacheService.get<IPaginatedResponse<IVenta>>(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
+        const {
+            page = 1,
+            limit = 25,
+            order_by = 'fecha',
+            order = 'desc',
+        } = filters;
+
+        const whereClause = this.buildWhereClause(filters);
         const orderBy: any = {};
         if (order_by === 'fecha') orderBy.fecha = order;
         else if (order_by === 'total_neto') orderBy.total_neto = order;
@@ -1805,6 +1834,48 @@ export class VentasService {
         await cacheService.set(cacheKey, stats, this.TTL_LISTA);
 
         return stats;
+    }
+
+    /**
+     * Exporta ventas filtradas a Excel ERP (mismo formato que Ventas.xlsx FTP).
+     * Por defecto excluye canceladas si no se pasa incluir_canceladas.
+     */
+    async exportVentasExcel(filters: IVentaFilters = {}): Promise<{
+        buffer: Buffer;
+        filename: string;
+        ventasCount: number;
+        rowsCount: number;
+    }> {
+        const where = this.buildWhereClause(filters);
+        const max = this.VENTAS_EXPORT_MAX;
+
+        const total = await prisma.venta.count({ where });
+        if (total === 0) {
+            throw new Error('No hay ventas que coincidan con los filtros seleccionados.');
+        }
+        if (total > max) {
+            throw new Error(
+                `Demasiadas ventas (${total}). Refiná los filtros. Máximo permitido por exportación: ${max}.`
+            );
+        }
+
+        const ventasRaw = await prisma.venta.findMany({
+            where,
+            orderBy: { fecha: 'asc' },
+            include: VENTA_EXCEL_INCLUDE,
+        });
+
+        const ventas = ventasRaw.map((v) => ventasExcelExportService.formatVentaFromPrisma(v));
+        const { buffer, rowsCount } = await ventasExcelExportService.buildWorkbookBuffer(ventas, { handlerData: {} });
+
+        const filename = `Ventas-${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+        return {
+            buffer,
+            filename,
+            ventasCount: ventas.length,
+            rowsCount,
+        };
     }
 }
 

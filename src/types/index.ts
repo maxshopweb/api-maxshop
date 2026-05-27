@@ -477,6 +477,10 @@ export interface IVentaFilters {
     total_max?: number;
     /** Si true, incluye ventas con estado_pago cancelado. Por defecto no se listan (soft delete). */
     incluir_canceladas?: boolean;
+    /** Filtro por número de operación (cod_interno), parcial o exacto. */
+    cod_interno?: string;
+    /** Filtro exacto por ID de venta. */
+    id_venta?: number;
 }
 
 export interface IUpdateVentaDTO {

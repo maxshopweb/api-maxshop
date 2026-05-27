@@ -13,6 +13,7 @@ const mockUpdateEnvio = jest.fn();
 const mockGetMyPedidos = jest.fn();
 const mockGetStats = jest.fn();
 const mockExportVentasCsv = jest.fn();
+const mockExportVentasExcel = jest.fn();
 const mockConfirmPayment = jest.fn();
 
 jest.mock('../../services/ventas.service', () => ({
@@ -29,6 +30,7 @@ jest.mock('../../services/ventas.service', () => ({
     getMyPedidos: (...args: unknown[]) => mockGetMyPedidos(...args),
     getStats: (...args: unknown[]) => mockGetStats(...args),
     exportVentasCsv: (...args: unknown[]) => mockExportVentasCsv(...args),
+    exportVentasExcel: (...args: unknown[]) => mockExportVentasExcel(...args),
   })),
 }));
 
@@ -71,6 +73,12 @@ describe('VentasController', () => {
     mockGetMyPedidos.mockResolvedValue(fakePaginated);
     mockGetStats.mockResolvedValue({ total: 10, amount: 50000 });
     mockExportVentasCsv.mockResolvedValue(Buffer.from('csv,data'));
+    mockExportVentasExcel.mockResolvedValue({
+      buffer: Buffer.from('xlsx'),
+      filename: 'Ventas-2025-01-01.xlsx',
+      ventasCount: 2,
+      rowsCount: 3,
+    });
     mockConfirmPayment.mockResolvedValue(fakeVenta);
   });
 
@@ -232,6 +240,35 @@ describe('VentasController', () => {
       await controller.exportVentas(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
+    });
+  });
+
+  describe('exportVentasExcel', () => {
+    it('exporta Excel filtrado con headers correctos', async () => {
+      const req = mockReq({ body: { fecha_desde: '2025-01-01', cod_interno: 'MAX-1' } });
+      const res = mockRes();
+
+      await controller.exportVentasExcel(req, res);
+
+      expect(mockExportVentasExcel).toHaveBeenCalledWith({
+        fecha_desde: '2025-01-01',
+        cod_interno: 'MAX-1',
+      });
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      expect(res.send).toHaveBeenCalledWith(Buffer.from('xlsx'));
+    });
+
+    it('retorna 413 cuando hay demasiadas ventas', async () => {
+      mockExportVentasExcel.mockRejectedValue(new Error('Demasiadas ventas (6000). Refiná los filtros.'));
+      const req = mockReq({ body: {} });
+      const res = mockRes();
+
+      await controller.exportVentasExcel(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(413);
     });
   });
 });

@@ -289,6 +289,11 @@ export class ExcelTemplateService {
       throw error;
     }
   }
+
+  /** Serializa el workbook a buffer para respuestas HTTP de descarga. */
+  writeWorkbookToBuffer(workbook: XLSX.WorkBook): Buffer {
+    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
 }
 
 export const excelTemplateService = new ExcelTemplateService();

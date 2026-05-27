@@ -73,7 +73,27 @@ export class VentasController {
         }
     }
 
-    /** Descarga Ventas.xlsx desde el FTP (misma ruta que ExcelHandler). Solo admin. */
+    /** Exporta ventas filtradas a Excel ERP (mismo formato que Ventas.xlsx FTP). Solo admin. */
+    async exportVentasExcel(req: Request, res: Response): Promise<void> {
+        try {
+            const filters = req.body ?? {};
+            const { buffer, filename, ventasCount, rowsCount } = await ventasService.exportVentasExcel(filters);
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.setHeader('X-Ventas-Count', String(ventasCount));
+            res.setHeader('X-Rows-Count', String(rowsCount));
+            res.send(buffer);
+        } catch (error: any) {
+            console.error('Error en exportVentasExcel:', error);
+            const message = error.message || 'Error al exportar ventas a Excel';
+            const status = message.includes('Demasiadas ventas') ? 413 : message.includes('No hay ventas') ? 404 : 500;
+            res.status(status).json({
+                success: false,
+                error: message,
+            });
+        }
+    }
+
     async downloadVentasExcelFtp(req: Request, res: Response): Promise<void> {
         const localPath = path.join(
             process.cwd(),
