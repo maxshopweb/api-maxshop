@@ -246,9 +246,9 @@ describe('VentasService.createFromCheckout', () => {
         expect.objectContaining({
           venta: expect.objectContaining({ id_venta: ID_VENTA }),
           backUrls: expect.objectContaining({
-            success: expect.any(String),
-            failure: expect.any(String),
-            pending: expect.any(String),
+            success: expect.stringContaining(`id_venta=${ID_VENTA}`),
+            failure: expect.stringContaining(`id_venta=${ID_VENTA}`),
+            pending: expect.stringContaining(`id_venta=${ID_VENTA}`),
           }),
         }),
       );
@@ -257,6 +257,39 @@ describe('VentasService.createFromCheckout', () => {
       expect(eventBus.emit).toHaveBeenCalledWith('SALE_CREATED', expect.any(Object));
       expect((result as any).mercadoPagoPreferenceUrl).toBe('https://sandbox.mercadopago.com.ar/init');
       expect(result.id_venta).toBe(ID_VENTA);
+    });
+
+    it('incluye id_venta y cod_interno en back_urls cuando hay DEFAULT_*_URL', async () => {
+      const prevSuccess = process.env.DEFAULT_SUCCESS_URL;
+      const prevFailure = process.env.DEFAULT_FAILURE_URL;
+      const prevPending = process.env.DEFAULT_PENDING_URL;
+      process.env.DEFAULT_SUCCESS_URL =
+        'https://www.maxshop.com.ar/checkout/resultado?status=approved';
+      process.env.DEFAULT_FAILURE_URL =
+        'https://www.maxshop.com.ar/checkout/resultado?status=rejected';
+      process.env.DEFAULT_PENDING_URL =
+        'https://www.maxshop.com.ar/checkout/resultado?status=pending';
+
+      try {
+        await service.createFromCheckout(buildCheckoutData(), ID_USUARIO);
+
+        const calls = (mercadoPagoService.createPreferenceFromVenta as jest.Mock).mock.calls;
+        const { backUrls } = calls[calls.length - 1][0];
+
+        expect(backUrls.success).toContain('www.maxshop.com.ar/checkout/resultado');
+        expect(backUrls.success).toContain('status=approved');
+        expect(backUrls.success).toContain(`id_venta=${ID_VENTA}`);
+        expect(backUrls.success).toContain('cod_interno=MAX-00000999');
+        expect(backUrls.failure).toContain('status=rejected');
+        expect(backUrls.pending).toContain('status=pending');
+      } finally {
+        if (prevSuccess === undefined) delete process.env.DEFAULT_SUCCESS_URL;
+        else process.env.DEFAULT_SUCCESS_URL = prevSuccess;
+        if (prevFailure === undefined) delete process.env.DEFAULT_FAILURE_URL;
+        else process.env.DEFAULT_FAILURE_URL = prevFailure;
+        if (prevPending === undefined) delete process.env.DEFAULT_PENDING_URL;
+        else process.env.DEFAULT_PENDING_URL = prevPending;
+      }
     });
 
     it('usa init_point en modo production', async () => {

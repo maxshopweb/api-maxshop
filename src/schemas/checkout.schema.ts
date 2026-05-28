@@ -8,6 +8,7 @@ export const checkoutBodySchema = z.object({
   id_direccion: z.string().trim().min(1).max(128).optional(),
   tipo_documento: z.string().trim().min(2).max(32).optional(),
   numero_documento: z.string().trim().min(3).max(32).optional(),
+  referencia_facturacion: z.string().trim().max(100).optional(),
   direccion: z.object({
     direccion: z.string().trim().max(200).optional(),
     altura: z.string().trim().max(20).optional(),

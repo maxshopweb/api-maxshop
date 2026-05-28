@@ -728,6 +728,44 @@ export class ProductosController {
         }
     }
 
+    /** Detalle producto para cliente: activo + publicado. */
+    async getProductoTiendaById(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido',
+                });
+                return;
+            }
+
+            const producto = await productosService.getByIdForCliente(id);
+
+            if (!producto) {
+                res.status(404).json({
+                    success: false,
+                    error: 'Producto no encontrado o no disponible',
+                });
+                return;
+            }
+
+            const response: IApiResponse = {
+                success: true,
+                data: producto,
+            };
+
+            res.json(response);
+        } catch (error) {
+            console.error('Error en getProductoTiendaById:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener producto',
+            });
+        }
+    }
+
     // Endpoint tienda: solo productos activos + publicados; filtros opcionales (categoría, marca, grupo, etc.)
     async getProductosTienda(req: Request, res: Response): Promise<void> {
         try {

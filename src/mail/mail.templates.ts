@@ -6,6 +6,31 @@
 
 import { MailEventType, MailEventNames } from './mail.events';
 import { MailTemplate, MailEventData, OrderEventData, ShippingEventData, PromotionEventData, AbandonedCartEventData, PaymentInstructionsEventData, WelcomeEventData } from './mail.types';
+import { CONTACT_CONFIG, buildWhatsappUrl } from '../config/contact.config';
+
+const MAIL_LINK_STYLE = 'color: #e88a42; text-decoration: underline;';
+
+function getEmailLinkHtml(label?: string): string {
+    const { address, href } = CONTACT_CONFIG.email;
+    return `<a href="${href}" style="${MAIL_LINK_STYLE}">${label ?? address}</a>`;
+}
+
+function getWhatsappLinkHtml(message?: string, label?: string): string {
+    const { display } = CONTACT_CONFIG.whatsapp;
+    const url = buildWhatsappUrl(message);
+    return `<a href="${url}" style="${MAIL_LINK_STYLE}">${label ?? `WhatsApp (${display})`}</a>`;
+}
+
+function getComprobanteNoticeHtml(orderId: string): string {
+    const whatsappMessage = `Hola! Realicé el pago del pedido #${orderId}. Adjunto comprobante.`;
+    const { display } = CONTACT_CONFIG.whatsapp;
+
+    return `<strong>Importante:</strong> Una vez realizado el pago, enviá el comprobante por ${getEmailLinkHtml('email')} o ${getWhatsappLinkHtml(whatsappMessage, `WhatsApp (${display})`)}. Tu pedido será confirmado y procesado inmediatamente.`;
+}
+
+function getContactFooterHtml(): string {
+    return `Si tenés alguna pregunta, contactanos por ${getEmailLinkHtml()} o ${getWhatsappLinkHtml()}.`;
+}
 
 /**
  * Layout base para todos los emails
@@ -44,7 +69,7 @@ function getBaseLayout(content: string): string {
                         <td style="background-color: #171c35; padding: 20px; text-align: center;">
                             <p style="color: #ffffff; margin: 0; font-size: 12px; line-height: 1.6;">
                                 © ${new Date().getFullYear()} MaxShop. Todos los derechos reservados.<br>
-                                <a href="#" style="color: #e88a42; text-decoration: none;">Contacto</a> | 
+                                ${getEmailLinkHtml('Email')} | ${getWhatsappLinkHtml()}<br>
                                 <a href="#" style="color: #e88a42; text-decoration: none;">Términos y Condiciones</a>
                             </p>
                         </td>
@@ -155,7 +180,7 @@ function getOrderPendingTemplate(data: OrderEventData): MailTemplate {
         ${retiroHtml}
         
         <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
-            Si tienes alguna pregunta, no dudes en contactarnos.<br>
+            ${getContactFooterHtml()}<br>
             Gracias por tu compra.
         </p>
     `;
@@ -279,7 +304,7 @@ function getOrderConfirmedTemplate(data: OrderEventData): MailTemplate {
         ` : ''}
         
         <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
-            Si tienes alguna pregunta, no dudes en contactarnos.<br>
+            ${getContactFooterHtml()}<br>
             Gracias por tu compra.
         </p>
     `;
@@ -350,7 +375,7 @@ function getOrderExpiredTemplate(data: OrderEventData): MailTemplate {
         </div>
         
         <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
-            Si deseas realizar una nueva compra, puedes volver a ingresar a la tienda. Cualquier duda, contactanos.
+            Si deseas realizar una nueva compra, puedes volver a ingresar a la tienda. ${getContactFooterHtml()}
         </p>
     `;
 
@@ -444,8 +469,7 @@ function getPaymentInstructionsTemplate(data: PaymentInstructionsEventData): Mai
         
         <div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 15px; margin: 20px 0;">
             <p style="margin: 0; color: #856404; font-size: 14px;">
-                <strong>Importante:</strong> Una vez realizado el pago, envía el comprobante por email o WhatsApp. 
-                Tu pedido será confirmado y procesado inmediatamente.
+                ${getComprobanteNoticeHtml(String(orderId))}
             </p>
         </div>
         
@@ -457,7 +481,7 @@ function getPaymentInstructionsTemplate(data: PaymentInstructionsEventData): Mai
         </div>
         
         <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
-            Si tienes alguna pregunta, no dudes en contactarnos.<br>
+            ${getContactFooterHtml()}<br>
             Gracias por tu compra.
         </p>
     `;
@@ -563,7 +587,7 @@ function getShippingDeliveredTemplate(data: ShippingEventData): MailTemplate {
         </div>
         
         <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
-            Si tienes alguna pregunta o necesitas asistencia, no dudes en contactarnos.
+            ${getContactFooterHtml()}
         </p>
     `;
 

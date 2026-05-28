@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
 import { IListaPrecio } from '../types';
 import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
+import { buildContainsOrConditions } from '../utils/search.utils';
 
 export class ListasPrecioService {
 
@@ -16,12 +17,7 @@ export class ListasPrecioService {
             ? {
                 AND: [
                     baseWhere,
-                    {
-                        OR: [
-                            { codi_lista: { contains: busqueda, mode: 'insensitive' } },
-                            { nombre: { contains: busqueda, mode: 'insensitive' } },
-                        ],
-                    },
+                    { OR: buildContainsOrConditions(['codi_lista', 'nombre'], busqueda) },
                 ],
             }
             : baseWhere;

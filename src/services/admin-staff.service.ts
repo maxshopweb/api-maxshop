@@ -15,6 +15,7 @@ import {
   type StaffUserPublic
 } from '../types/admin-staff.type';
 import { sanitizeString } from '../utils/validation.utils';
+import { buildContainsOrConditions } from '../utils/search.utils';
 
 /** Ventana y límites de reinicios de contraseña (sin tablas nuevas; memoria del proceso). */
 function getPasswordResetLimits() {
@@ -171,12 +172,7 @@ export class AdminStaffService {
 
     if (search) {
       andParts.push({
-        OR: [
-          { email: { contains: search, mode: 'insensitive' } },
-          { nombre: { contains: search, mode: 'insensitive' } },
-          { apellido: { contains: search, mode: 'insensitive' } },
-          { username: { contains: search, mode: 'insensitive' } }
-        ]
+        OR: buildContainsOrConditions(['email', 'nombre', 'apellido', 'username'], search),
       });
     }
 

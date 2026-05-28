@@ -8,6 +8,7 @@ import {
 import type { AdminAuditContext } from '../types/auth.type';
 import { auditService } from './audit.service';
 import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
+import { buildContainsOrConditions } from '../utils/search.utils';
 
 export class CategoriasService {
     
@@ -21,12 +22,7 @@ export class CategoriasService {
         busqueda: string
     ): Promise<{ data: ICategoria[]; pagination: AdminPaginationMeta }> {
         const where: Prisma.categoriaWhereInput = busqueda
-            ? {
-                OR: [
-                    { codi_categoria: { contains: busqueda, mode: 'insensitive' } },
-                    { nombre: { contains: busqueda, mode: 'insensitive' } },
-                ],
-            }
+            ? { OR: buildContainsOrConditions(['codi_categoria', 'nombre'], busqueda) }
             : {};
 
         const total = await prisma.categoria.count({ where });

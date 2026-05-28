@@ -27,18 +27,20 @@ router.get('/contenido-crear', productosController.getContenidoCrearProducto.bin
 
 // Rutas especiales (sin middleware de validación individual)
 router.get('/destacados', productosController.getDestacados.bind(productosController));
-router.get('/stock-bajo', productosController.getStockBajo.bind(productosController));
-router.get('/con-imagenes', productosController.getProductosConImagenes.bind(productosController));
+router.get('/stock-bajo', adminAuth, productosController.getStockBajo.bind(productosController));
+router.get('/con-imagenes', adminAuth, productosController.getProductosConImagenes.bind(productosController));
 router.get('/tienda', productosController.getProductosTienda.bind(productosController)); // Tienda: solo activos + publicados; filtros opcionales
+router.get('/tienda/:id', productosController.getProductoTiendaById.bind(productosController)); // Detalle cliente: activo + publicado
 
-// Rutas CRUD generales
-router.get('/', productosController.getAll.bind(productosController));
+// Listado admin (catálogo completo, sin eliminados)
+router.get('/', adminAuth, productosController.getAll.bind(productosController));
 
 // GET por código: buscar por codi_arti
-router.get('/codigo/:codigo', productosController.getByCodigo.bind(productosController));
+router.get('/codigo/:codigo', adminAuth, productosController.getByCodigo.bind(productosController));
 
-// GET por ID: validar que el producto esté activo
-router.get('/:id', 
+// GET por ID: admin — producto no eliminado
+router.get('/:id',
+    adminAuth,
     validarProductoActivo,
     productosController.getById.bind(productosController)
 );

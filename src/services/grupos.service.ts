@@ -3,6 +3,7 @@ import { prisma } from '../index';
 import type { AdminAuditContext } from '../types/auth.type';
 import { auditService } from './audit.service';
 import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
+import { buildContainsOrConditions } from '../utils/search.utils';
 
 export interface IGrupo {
     id_grupo: number;
@@ -34,12 +35,7 @@ export class GruposService {
         busqueda: string
     ): Promise<{ data: IGrupo[]; pagination: AdminPaginationMeta }> {
         const where: Prisma.grupoWhereInput = busqueda
-            ? {
-                OR: [
-                    { codi_grupo: { contains: busqueda, mode: 'insensitive' } },
-                    { nombre: { contains: busqueda, mode: 'insensitive' } },
-                ],
-            }
+            ? { OR: buildContainsOrConditions(['codi_grupo', 'nombre'], busqueda) }
             : {};
 
         const total = await prisma.grupo.count({ where });

@@ -195,7 +195,9 @@ export class ConfigTiendaService {
       cuotasMinNum === currentCuotasMin;
     const noBankUpdate = dto.datos_bancarios === undefined;
     const noMaintenanceUpdate = dto.modo_mantenimiento === undefined;
-    if (reglasUnchanged && noBankUpdate && noMaintenanceUpdate) return current;
+    const noStoreUpdate =
+      dto.nombre === undefined && dto.direccion === undefined && dto.telefono === undefined;
+    if (reglasUnchanged && noBankUpdate && noMaintenanceUpdate && noStoreUpdate) return current;
 
     const updateData: Record<string, unknown> = {
       envio_gratis_minimo: String(envioNum),
@@ -208,6 +210,10 @@ export class ConfigTiendaService {
     if (dto.modo_mantenimiento !== undefined) {
       updateData.modo_mantenimiento = dto.modo_mantenimiento;
     }
+
+    if (dto.nombre !== undefined) updateData.nombre = dto.nombre?.trim() || null;
+    if (dto.direccion !== undefined) updateData.direccion = dto.direccion?.trim() || null;
+    if (dto.telefono !== undefined) updateData.telefono = dto.telefono?.trim() || null;
 
     // Datos bancarios (solo si viene en el DTO)
     if (dto.datos_bancarios !== undefined) {

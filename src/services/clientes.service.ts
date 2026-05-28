@@ -1,6 +1,7 @@
 import { prisma } from '../index';
 import { ICliente, IClienteFilters, IPaginatedResponse, IClienteStats, IUpdateClienteDTO } from '../types';
 import cacheService from './cache.service';
+import { buildUsuarioSearchOrConditions } from '../utils/search.utils';
 
 /** Normaliza activo por si llega como string u otro tipo (query / proxies). */
 function normalizeActivoClienteFilter(v: unknown): boolean | undefined {
@@ -54,29 +55,15 @@ export class ClientesService {
 
         // Búsqueda por nombre, email, teléfono y documento (DNI)
         if (busqueda) {
-            const busquedaNormalizada = busqueda.trim();
-            const busquedaSoloDigitos = busquedaNormalizada.replace(/\D/g, '');
-            const esDniProbable =
-                /^\d+$/.test(busquedaSoloDigitos) &&
-                busquedaSoloDigitos.length >= 7 &&
-                busquedaSoloDigitos.length <= 8;
-
-            const orConditions: any[] = [
-                { nombre: { contains: busquedaNormalizada, mode: 'insensitive' } },
-                { apellido: { contains: busquedaNormalizada, mode: 'insensitive' } },
-                { email: { contains: busquedaNormalizada, mode: 'insensitive' } },
-                { telefono: { contains: busquedaNormalizada, mode: 'insensitive' } },
-                { username: { contains: busquedaNormalizada, mode: 'insensitive' } },
-                { numero_documento: { contains: busquedaNormalizada, mode: 'insensitive' } },
-            ];
-
-            if (esDniProbable && busquedaSoloDigitos !== busquedaNormalizada) {
-                orConditions.push({
-                    numero_documento: { contains: busquedaSoloDigitos, mode: 'insensitive' },
-                });
-            }
-
-            usuariosAnd.push({ OR: orConditions });
+            usuariosAnd.push({
+                OR: buildUsuarioSearchOrConditions(busqueda, [
+                    'nombre',
+                    'apellido',
+                    'email',
+                    'telefono',
+                    'username',
+                ]),
+            });
         }
 
         whereClause.usuarios =

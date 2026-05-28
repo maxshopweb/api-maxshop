@@ -11,6 +11,12 @@ import cacheService from './cache.service';
 import csvImporterService from './sincronizacion/csv-importer.service';
 import sincronizacionService from './sincronizacion/sincronizacion.service';
 import { buildPrecioPresentacion } from './pricing.service';
+import {
+    buildContainsOrConditions,
+    getSearchVariants,
+    normalizeForSearch,
+    normalizedLikePattern,
+} from '../utils/search.utils';
 
 export type ProductoAuditContext = {
     userId: string;
@@ -23,6 +29,12 @@ export class ProductosService {
     static readonly ERR_TOGGLE_DESTACADO_NOT_FOUND = 'Producto no encontrado';
     static readonly ERR_TOGGLE_DESTACADO_INACTIVE =
         'El producto está inactivo; no se puede marcar como destacado';
+
+    /** Catálogo visible para cliente/tienda: activo (estado=1) y publicado. */
+    private static readonly WHERE_CATALOGO_CLIENTE = {
+        estado: 1,
+        publicado: true,
+    } as const;
 
     private TTL_PRODUCTO = 3600;      // 1 hora
     private TTL_CATALOGO = 1800;      // 30 minutos
@@ -216,6 +228,15 @@ export class ProductosService {
         return Number.isFinite(t) ? t : 0;
     }
 
+    private async clearProductoItemCache(id: number, codiArti?: string | null): Promise<void> {
+        await cacheService.delete(`producto:${id}`);
+        await cacheService.delete(`producto:tienda:${id}`);
+        if (codiArti) {
+            await cacheService.delete(`producto:codigo:${codiArti}`);
+            await cacheService.delete(`producto:tienda:codigo:${codiArti}`);
+        }
+    }
+
     /**
      * Precio de lista activa con IVA (misma fórmula que `precio` en catálogo / tienda).
      * Requiere alias `p` en productos e `i` en iva (LEFT JOIN).
@@ -283,10 +304,22 @@ export class ProductosService {
         ];
         const { busqueda, codi_categoria, codi_marca, codi_grupo, destacado, financiacion, oferta } = params;
         if (busqueda?.trim()) {
-            const pattern = `%${busqueda.trim()}%`;
-            conditions.push(
-                Prisma.sql`(p.nombre ILIKE ${pattern} OR p.codi_arti ILIKE ${pattern} OR p.descripcion ILIKE ${pattern})`
-            );
+            const rawPattern = `%${busqueda.trim()}%`;
+            const normPattern = normalizedLikePattern(busqueda);
+            if (normPattern) {
+                conditions.push(Prisma.sql`(
+                    regexp_replace(lower(COALESCE(p.nombre, '')), '[^a-z0-9]', '', 'g') LIKE ${normPattern}
+                    OR regexp_replace(lower(COALESCE(p.codi_arti, '')), '[^a-z0-9]', '', 'g') LIKE ${normPattern}
+                    OR regexp_replace(lower(COALESCE(p.descripcion, '')), '[^a-z0-9]', '', 'g') LIKE ${normPattern}
+                    OR p.nombre ILIKE ${rawPattern}
+                    OR p.codi_arti ILIKE ${rawPattern}
+                    OR p.descripcion ILIKE ${rawPattern}
+                )`);
+            } else {
+                conditions.push(
+                    Prisma.sql`(p.nombre ILIKE ${rawPattern} OR p.codi_arti ILIKE ${rawPattern} OR p.descripcion ILIKE ${rawPattern})`
+                );
+            }
         }
         if (codi_categoria) conditions.push(Prisma.sql`p.codi_categoria = ${codi_categoria}`);
         if (codi_marca) conditions.push(Prisma.sql`p.codi_marca = ${codi_marca}`);
@@ -356,7 +389,10 @@ export class ProductosService {
         }
 
         const byId = await prisma.productos.findMany({
-            where: { id_prod: { in: idList } },
+            where: {
+                id_prod: { in: idList },
+                ...ProductosService.WHERE_CATALOGO_CLIENTE,
+            },
             include: { categoria: true, marca: true, grupo: true, iva: true },
         });
         const orderMap = new Map(idList.map((id, i) => [id, i]));
@@ -510,20 +546,18 @@ export class ProductosService {
 
         // Búsqueda por nombre, descripción, código de artículo, código de barras, SKU o ID
         if (busqueda) {
-            const busquedaTrimmed = busqueda.trim();
-            const searchConditions: any[] = [
-                { nombre: { contains: busquedaTrimmed, mode: 'insensitive' } },
-                { descripcion: { contains: busquedaTrimmed, mode: 'insensitive' } },
-                { codi_arti: { contains: busquedaTrimmed, mode: 'insensitive' } },
-                { codi_barras: { contains: busquedaTrimmed, mode: 'insensitive' } },
-            ];
+            const searchConditions: any[] = buildContainsOrConditions(
+                ['nombre', 'descripcion', 'codi_arti', 'codi_barras'],
+                busqueda
+            );
 
-            // Si la búsqueda es un número, buscar también por ID exacto
-            const busquedaAsNumber = parseInt(busquedaTrimmed);
+            const busquedaNumeric = normalizeForSearch(busqueda);
+            const busquedaAsNumber = parseInt(busquedaNumeric, 10);
             if (!isNaN(busquedaAsNumber) && busquedaAsNumber > 0) {
                 searchConditions.push({ id_prod: busquedaAsNumber });
-                // También buscar código de artículo exacto si es numérico
-                searchConditions.push({ codi_arti: busquedaTrimmed });
+                for (const variant of getSearchVariants(busqueda)) {
+                    searchConditions.push({ codi_arti: { contains: variant, mode: 'insensitive' } });
+                }
             }
 
             if (whereClause.OR) {
@@ -640,12 +674,13 @@ export class ProductosService {
         return result;
     }
 
+    /** Admin: cualquier producto no eliminado (estado 1, 2, 3…). */
     async getById(id: number): Promise<IProductos | null> {
         const cachekey = `producto:${id}`;
 
         const cached = await cacheService.get<IProductos>(cachekey);
         const dbStamp = await prisma.productos.findFirst({
-            where: { id_prod: id, estado: 1 },
+            where: { id_prod: id, estado: { not: 0 } },
             select: { actualizado_en: true },
         });
         if (!dbStamp) {
@@ -660,13 +695,13 @@ export class ProductosService {
         const producto = await prisma.productos.findFirst({
             where: {
                 id_prod: id,
-                estado: 1 // Solo productos activos
+                estado: { not: 0 },
             },
             include: {
-                categoria: true,  // Relación por codi_categoria
-                marca: true,      // Relación por codi_marca
-                grupo: true,      // Relación por codi_grupo
-                iva: true        // Relación por codi_impuesto
+                categoria: true,
+                marca: true,
+                grupo: true,
+                iva: true,
             },
         });
 
@@ -680,6 +715,48 @@ export class ProductosService {
         return result;
     }
 
+    /** Cliente/tienda: solo activo y publicado. */
+    async getByIdForCliente(id: number): Promise<IProductos | null> {
+        const cachekey = `producto:tienda:${id}`;
+
+        const cached = await cacheService.get<IProductos>(cachekey);
+        const dbStamp = await prisma.productos.findFirst({
+            where: { id_prod: id, ...ProductosService.WHERE_CATALOGO_CLIENTE },
+            select: { actualizado_en: true },
+        });
+        if (!dbStamp) {
+            return null;
+        }
+
+        if (cached && this.productoCacheTimestamp(cached) >= this.productoCacheTimestamp(dbStamp)) {
+            const listasMap = await this.getListasMap();
+            return this.revalidateCachedProducto(cached, listasMap);
+        }
+
+        const producto = await prisma.productos.findFirst({
+            where: {
+                id_prod: id,
+                ...ProductosService.WHERE_CATALOGO_CLIENTE,
+            },
+            include: {
+                categoria: true,
+                marca: true,
+                grupo: true,
+                iva: true,
+            },
+        });
+
+        const listasMap = await this.getListasMap();
+        const result = producto ? this.normalizeProducto(producto, listasMap) : null;
+
+        if (result) {
+            await cacheService.set(cachekey, result, this.TTL_PRODUCTO);
+        }
+
+        return result;
+    }
+
+    /** Admin: por código, cualquier producto no eliminado. */
     async getByCodigo(codi_arti: string): Promise<IProductos | null> {
         const cacheKey = `producto:codigo:${codi_arti}`;
 
@@ -689,7 +766,7 @@ export class ProductosService {
             select: { actualizado_en: true, estado: true },
         });
 
-        if (!productoDb || productoDb.estado !== 1) {
+        if (!productoDb || productoDb.estado === 0) {
             return null;
         }
 
@@ -699,18 +776,59 @@ export class ProductosService {
         }
 
         const producto = await prisma.productos.findUnique({
-            where: {
-                codi_arti
-            },
+            where: { codi_arti },
             include: {
                 categoria: true,
                 marca: true,
                 grupo: true,
-                iva: true
+                iva: true,
             },
         });
 
-        if (!producto || producto.estado !== 1) {
+        if (!producto || producto.estado === 0) {
+            return null;
+        }
+
+        const listasMap = await this.getListasMap();
+        const result = this.normalizeProducto(producto, listasMap);
+
+        if (result) {
+            await cacheService.set(cacheKey, result, this.TTL_PRODUCTO);
+        }
+
+        return result;
+    }
+
+    /** Cliente/tienda: por código, solo activo y publicado. */
+    async getByCodigoForCliente(codi_arti: string): Promise<IProductos | null> {
+        const cacheKey = `producto:tienda:codigo:${codi_arti}`;
+
+        const cached = await cacheService.get<IProductos>(cacheKey);
+        const productoDb = await prisma.productos.findFirst({
+            where: { codi_arti, ...ProductosService.WHERE_CATALOGO_CLIENTE },
+            select: { actualizado_en: true },
+        });
+
+        if (!productoDb) {
+            return null;
+        }
+
+        if (cached && this.productoCacheTimestamp(cached) >= this.productoCacheTimestamp(productoDb)) {
+            const listasMap = await this.getListasMap();
+            return this.revalidateCachedProducto(cached, listasMap);
+        }
+
+        const producto = await prisma.productos.findFirst({
+            where: { codi_arti, ...ProductosService.WHERE_CATALOGO_CLIENTE },
+            include: {
+                categoria: true,
+                marca: true,
+                grupo: true,
+                iva: true,
+            },
+        });
+
+        if (!producto) {
             return null;
         }
 
@@ -838,8 +956,7 @@ export class ProductosService {
 
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
-        await cacheService.delete(`producto:${result.id_prod}`);
-        await cacheService.delete(`producto:codigo:${result.codi_arti}`);
+        await this.clearProductoItemCache(result.id_prod, result.codi_arti);
         await cacheService.deletePattern('productos:destacados:*');
         await cacheService.deletePattern('productos:tienda:*');
         await cacheService.delete('productos:stock-bajo');
@@ -925,12 +1042,10 @@ export class ProductosService {
 
         // Invalidar cache relacionado
         await cacheService.deletePattern('productos:*');
-        await cacheService.delete(`producto:${id}`);
-        if (productoAnterior) {
+        await this.clearProductoItemCache(id, result.codi_arti);
+        if (productoAnterior?.codi_arti && productoAnterior.codi_arti !== result.codi_arti) {
             await cacheService.delete(`producto:codigo:${productoAnterior.codi_arti}`);
-        }
-        if (result.codi_arti) {
-            await cacheService.delete(`producto:codigo:${result.codi_arti}`);
+            await cacheService.delete(`producto:tienda:codigo:${productoAnterior.codi_arti}`);
         }
         await cacheService.deletePattern('productos:destacados:*');
         await cacheService.deletePattern('productos:tienda:*');
@@ -1229,8 +1344,7 @@ export class ProductosService {
         const productos = await prisma.productos.findMany({
             where: {
                 destacado: true,
-                estado: 1,
-                publicado: true, // Solo productos publicados en tienda
+                ...ProductosService.WHERE_CATALOGO_CLIENTE,
             },
             include: {
                 categoria: true,
@@ -1466,7 +1580,7 @@ export class ProductosService {
             });
         }
 
-        await cacheService.delete(`producto:${id}`);
+        await this.clearProductoItemCache(id, result.codi_arti);
         await cacheService.deletePattern('productos:destacados:*');
         await cacheService.deletePattern('productos:tienda:*');
         await cacheService.deletePattern('productos:*');
@@ -1670,10 +1784,8 @@ export class ProductosService {
             oferta
         } = filters || {};
 
-        // Regla de oro tienda: solo productos ACTIVOS (estado=1) y PUBLICADOS
         const whereClause: any = {
-            estado: 1,
-            publicado: true
+            ...ProductosService.WHERE_CATALOGO_CLIENTE,
         };
 
         // Resolver id_cat / id_marca a códigos para uso en raw query y whereClause
@@ -1707,11 +1819,10 @@ export class ProductosService {
 
         // Filtros opcionales
         if (busqueda) {
-            whereClause.OR = [
-                { nombre: { contains: busqueda, mode: 'insensitive' } },
-                { codi_arti: { contains: busqueda, mode: 'insensitive' } },
-                { descripcion: { contains: busqueda, mode: 'insensitive' } }
-            ];
+            whereClause.OR = buildContainsOrConditions(
+                ['nombre', 'codi_arti', 'descripcion'],
+                busqueda
+            );
         }
 
         if (destacado !== undefined) whereClause.destacado = destacado;

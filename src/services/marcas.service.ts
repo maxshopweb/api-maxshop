@@ -5,6 +5,7 @@ import { IMarca, ICreateMarcaDTO, IUpdateMarcaDTO } from '../types';
 import type { AdminAuditContext } from '../types/auth.type';
 import { auditService } from './audit.service';
 import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
+import { buildContainsOrConditions } from '../utils/search.utils';
 
 export class MarcasService {
     
@@ -14,12 +15,7 @@ export class MarcasService {
         busqueda: string
     ): Promise<{ data: IMarca[]; pagination: AdminPaginationMeta }> {
         const where: Prisma.marcaWhereInput = busqueda
-            ? {
-                OR: [
-                    { codi_marca: { contains: busqueda, mode: 'insensitive' } },
-                    { nombre: { contains: busqueda, mode: 'insensitive' } },
-                ],
-            }
+            ? { OR: buildContainsOrConditions(['codi_marca', 'nombre'], busqueda) }
             : {};
 
         const total = await prisma.marca.count({ where });

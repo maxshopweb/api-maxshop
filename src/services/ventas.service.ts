@@ -15,6 +15,12 @@ import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from '
 import { getAndreaniModoManual } from '../config/andreani.config';
 import { computeLineaVentaPricing, normalizeBonificacionPct } from './pricing.service';
 import { ventasExcelExportService, VENTA_EXCEL_INCLUDE } from './ventas-excel-export.service';
+import {
+    buildContainsOrConditions,
+    buildUsuarioSearchOrConditions,
+    normalizeForSearch,
+} from '../utils/search.utils';
+import { buildCheckoutResultUrl } from '../utils/checkout-result-url.utils';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
@@ -66,27 +72,18 @@ export class VentasService {
         }
 
         if (busqueda) {
-            const term = busqueda.trim();
-            const onlyDigits = term.replace(/\D/g, '');
-            const docConditions: Prisma.usuariosWhereInput[] = [];
-            if (term.length > 0) {
-                docConditions.push({ numero_documento: { contains: term, mode: 'insensitive' } });
-            }
-            if (onlyDigits.length > 0 && onlyDigits !== term) {
-                docConditions.push({ numero_documento: { contains: onlyDigits, mode: 'insensitive' } });
-            }
+            const idNum = parseInt(normalizeForSearch(busqueda), 10);
             whereClause.OR = [
-                { id_venta: { equals: parseInt(term, 10) || -1 } },
-                { cod_interno: { contains: term, mode: 'insensitive' } },
+                { id_venta: { equals: !isNaN(idNum) && idNum > 0 ? idNum : -1 } },
+                ...buildContainsOrConditions(['cod_interno'], busqueda),
                 {
                     cliente: {
                         usuarios: {
-                            OR: [
-                                { nombre: { contains: term, mode: 'insensitive' } },
-                                { apellido: { contains: term, mode: 'insensitive' } },
-                                { email: { contains: term, mode: 'insensitive' } },
-                                ...docConditions,
-                            ],
+                            OR: buildUsuarioSearchOrConditions(busqueda, [
+                                'nombre',
+                                'apellido',
+                                'email',
+                            ]),
                         },
                     },
                 },
@@ -721,6 +718,7 @@ export class VentasService {
             // Datos de documento del cliente
             tipo_documento?: string; // DNI, CUIT, etc.
             numero_documento?: string; // Número de documento
+            referencia_facturacion?: string;
             // Datos de dirección para actualizar el cliente (si no se usa id_direccion)
             direccion?: {
                 direccion?: string;
@@ -879,7 +877,30 @@ export class VentasService {
             };
 
             // Crear la venta (estado pendiente, sin descontar stock)
-            const venta = await this.create(createData, idUsuario);
+            let venta = await this.create(createData, idUsuario);
+
+            if (data.referencia_facturacion) {
+                venta = await prisma.venta.update({
+                    where: { id_venta: venta.id_venta },
+                    data: { referencia_facturacion: data.referencia_facturacion },
+                    include: {
+                        cliente: { include: { usuarios: true } },
+                        usuarios: true,
+                        venta_detalle: {
+                            include: {
+                                productos: {
+                                    include: {
+                                        categoria: true,
+                                        marca: true,
+                                        grupo: true,
+                                        iva: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                });
+            }
 
             // Si se proporcionó costo de envío, guardarlo en la tabla envios
             if (data.costo_envio !== undefined && data.costo_envio !== null && data.costo_envio > 0) {
@@ -980,23 +1001,37 @@ export class VentasService {
                         console.warn(`⚠️ [VentasService] No se pudo evaluar regla de cuotas sin interés: ${configError.message}`);
                     }
 
-                    // Obtener URLs de retorno desde variables de entorno o usar defaults
-                    // SIMPLIFICADO: En sandbox, usar URLs simples sin auto_return para evitar problemas
-                    const baseUrl = process.env.DEFAULT_SUCCESS_URL 
+                    // URLs de retorno: plantilla desde env + id_venta/cod_interno por pedido
+                    const baseUrl = process.env.DEFAULT_SUCCESS_URL
                         ? process.env.DEFAULT_SUCCESS_URL.replace(/\/checkout\/resultado.*$/, '')
                         : process.env.FRONTEND_URL || 'http://localhost:3000';
-                    
-                    let successUrl = process.env.DEFAULT_SUCCESS_URL 
-                        || process.env.MERCADOPAGO_SUCCESS_URL
-                        || `${baseUrl}/checkout/resultado?status=approved`;
-                    
-                    let failureUrl = process.env.DEFAULT_FAILURE_URL 
-                        || process.env.MERCADOPAGO_FAILURE_URL
-                        || `${baseUrl}/checkout/resultado?status=rejected`;
-                    
-                    let pendingUrl = process.env.DEFAULT_PENDING_URL 
-                        || process.env.MERCADOPAGO_PENDING_URL
-                        || `${baseUrl}/checkout/resultado?status=pending`;
+
+                    const backUrlCommon = {
+                        baseUrl,
+                        idVenta: venta.id_venta,
+                        codInterno: venta.cod_interno ?? null,
+                    };
+
+                    const successUrl = buildCheckoutResultUrl({
+                        ...backUrlCommon,
+                        templateUrl:
+                            process.env.DEFAULT_SUCCESS_URL || process.env.MERCADOPAGO_SUCCESS_URL,
+                        status: 'approved',
+                    });
+
+                    const failureUrl = buildCheckoutResultUrl({
+                        ...backUrlCommon,
+                        templateUrl:
+                            process.env.DEFAULT_FAILURE_URL || process.env.MERCADOPAGO_FAILURE_URL,
+                        status: 'rejected',
+                    });
+
+                    const pendingUrl = buildCheckoutResultUrl({
+                        ...backUrlCommon,
+                        templateUrl:
+                            process.env.DEFAULT_PENDING_URL || process.env.MERCADOPAGO_PENDING_URL,
+                        status: 'pending',
+                    });
                     
                     // Determinar si usar auto_return
                     // En producción: usar auto_return si es HTTPS
@@ -1745,22 +1780,17 @@ export class VentasService {
 
         // Búsqueda por ID de venta, cliente (nombre, email) o DNI/CUIT (numero_documento)
         if (busqueda) {
-            const term = busqueda.trim();
-            const onlyDigits = term.replace(/\D/g, '');
-            const docConditions: any[] = [];
-            if (term.length > 0) docConditions.push({ numero_documento: { contains: term, mode: 'insensitive' as const } });
-            if (onlyDigits.length > 0 && onlyDigits !== term) docConditions.push({ numero_documento: { contains: onlyDigits, mode: 'insensitive' as const } });
+            const idNum = parseInt(normalizeForSearch(busqueda), 10);
             whereClause.OR = [
-                { id_venta: { equals: parseInt(term) || -1 } },
+                { id_venta: { equals: !isNaN(idNum) && idNum > 0 ? idNum : -1 } },
                 {
                     cliente: {
                         usuarios: {
-                            OR: [
-                                { nombre: { contains: term, mode: 'insensitive' } },
-                                { apellido: { contains: term, mode: 'insensitive' } },
-                                { email: { contains: term, mode: 'insensitive' } },
-                                ...docConditions,
-                            ],
+                            OR: buildUsuarioSearchOrConditions(busqueda, [
+                                'nombre',
+                                'apellido',
+                                'email',
+                            ]),
                         },
                     },
                 },
