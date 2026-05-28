@@ -880,26 +880,11 @@ export class VentasService {
             let venta = await this.create(createData, idUsuario);
 
             if (data.referencia_facturacion) {
-                venta = await prisma.venta.update({
+                await prisma.venta.update({
                     where: { id_venta: venta.id_venta },
                     data: { referencia_facturacion: data.referencia_facturacion },
-                    include: {
-                        cliente: { include: { usuarios: true } },
-                        usuarios: true,
-                        venta_detalle: {
-                            include: {
-                                productos: {
-                                    include: {
-                                        categoria: true,
-                                        marca: true,
-                                        grupo: true,
-                                        iva: true,
-                                    },
-                                },
-                            },
-                        },
-                    },
                 });
+                venta.referencia_facturacion = data.referencia_facturacion;
             }
 
             // Si se proporcionó costo de envío, guardarlo en la tabla envios
