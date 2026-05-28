@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
 import { IListaPrecio } from '../types';
 import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
-import { buildContainsOrConditions } from '../utils/search.utils';
+import { EMPTY_ID_FILTER, findListaPrecioIdsByTextSearch } from '../utils/search-queries';
 
 export class ListasPrecioService {
 
@@ -13,14 +13,20 @@ export class ListasPrecioService {
         busqueda: string
     ): Promise<{ data: IListaPrecio[]; pagination: AdminPaginationMeta }> {
         const baseWhere: Prisma.lista_precioWhereInput = activoOnly ? { activo: true } : {};
-        const where: Prisma.lista_precioWhereInput = busqueda
-            ? {
+        let where: Prisma.lista_precioWhereInput = baseWhere;
+        if (busqueda?.trim()) {
+            const matchingIds = await findListaPrecioIdsByTextSearch(busqueda);
+            where = {
                 AND: [
                     baseWhere,
-                    { OR: buildContainsOrConditions(['codi_lista', 'nombre'], busqueda) },
+                    {
+                        id_lista: {
+                            in: matchingIds.length > 0 ? matchingIds : [EMPTY_ID_FILTER],
+                        },
+                    },
                 ],
-            }
-            : baseWhere;
+            };
+        }
 
         const total = await prisma.lista_precio.count({ where });
         const pagination = buildPaginationMeta(total, page, limit);

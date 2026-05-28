@@ -8,7 +8,7 @@ import {
 import type { AdminAuditContext } from '../types/auth.type';
 import { auditService } from './audit.service';
 import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
-import { buildContainsOrConditions } from '../utils/search.utils';
+import { EMPTY_ID_FILTER, findCategoriaIdsByTextSearch } from '../utils/search-queries';
 
 export class CategoriasService {
     
@@ -21,9 +21,15 @@ export class CategoriasService {
         limit: number,
         busqueda: string
     ): Promise<{ data: ICategoria[]; pagination: AdminPaginationMeta }> {
-        const where: Prisma.categoriaWhereInput = busqueda
-            ? { OR: buildContainsOrConditions(['codi_categoria', 'nombre'], busqueda) }
-            : {};
+        let where: Prisma.categoriaWhereInput = {};
+        if (busqueda?.trim()) {
+            const matchingIds = await findCategoriaIdsByTextSearch(busqueda);
+            where = {
+                id_cat: {
+                    in: matchingIds.length > 0 ? matchingIds : [EMPTY_ID_FILTER],
+                },
+            };
+        }
 
         const total = await prisma.categoria.count({ where });
         const pagination = buildPaginationMeta(total, page, limit);

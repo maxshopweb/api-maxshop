@@ -11,12 +11,8 @@ import cacheService from './cache.service';
 import csvImporterService from './sincronizacion/csv-importer.service';
 import sincronizacionService from './sincronizacion/sincronizacion.service';
 import { buildPrecioPresentacion } from './pricing.service';
-import {
-    buildContainsOrConditions,
-    getSearchVariants,
-    normalizeForSearch,
-    normalizedLikePattern,
-} from '../utils/search.utils';
+import { buildProductoTextSearchSql } from '../utils/search.utils';
+import { findProductoIdsByTextSearch } from '../utils/search-queries';
 
 export type ProductoAuditContext = {
     userId: string;
@@ -40,6 +36,22 @@ export class ProductosService {
     private TTL_CATALOGO = 1800;      // 30 minutos
     private TTL_DESTACADOS = 900;     // 15 minutos
     private TTL_CONTENIDO_CREAR = 7200; // 2 horas (marcas, categorías, etc)
+
+    private mergeBusquedaIntoWhere(whereClause: any, matchingIds: number[]): void {
+        const searchConditions =
+            matchingIds.length > 0 ? [{ id_prod: { in: matchingIds } }] : [{ id_prod: -1 }];
+
+        if (whereClause.OR) {
+            whereClause.AND = [
+                ...(whereClause.AND || []),
+                { OR: whereClause.OR },
+                { OR: searchConditions },
+            ];
+            delete whereClause.OR;
+        } else {
+            whereClause.OR = searchConditions;
+        }
+    }
 
     /**
      * Obtiene el precio de la lista activa (sin IVA) según lista_precio_activa.
@@ -304,22 +316,8 @@ export class ProductosService {
         ];
         const { busqueda, codi_categoria, codi_marca, codi_grupo, destacado, financiacion, oferta } = params;
         if (busqueda?.trim()) {
-            const rawPattern = `%${busqueda.trim()}%`;
-            const normPattern = normalizedLikePattern(busqueda);
-            if (normPattern) {
-                conditions.push(Prisma.sql`(
-                    regexp_replace(lower(COALESCE(p.nombre, '')), '[^a-z0-9]', '', 'g') LIKE ${normPattern}
-                    OR regexp_replace(lower(COALESCE(p.codi_arti, '')), '[^a-z0-9]', '', 'g') LIKE ${normPattern}
-                    OR regexp_replace(lower(COALESCE(p.descripcion, '')), '[^a-z0-9]', '', 'g') LIKE ${normPattern}
-                    OR p.nombre ILIKE ${rawPattern}
-                    OR p.codi_arti ILIKE ${rawPattern}
-                    OR p.descripcion ILIKE ${rawPattern}
-                )`);
-            } else {
-                conditions.push(
-                    Prisma.sql`(p.nombre ILIKE ${rawPattern} OR p.codi_arti ILIKE ${rawPattern} OR p.descripcion ILIKE ${rawPattern})`
-                );
-            }
+            const searchSql = buildProductoTextSearchSql(busqueda, 'p');
+            if (searchSql) conditions.push(searchSql);
         }
         if (codi_categoria) conditions.push(Prisma.sql`p.codi_categoria = ${codi_categoria}`);
         if (codi_marca) conditions.push(Prisma.sql`p.codi_marca = ${codi_marca}`);
@@ -544,37 +542,10 @@ export class ProductosService {
             ];
         }
 
-        // Búsqueda por nombre, descripción, código de artículo, código de barras, SKU o ID
+        // Búsqueda: SQL normalizado (acentos + especiales + tokens)
         if (busqueda) {
-            const searchConditions: any[] = buildContainsOrConditions(
-                ['nombre', 'descripcion', 'codi_arti', 'codi_barras'],
-                busqueda
-            );
-
-            const busquedaNumeric = normalizeForSearch(busqueda);
-            const busquedaAsNumber = parseInt(busquedaNumeric, 10);
-            if (!isNaN(busquedaAsNumber) && busquedaAsNumber > 0) {
-                searchConditions.push({ id_prod: busquedaAsNumber });
-                for (const variant of getSearchVariants(busqueda)) {
-                    searchConditions.push({ codi_arti: { contains: variant, mode: 'insensitive' } });
-                }
-            }
-
-            if (whereClause.OR) {
-                // Combinar búsqueda con OR existente usando AND
-                whereClause.AND = [
-                    ...(whereClause.AND || []),
-                    {
-                        OR: whereClause.OR
-                    },
-                    {
-                        OR: searchConditions
-                    }
-                ];
-                delete whereClause.OR;
-            } else {
-                whereClause.OR = searchConditions;
-            }
+            const matchingIds = await findProductoIdsByTextSearch(busqueda);
+            this.mergeBusquedaIntoWhere(whereClause, matchingIds);
         }
 
         const includeRelations = {
@@ -1817,12 +1788,10 @@ export class ProductosService {
         }
         if (codi_grupo) whereClause.codi_grupo = codi_grupo;
 
-        // Filtros opcionales
+        // Filtros opcionales (búsqueda vía SQL normalizado cuando no usa sql path)
         if (busqueda) {
-            whereClause.OR = buildContainsOrConditions(
-                ['nombre', 'codi_arti', 'descripcion'],
-                busqueda
-            );
+            const matchingIds = await findProductoIdsByTextSearch(busqueda);
+            this.mergeBusquedaIntoWhere(whereClause, matchingIds);
         }
 
         if (destacado !== undefined) whereClause.destacado = destacado;

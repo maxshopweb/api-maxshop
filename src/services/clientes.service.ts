@@ -1,7 +1,7 @@
 import { prisma } from '../index';
 import { ICliente, IClienteFilters, IPaginatedResponse, IClienteStats, IUpdateClienteDTO } from '../types';
 import cacheService from './cache.service';
-import { buildUsuarioSearchOrConditions } from '../utils/search.utils';
+import { findClienteUsuarioIdsByTextSearch } from '../utils/search-queries';
 
 /** Normaliza activo por si llega como string u otro tipo (query / proxies). */
 function normalizeActivoClienteFilter(v: unknown): boolean | undefined {
@@ -53,16 +53,11 @@ export class ClientesService {
             usuariosAnd.push({ activo: false });
         }
 
-        // Búsqueda por nombre, email, teléfono y documento (DNI)
+        // Búsqueda por nombre, email, teléfono y documento (acentos y especiales ignorados)
         if (busqueda) {
+            const matchingUserIds = await findClienteUsuarioIdsByTextSearch(busqueda);
             usuariosAnd.push({
-                OR: buildUsuarioSearchOrConditions(busqueda, [
-                    'nombre',
-                    'apellido',
-                    'email',
-                    'telefono',
-                    'username',
-                ]),
+                id_usuario: { in: matchingUserIds.length > 0 ? matchingUserIds : [] },
             });
         }
 

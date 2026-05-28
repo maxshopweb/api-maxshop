@@ -15,7 +15,7 @@ import {
   type StaffUserPublic
 } from '../types/admin-staff.type';
 import { sanitizeString } from '../utils/validation.utils';
-import { buildContainsOrConditions } from '../utils/search.utils';
+import { findStaffUsuarioIdsByTextSearch } from '../utils/search-queries';
 
 /** Ventana y límites de reinicios de contraseña (sin tablas nuevas; memoria del proceso). */
 function getPasswordResetLimits() {
@@ -171,8 +171,9 @@ export class AdminStaffService {
     const andParts: Prisma.usuariosWhereInput[] = [{ admin: { isNot: null } }];
 
     if (search) {
+      const matchingIds = await findStaffUsuarioIdsByTextSearch(search);
       andParts.push({
-        OR: buildContainsOrConditions(['email', 'nombre', 'apellido', 'username'], search),
+        id_usuario: { in: matchingIds.length > 0 ? matchingIds : [] },
       });
     }
 

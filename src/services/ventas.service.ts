@@ -15,11 +15,7 @@ import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from '
 import { getAndreaniModoManual } from '../config/andreani.config';
 import { computeLineaVentaPricing, normalizeBonificacionPct } from './pricing.service';
 import { ventasExcelExportService, VENTA_EXCEL_INCLUDE } from './ventas-excel-export.service';
-import {
-    buildContainsOrConditions,
-    buildUsuarioSearchOrConditions,
-    normalizeForSearch,
-} from '../utils/search.utils';
+import { EMPTY_ID_FILTER, findVentaIdsByTextSearch } from '../utils/search-queries';
 import { buildCheckoutResultUrl } from '../utils/checkout-result-url.utils';
 
 const configTiendaService = new ConfigTiendaService();
@@ -37,8 +33,27 @@ export class VentasService {
     /** Límite máximo de ventas por exportación Excel (configurable vía env). */
     private readonly VENTAS_EXPORT_MAX = Number(process.env.VENTAS_EXPORT_MAX ?? 5000);
 
+    private async applyBusquedaToVentaWhere(
+        where: Prisma.ventaWhereInput,
+        busqueda: string
+    ): Promise<void> {
+        const matchingIds = await findVentaIdsByTextSearch(busqueda);
+        where.id_venta = {
+            in: matchingIds.length > 0 ? matchingIds : [EMPTY_ID_FILTER],
+        };
+    }
+
+    /** WHERE + búsqueda normalizada (SQL). */
+    async buildWhereClauseWithSearch(filters: IVentaFilters): Promise<Prisma.ventaWhereInput> {
+        const where = this.buildWhereClause(filters);
+        if (filters.busqueda?.trim()) {
+            await this.applyBusquedaToVentaWhere(where, filters.busqueda);
+        }
+        return where;
+    }
+
     /**
-     * Construye cláusula WHERE reutilizable para listado, stats y export Excel.
+     * Construye cláusula WHERE reutilizable (sin búsqueda de texto; usar buildWhereClauseWithSearch).
      */
     buildWhereClause(filters: IVentaFilters): Prisma.ventaWhereInput {
         const {
@@ -69,25 +84,6 @@ export class VentasService {
             if (term.length > 0) {
                 whereClause.cod_interno = { contains: term, mode: 'insensitive' };
             }
-        }
-
-        if (busqueda) {
-            const idNum = parseInt(normalizeForSearch(busqueda), 10);
-            whereClause.OR = [
-                { id_venta: { equals: !isNaN(idNum) && idNum > 0 ? idNum : -1 } },
-                ...buildContainsOrConditions(['cod_interno'], busqueda),
-                {
-                    cliente: {
-                        usuarios: {
-                            OR: buildUsuarioSearchOrConditions(busqueda, [
-                                'nombre',
-                                'apellido',
-                                'email',
-                            ]),
-                        },
-                    },
-                },
-            ];
         }
 
         if (id_cliente) whereClause.id_cliente = id_cliente;
@@ -147,7 +143,7 @@ export class VentasService {
             order = 'desc',
         } = filters;
 
-        const whereClause = this.buildWhereClause(filters);
+        const whereClause = await this.buildWhereClauseWithSearch(filters);
         const orderBy: any = {};
         if (order_by === 'fecha') orderBy.fecha = order;
         else if (order_by === 'total_neto') orderBy.total_neto = order;
@@ -1336,8 +1332,10 @@ export class VentasService {
             try {
                 // Ejecutar confirmación de pago (bloqueante - si falla, lanzará error)
                 // confirmPayment ya actualiza el estado_pago a 'aprobado', descuenta stock, crea Andreani y envía mails
+                const refManual = data.referencia_pago_manual?.trim();
                 const ventaConfirmada = await paymentProcessingService.confirmPayment(id, {
                     notas: 'Pago aprobado desde edición manual',
+                    transactionId: refManual || undefined,
                 });
 
 
@@ -1747,70 +1745,7 @@ export class VentasService {
             return cached;
         }
 
-        const {
-            busqueda,
-            id_cliente,
-            id_usuario,
-            fecha_desde,
-            fecha_hasta,
-            estado_pago,
-            estado_envio,
-            metodo_pago,
-            tipo_venta,
-            total_min,
-            total_max,
-        } = filters;
-
-        const whereClause: any = {};
-
-        // Búsqueda por ID de venta, cliente (nombre, email) o DNI/CUIT (numero_documento)
-        if (busqueda) {
-            const idNum = parseInt(normalizeForSearch(busqueda), 10);
-            whereClause.OR = [
-                { id_venta: { equals: !isNaN(idNum) && idNum > 0 ? idNum : -1 } },
-                {
-                    cliente: {
-                        usuarios: {
-                            OR: buildUsuarioSearchOrConditions(busqueda, [
-                                'nombre',
-                                'apellido',
-                                'email',
-                            ]),
-                        },
-                    },
-                },
-            ];
-        }
-
-        if (id_cliente) whereClause.id_cliente = id_cliente;
-        if (id_usuario) whereClause.id_usuario = id_usuario;
-
-        // Filtros por fecha
-        if (fecha_desde || fecha_hasta) {
-            whereClause.fecha = {};
-            if (fecha_desde) {
-                whereClause.fecha.gte = new Date(fecha_desde);
-            }
-            if (fecha_hasta) {
-                whereClause.fecha.lte = new Date(fecha_hasta);
-            }
-        }
-
-        if (estado_pago) whereClause.estado_pago = estado_pago;
-        if (estado_envio) whereClause.estado_envio = estado_envio;
-        if (metodo_pago) whereClause.metodo_pago = metodo_pago;
-        if (tipo_venta) whereClause.tipo_venta = tipo_venta;
-
-        // Filtros por rango de total
-        if (total_min !== undefined || total_max !== undefined) {
-            whereClause.total_neto = {};
-            if (total_min !== undefined) {
-                whereClause.total_neto.gte = total_min;
-            }
-            if (total_max !== undefined) {
-                whereClause.total_neto.lte = total_max;
-            }
-        }
+        const whereClause = await this.buildWhereClauseWithSearch(filters);
 
         // Calcular estadísticas usando agregaciones
         // 1. Total de ventas (count)
@@ -1861,7 +1796,7 @@ export class VentasService {
         ventasCount: number;
         rowsCount: number;
     }> {
-        const where = this.buildWhereClause(filters);
+        const where = await this.buildWhereClauseWithSearch(filters);
         const max = this.VENTAS_EXPORT_MAX;
 
         const total = await prisma.venta.count({ where });

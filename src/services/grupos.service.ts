@@ -3,7 +3,7 @@ import { prisma } from '../index';
 import type { AdminAuditContext } from '../types/auth.type';
 import { auditService } from './audit.service';
 import { AdminPaginationMeta, buildPaginationMeta } from '../utils/adminPaginationQuery';
-import { buildContainsOrConditions } from '../utils/search.utils';
+import { EMPTY_ID_FILTER, findGrupoIdsByTextSearch } from '../utils/search-queries';
 
 export interface IGrupo {
     id_grupo: number;
@@ -34,9 +34,15 @@ export class GruposService {
         limit: number,
         busqueda: string
     ): Promise<{ data: IGrupo[]; pagination: AdminPaginationMeta }> {
-        const where: Prisma.grupoWhereInput = busqueda
-            ? { OR: buildContainsOrConditions(['codi_grupo', 'nombre'], busqueda) }
-            : {};
+        let where: Prisma.grupoWhereInput = {};
+        if (busqueda?.trim()) {
+            const matchingIds = await findGrupoIdsByTextSearch(busqueda);
+            where = {
+                id_grupo: {
+                    in: matchingIds.length > 0 ? matchingIds : [EMPTY_ID_FILTER],
+                },
+            };
+        }
 
         const total = await prisma.grupo.count({ where });
         const pagination = buildPaginationMeta(total, page, limit);
