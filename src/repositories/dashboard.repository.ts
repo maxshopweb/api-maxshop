@@ -245,10 +245,36 @@ export class DashboardRepository {
       },
     });
 
+    const retiroSinAvisoResult = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int as count
+      FROM venta
+      WHERE estado_pago = 'aprobado'
+        AND listo_retiro_avisado_en IS NULL
+        AND retirado_en IS NULL
+        AND (
+          LOWER(COALESCE(observaciones, '')) LIKE '%retiro en tienda%'
+          OR LOWER(COALESCE(observaciones, '')) LIKE '%tipo: retiro%'
+        )
+    `;
+
+    const retirosEsperandoResult = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int as count
+      FROM venta
+      WHERE estado_pago = 'aprobado'
+        AND listo_retiro_avisado_en IS NOT NULL
+        AND retirado_en IS NULL
+        AND (
+          LOWER(COALESCE(observaciones, '')) LIKE '%retiro en tienda%'
+          OR LOWER(COALESCE(observaciones, '')) LIKE '%tipo: retiro%'
+        )
+    `;
+
     return {
       productos_stock_bajo: productosStockBajo,
       ventas_pendientes: ventasPendientes,
       ventas_problemas_pago: ventasProblemasPago,
+      retiros_sin_aviso: Number(retiroSinAvisoResult[0]?.count || 0),
+      retiros_esperando_retiro: Number(retirosEsperandoResult[0]?.count || 0),
     };
   }
 }

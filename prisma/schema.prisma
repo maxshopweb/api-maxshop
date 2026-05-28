@@ -448,6 +448,12 @@ model venta {
   tipo_venta            String?                 @db.VarChar(50)
   observaciones         String?
   factura_url           String?                 @db.VarChar(255)
+  /** Cuándo se avisó al cliente que el pedido está listo para retiro en tienda. */
+  listo_retiro_avisado_en DateTime?           @db.Timestamp(6)
+  /** Cuándo el cliente retiró el pedido en el local. */
+  retirado_en           DateTime?               @db.Timestamp(6)
+  /** Motivo opcional informado al cliente al cancelar. */
+  motivo_cancelacion    String?                 @db.VarChar(500)
   creado_en             DateTime?               @default(now()) @db.Timestamp(6)
   actualizado_en        DateTime?               @default(now()) @db.Timestamp(6)
   envios                envios[]

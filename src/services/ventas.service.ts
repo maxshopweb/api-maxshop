@@ -11,7 +11,7 @@ import { direccionesService } from './direcciones.service';
 import { mercadoPagoService } from './mercado-pago.service';
 import { ConfigTiendaService } from './config-tienda.service';
 import { ProductosService } from './productos.service';
-import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda } from './venta-envio.validation';
+import { assertClienteDireccionCompletaParaEnvio, isVentaRetiroEnTienda, applyRetiroFilterToWhere } from './venta-envio.validation';
 import { getAndreaniModoManual } from '../config/andreani.config';
 import { computeLineaVentaPricing, normalizeBonificacionPct } from './pricing.service';
 import { ventasExcelExportService, VENTA_EXCEL_INCLUDE } from './ventas-excel-export.service';
@@ -71,6 +71,7 @@ export class VentasService {
             total_min,
             total_max,
             incluir_canceladas = false,
+            retiro,
         } = filters;
 
         const whereClause: Prisma.ventaWhereInput = {};
@@ -120,9 +121,13 @@ export class VentasService {
             if (total_min !== undefined) {
                 whereClause.total_neto.gte = total_min;
             }
-            if (total_max !== undefined) {
-                whereClause.total_neto.lte = total_max;
-            }
+        if (total_max !== undefined) {
+            whereClause.total_neto.lte = total_max;
+        }
+        }
+
+        if (retiro) {
+            applyRetiroFilterToWhere(whereClause, retiro);
         }
 
         return whereClause;
@@ -1209,7 +1214,7 @@ export class VentasService {
     /**
      * Envía email de cancelación de pedido
      */
-    private async sendCancellationEmail(venta: IVenta): Promise<void> {
+    private async sendCancellationEmail(venta: IVenta, motivo?: string | null): Promise<void> {
         try {
             // Obtener email del usuario/cliente
             let userEmail: string | null = null;
@@ -1231,9 +1236,12 @@ export class VentasService {
                 return;
             }
 
+            const motivoTrim = motivo?.trim() || undefined;
+
             await mailService.sendOrderCancelled({
                 orderId: venta.id_venta,
-                orderNumber: `#${venta.id_venta}`,
+                orderNumber: venta.cod_interno ?? `#${venta.id_venta}`,
+                motivo: motivoTrim,
                 cliente: {
                     email: userEmail,
                     nombre: userName,
@@ -1421,57 +1429,161 @@ export class VentasService {
         return this.getById(id);
     }
 
-    async delete(id: number): Promise<void> {
-        // Obtener venta antes de cancelar (para email y, si estaba aprobada, devolver stock)
+    /**
+     * Cancela una venta (soft delete), devuelve stock si correspondía y notifica al cliente.
+     */
+    async cancelar(id: number, options?: { motivo?: string }): Promise<IVenta> {
         const venta = await this.getById(id);
 
         if (venta?.estado_pago === 'cancelado') {
             throw new Error('La venta ya está dada de baja');
         }
 
-        // Al eliminar (soft delete = cancelar): si la venta estaba aprobada, devolver el stock al inventario
         if (venta?.estado_pago === 'aprobado') {
             await this.devolverStockVenta(venta);
         }
 
-        // Soft delete: marcar como cancelada en lugar de eliminar
+        const motivoTrim = options?.motivo?.trim() || null;
+        const observacionesActualizadas = motivoTrim
+            ? `${venta.observaciones || ''}\n[Cancelación] ${motivoTrim}`.trim()
+            : venta.observaciones || null;
+
         await prisma.venta.update({
             where: { id_venta: id },
             data: {
                 estado_pago: 'cancelado',
                 estado_envio: 'cancelado',
+                motivo_cancelacion: motivoTrim,
+                observaciones: observacionesActualizadas,
                 actualizado_en: new Date(),
             },
         });
 
-        // Invalidar cache
         await cacheService.delete(`venta:${id}`);
         await cacheService.deletePattern('ventas:*');
 
-        // Enviar email de cancelación (no bloqueante)
-        if (venta) {
-            this.sendCancellationEmail(venta).catch((error) => {
-                console.error('❌ Error al enviar email de cancelación:', error);
-            });
+        this.sendCancellationEmail(venta, motivoTrim).catch((error) => {
+            console.error('❌ Error al enviar email de cancelación:', error);
+        });
+
+        return this.getById(id);
+    }
+
+    async delete(id: number, options?: { motivo?: string }): Promise<void> {
+        await this.cancelar(id, options);
+    }
+
+    /**
+     * Avisa al cliente por email que su pedido está listo para retirar en tienda.
+     */
+    async notificarListoRetiro(
+        id: number,
+        options?: { mensaje?: string }
+    ): Promise<IVenta> {
+        const venta = await this.getById(id);
+
+        if (!isVentaRetiroEnTienda(venta.observaciones)) {
+            throw new Error('Esta venta no es retiro en tienda');
         }
+        if (venta.estado_pago !== 'aprobado') {
+            throw new Error('Solo se puede avisar retiro en ventas con pago aprobado');
+        }
+        if (venta.retirado_en) {
+            throw new Error('El pedido ya fue marcado como retirado');
+        }
+
+        const emailInfo = this.resolveClienteEmail(venta);
+        if (!emailInfo) {
+            throw new Error('No se encontró email del cliente para enviar el aviso');
+        }
+
+        const config = await configTiendaService.getConfig();
+        const mensajeTrim = options?.mensaje?.trim() || undefined;
+
+        await mailService.sendOrderReadyForPickup({
+            orderId: venta.id_venta,
+            orderNumber: venta.cod_interno ?? undefined,
+            mensaje: mensajeTrim,
+            tiendaNombre: config.nombre ?? 'MaxShop',
+            tiendaDireccion: config.direccion ?? undefined,
+            tiendaTelefono: config.telefono ?? undefined,
+            cliente: emailInfo,
+        });
+
+        await prisma.venta.update({
+            where: { id_venta: id },
+            data: {
+                listo_retiro_avisado_en: new Date(),
+                actualizado_en: new Date(),
+            },
+        });
+
+        await cacheService.delete(`venta:${id}`);
+        await cacheService.deletePattern('ventas:*');
+
+        return this.getById(id);
+    }
+
+    /**
+     * Marca un pedido de retiro en tienda como retirado por el cliente.
+     */
+    async marcarRetirado(id: number): Promise<IVenta> {
+        const venta = await this.getById(id);
+
+        if (!isVentaRetiroEnTienda(venta.observaciones)) {
+            throw new Error('Esta venta no es retiro en tienda');
+        }
+        if (venta.estado_pago !== 'aprobado') {
+            throw new Error('Solo se puede marcar retirado en ventas con pago aprobado');
+        }
+        if (venta.retirado_en) {
+            throw new Error('El pedido ya fue marcado como retirado');
+        }
+
+        await prisma.venta.update({
+            where: { id_venta: id },
+            data: {
+                retirado_en: new Date(),
+                actualizado_en: new Date(),
+            },
+        });
+
+        await cacheService.delete(`venta:${id}`);
+        await cacheService.deletePattern('ventas:*');
+
+        return this.getById(id);
+    }
+
+    private resolveClienteEmail(venta: IVenta): {
+        email: string;
+        nombre?: string;
+        apellido?: string;
+    } | null {
+        if (venta.cliente?.usuario?.email) {
+            return {
+                email: venta.cliente.usuario.email,
+                nombre: venta.cliente.usuario.nombre || 'Cliente',
+                apellido: venta.cliente.usuario.apellido || '',
+            };
+        }
+        if (venta.usuario?.email) {
+            return {
+                email: venta.usuario.email,
+                nombre: venta.usuario.nombre || 'Cliente',
+                apellido: venta.usuario.apellido || '',
+            };
+        }
+        return null;
     }
 
     async updateEstadoPago(id: number, estado: string): Promise<IVenta> {
         const ventaAnterior = await this.getById(id);
 
-        // Al pasar a 'cancelado' desde 'aprobado': devolver el stock que se había descontado (idempotente: solo si antes estaba aprobado)
-        if (estado === 'cancelado' && ventaAnterior?.estado_pago === 'aprobado') {
-            await this.devolverStockVenta(ventaAnterior);
+        if (estado === 'cancelado' && ventaAnterior?.estado_pago !== 'cancelado') {
+            return this.cancelar(id);
         }
 
         const ventaActualizada = await this.update(id, { estado_pago: estado as any });
-
-        // Si el estado cambió a 'cancelado', enviar email de cancelación
-        if (estado === 'cancelado' && ventaAnterior?.estado_pago !== 'cancelado') {
-            this.sendCancellationEmail(ventaActualizada).catch((error) => {
-                console.error('❌ Error al enviar email de cancelación:', error);
-            });
-        }
 
         return ventaActualizada;
     }

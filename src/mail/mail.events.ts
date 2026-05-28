@@ -14,6 +14,7 @@ export enum MailEventType {
     ORDER_CONFIRMED = 'ORDER_CONFIRMED',
     ORDER_CANCELLED = 'ORDER_CANCELLED',
     ORDER_EXPIRED = 'ORDER_EXPIRED',
+    ORDER_READY_FOR_PICKUP = 'ORDER_READY_FOR_PICKUP',
     PAYMENT_INSTRUCTIONS = 'PAYMENT_INSTRUCTIONS',
     
     // Eventos de Envíos
@@ -41,6 +42,7 @@ export const MailEventNames: Record<MailEventType, string> = {
     [MailEventType.ORDER_CONFIRMED]: 'Pedido Confirmado',
     [MailEventType.ORDER_CANCELLED]: 'Pedido Cancelado',
     [MailEventType.ORDER_EXPIRED]: 'Pedido Vencido',
+    [MailEventType.ORDER_READY_FOR_PICKUP]: 'Listo para Retirar',
     [MailEventType.PAYMENT_INSTRUCTIONS]: 'Instrucciones de Pago',
     [MailEventType.SHIPPING_PREPARING]: 'Envío en Preparación',
     [MailEventType.SHIPPING_SENT]: 'Envío Despachado',

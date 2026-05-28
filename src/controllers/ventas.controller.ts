@@ -31,6 +31,7 @@ export class VentasController {
                 total_min: req.query.total_min ? parseFloat(req.query.total_min as string) : undefined,
                 total_max: req.query.total_max ? parseFloat(req.query.total_max as string) : undefined,
                 incluir_canceladas: req.query.incluir_canceladas === 'true',
+                retiro: req.query.retiro as IVentaFilters['retiro'],
             };
 
             const result = await ventasService.getAll(filters);
@@ -242,6 +243,7 @@ export class VentasController {
     async delete(req: Request, res: Response): Promise<void> {
         try {
             const id = parseInt(asSingleString(req.params.id));
+            const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo : undefined;
 
             if (isNaN(id)) {
                 res.status(400).json({
@@ -251,7 +253,7 @@ export class VentasController {
                 return;
             }
 
-            await ventasService.delete(id);
+            await ventasService.delete(id, { motivo });
 
             const response: IApiResponse = {
                 success: true,
@@ -265,6 +267,93 @@ export class VentasController {
             res.status(isAlreadyCancelled ? 409 : 400).json({
                 success: false,
                 error: error.message || 'Error al eliminar venta'
+            });
+        }
+    }
+
+    async cancelar(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo : undefined;
+
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido',
+                });
+                return;
+            }
+
+            const venta = await ventasService.cancelar(id, { motivo });
+
+            res.json({
+                success: true,
+                data: venta,
+                message: 'Venta cancelada exitosamente',
+            } satisfies IApiResponse<IVenta>);
+        } catch (error: any) {
+            console.error('Error en cancelar:', error);
+            const isAlreadyCancelled = error?.message?.toLowerCase().includes('ya está dada de baja');
+            res.status(isAlreadyCancelled ? 409 : 400).json({
+                success: false,
+                error: error.message || 'Error al cancelar venta',
+            });
+        }
+    }
+
+    async notificarListoRetiro(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+            const mensaje = typeof req.body?.mensaje === 'string' ? req.body.mensaje : undefined;
+
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido',
+                });
+                return;
+            }
+
+            const venta = await ventasService.notificarListoRetiro(id, { mensaje });
+
+            res.json({
+                success: true,
+                data: venta,
+                message: 'Aviso de retiro enviado al cliente',
+            } satisfies IApiResponse<IVenta>);
+        } catch (error: any) {
+            console.error('Error en notificarListoRetiro:', error);
+            res.status(400).json({
+                success: false,
+                error: error.message || 'Error al notificar retiro',
+            });
+        }
+    }
+
+    async marcarRetirado(req: Request, res: Response): Promise<void> {
+        try {
+            const id = parseInt(asSingleString(req.params.id));
+
+            if (isNaN(id)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'ID inválido',
+                });
+                return;
+            }
+
+            const venta = await ventasService.marcarRetirado(id);
+
+            res.json({
+                success: true,
+                data: venta,
+                message: 'Pedido marcado como retirado',
+            } satisfies IApiResponse<IVenta>);
+        } catch (error: any) {
+            console.error('Error en marcarRetirado:', error);
+            res.status(400).json({
+                success: false,
+                error: error.message || 'Error al marcar retirado',
             });
         }
     }

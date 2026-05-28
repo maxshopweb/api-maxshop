@@ -71,5 +71,7 @@ export interface IAlertsResponse {
   productos_stock_bajo: number;
   ventas_pendientes: number;
   ventas_problemas_pago: number;
+  retiros_sin_aviso: number;
+  retiros_esperando_retiro: number;
 }
 

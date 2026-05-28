@@ -56,6 +56,24 @@ router.post(
     ventasController.confirmarPago.bind(ventasController)
 );
 
+router.post(
+    '/:id/cancelar',
+    ...adminAuth,
+    ventasController.cancelar.bind(ventasController)
+);
+
+router.post(
+    '/:id/notificar-listo-retiro',
+    ...adminAuth,
+    ventasController.notificarListoRetiro.bind(ventasController)
+);
+
+router.post(
+    '/:id/marcar-retirado',
+    ...adminAuth,
+    ventasController.marcarRetirado.bind(ventasController)
+);
+
 // Rutas CRUD generales (solo admin)
 router.get('/', ...adminAuth, ventasController.getAll.bind(ventasController));
 router.get('/stats', ...adminAuth, ventasController.getStats.bind(ventasController));

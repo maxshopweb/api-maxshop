@@ -242,6 +242,7 @@ export class MailService {
         orderData: {
             orderId: number | string;
             orderNumber?: string;
+            motivo?: string;
             cliente: {
                 email: string;
                 nombre?: string;
@@ -258,9 +259,47 @@ export class MailService {
             data: {
                 orderId: orderData.orderId,
                 orderNumber: orderData.orderNumber,
+                motivo: orderData.motivo,
                 cliente: orderData.cliente,
             },
             tags: ['pedido', 'cancelado'],
+        });
+    }
+
+    /**
+     * Envía email de pedido listo para retirar en tienda
+     */
+    async sendOrderReadyForPickup(
+        orderData: {
+            orderId: number | string;
+            orderNumber?: string;
+            mensaje?: string;
+            tiendaNombre?: string;
+            tiendaDireccion?: string;
+            tiendaTelefono?: string;
+            cliente: {
+                email: string;
+                nombre?: string;
+                apellido?: string;
+            };
+        }
+    ): Promise<BrevoResponse> {
+        return this.send({
+            event: MailEventType.ORDER_READY_FOR_PICKUP,
+            to: {
+                email: orderData.cliente.email,
+                name: `${orderData.cliente.nombre || ''} ${orderData.cliente.apellido || ''}`.trim() || 'Cliente',
+            },
+            data: {
+                orderId: orderData.orderId,
+                orderNumber: orderData.orderNumber,
+                mensaje: orderData.mensaje,
+                tiendaNombre: orderData.tiendaNombre,
+                tiendaDireccion: orderData.tiendaDireccion,
+                tiendaTelefono: orderData.tiendaTelefono,
+                cliente: orderData.cliente,
+            },
+            tags: ['pedido', 'retiro', 'listo'],
         });
     }
 

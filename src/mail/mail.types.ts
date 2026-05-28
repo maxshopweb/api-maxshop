@@ -91,6 +91,8 @@ export interface OrderEventData extends MailEventData {
     };
     /** Retiro en tienda (observaciones); muestra texto en templates de pedido */
     esRetiroEnTienda?: boolean;
+    /** Motivo opcional al cancelar (se muestra en el email) */
+    motivo?: string;
 }
 
 /**
@@ -150,6 +152,21 @@ export interface PaymentInstructionsEventData extends MailEventData {
     };
     /** Datos bancarios del negocio (tabla negocio). Si no viene, el template usa fallback. */
     datosBancarios?: IDatosBancarios | null;
+}
+
+/** Datos para aviso de pedido listo para retirar en tienda */
+export interface PickupReadyEventData extends MailEventData {
+    orderId: number | string;
+    orderNumber?: string;
+    cliente?: {
+        nombre?: string;
+        apellido?: string;
+        email?: string;
+    };
+    tiendaNombre?: string;
+    tiendaDireccion?: string;
+    tiendaTelefono?: string;
+    mensaje?: string;
 }
 
 /**

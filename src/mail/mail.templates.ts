@@ -5,7 +5,7 @@
  */
 
 import { MailEventType, MailEventNames } from './mail.events';
-import { MailTemplate, MailEventData, OrderEventData, ShippingEventData, PromotionEventData, AbandonedCartEventData, PaymentInstructionsEventData, WelcomeEventData } from './mail.types';
+import { MailTemplate, MailEventData, OrderEventData, ShippingEventData, PromotionEventData, AbandonedCartEventData, PaymentInstructionsEventData, WelcomeEventData, PickupReadyEventData } from './mail.types';
 import { CONTACT_CONFIG, buildWhatsappUrl } from '../config/contact.config';
 
 const MAIL_LINK_STYLE = 'color: #e88a42; text-decoration: underline;';
@@ -123,6 +123,8 @@ export function getMailTemplate(event: MailEventType, data: MailEventData): Mail
             return getOrderCancelledTemplate(data as OrderEventData);
         case MailEventType.ORDER_EXPIRED:
             return getOrderExpiredTemplate(data as OrderEventData);
+        case MailEventType.ORDER_READY_FOR_PICKUP:
+            return getOrderReadyForPickupTemplate(data as PickupReadyEventData);
         case MailEventType.PAYMENT_INSTRUCTIONS:
             return getPaymentInstructionsTemplate(data as PaymentInstructionsEventData);
         case MailEventType.SHIPPING_PREPARING:
@@ -323,6 +325,15 @@ function getOrderConfirmedTemplate(data: OrderEventData): MailTemplate {
 function getOrderCancelledTemplate(data: OrderEventData): MailTemplate {
     const userName = data.cliente?.nombre || 'Cliente';
     const orderId = data.orderId || data.orderNumber || 'N/A';
+    const motivo = data.motivo?.trim();
+
+    const motivoHtml = motivo
+        ? `<div style="background-color: #f9f9f9; border-left: 4px solid #dc3545; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #333333; font-size: 14px;">
+                <strong>Motivo:</strong> ${motivo}
+            </p>
+        </div>`
+        : '';
 
     const content = `
         <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
@@ -338,6 +349,8 @@ function getOrderCancelledTemplate(data: OrderEventData): MailTemplate {
                 <strong>Pedido Cancelado:</strong> #${orderId}
             </p>
         </div>
+        
+        ${motivoHtml}
         
         <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
             Si tienes alguna pregunta o crees que esto es un error, por favor contacta con nuestro equipo de atención al cliente.
@@ -381,6 +394,62 @@ function getOrderExpiredTemplate(data: OrderEventData): MailTemplate {
 
     return {
         subject: `Tu pedido #${orderId} ha vencido - MaxShop`,
+        htmlContent: getBaseLayout(content),
+    };
+}
+
+/**
+ * Template: Pedido listo para retirar en tienda
+ */
+function getOrderReadyForPickupTemplate(data: PickupReadyEventData): MailTemplate {
+    const userName = data.cliente?.nombre || 'Cliente';
+    const orderId = data.orderId || data.orderNumber || 'N/A';
+    const tiendaNombre = data.tiendaNombre || 'MaxShop';
+    const tiendaDireccion = data.tiendaDireccion?.trim();
+    const tiendaTelefono = data.tiendaTelefono?.trim();
+    const mensaje = data.mensaje?.trim();
+
+    const localHtml = `
+        <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #155724; font-size: 14px; line-height: 1.6;">
+                <strong>📍 ${tiendaNombre}</strong><br>
+                ${tiendaDireccion ? `<strong>Dirección:</strong> ${tiendaDireccion}<br>` : ''}
+                ${tiendaTelefono ? `<strong>Teléfono:</strong> ${tiendaTelefono}` : ''}
+            </p>
+        </div>
+    `;
+
+    const mensajeHtml = mensaje
+        ? `<p style="color: #333333; font-size: 14px; line-height: 1.6; margin: 20px 0 0 0;">
+            <strong>Información adicional:</strong> ${mensaje}
+        </p>`
+        : '';
+
+    const content = `
+        <h2 style="color: #171c35; margin: 0 0 20px 0; font-size: 24px;">
+            ¡Hola ${userName}!
+        </h2>
+        
+        <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+            Tu pedido <strong>#${orderId}</strong> ya está listo para retirar en nuestro local.
+        </p>
+        
+        <div style="background-color: #f9f9f9; border-left: 4px solid #e88a42; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #333333; font-size: 14px;">
+                <strong>Número de Pedido:</strong> #${orderId}
+            </p>
+        </div>
+        
+        ${localHtml}
+        ${mensajeHtml}
+        
+        <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
+            Recordá traer tu DNI y el número de pedido. ${getContactFooterHtml()}
+        </p>
+    `;
+
+    return {
+        subject: `Tu pedido #${orderId} está listo para retirar - MaxShop`,
         htmlContent: getBaseLayout(content),
     };
 }
