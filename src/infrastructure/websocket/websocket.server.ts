@@ -151,8 +151,13 @@ export class WebSocketServerManager {
       });
     });
 
-    // Preparado para futuros eventos:
-    // eventBus.on(SaleEventType.SALE_UPDATED, (payload) => { ... });
+    eventBus.on(SaleEventType.MP_PAYMENT_UPDATED, (payload) => {
+      this.broadcastToAdmins({
+        type: 'event',
+        event: SaleEventType.MP_PAYMENT_UPDATED,
+        payload,
+      });
+    });
   }
 
   /**

@@ -20,13 +20,24 @@ import { MercadoPagoPaymentResponse } from '../mercado-pago.service';
 jest.mock('../../index', () => ({
   prisma: {
     venta: { findUnique: jest.fn(), update: jest.fn() },
-    mercado_pago_payments: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    mercado_pago_payments: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
     failed_webhooks: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   },
 }));
+jest.mock('../../infrastructure/event-bus/event-bus', () => ({
+  eventBus: { emit: jest.fn().mockResolvedValue(undefined) },
+}));
 jest.mock('../mercado-pago.service', () => ({
   mercadoPagoService: { getPayment: jest.fn() },
-  MercadoPagoService: { extractVentaIdFromExternalReference: jest.fn() },
+  MercadoPagoService: {
+    extractVentaIdFromExternalReference: jest.fn(),
+    isApprovedStatus: (status: string) => ['approved', 'authorized'].includes(status),
+  },
 }));
 jest.mock('../payment-processing.service', () => ({
   paymentProcessingService: { confirmPayment: jest.fn() },
@@ -125,6 +136,7 @@ describe('PaymentWebhookService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new PaymentWebhookService();
+    prisma.mercado_pago_payments.findFirst.mockResolvedValue(null);
     (MercadoPagoService.extractVentaIdFromExternalReference as jest.Mock).mockImplementation((ref: string) => {
       const m = ref.match(/^venta_(\d+)$/);
       return m ? parseInt(m[1], 10) : null;
@@ -166,12 +178,13 @@ describe('PaymentWebhookService', () => {
   });
 
   describe('idempotencia', () => {
-    it('NO procesa dos veces el mismo paymentId con el mismo status (skipped)', async () => {
+    it('NO procesa duplicado cuando pago approved y venta ya aprobada (skipped)', async () => {
       mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment());
-      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente({ estado_pago: 'aprobado' }));
       prisma.mercado_pago_payments.findUnique.mockResolvedValue({
         id: 1,
         status_mp: 'approved',
+        webhook_processed_at: new Date(),
         updated_at: new Date(),
       });
 
@@ -179,11 +192,24 @@ describe('PaymentWebhookService', () => {
       expect(r1.success).toBe(true);
       expect(r1.action).toBe('skipped');
       expect(paymentProcessingService.confirmPayment).not.toHaveBeenCalled();
+    });
 
-      const r2 = await service.processWebhook(buildWebhook());
-      expect(r2.success).toBe(true);
-      expect(r2.action).toBe('skipped');
-      expect(paymentProcessingService.confirmPayment).not.toHaveBeenCalled();
+    it('reconcilia cuando pago approved existe pero venta sigue rechazada', async () => {
+      mercadoPagoService.getPayment.mockResolvedValue(buildMpPayment({ status: 'approved' }));
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente({ estado_pago: 'rechazado' }));
+      prisma.mercado_pago_payments.findUnique.mockResolvedValue({
+        id: 1,
+        status_mp: 'approved',
+        webhook_processed_at: null,
+        updated_at: new Date(),
+      });
+      prisma.mercado_pago_payments.update.mockResolvedValue({});
+      paymentProcessingService.confirmPayment.mockResolvedValue({ estado_pago: 'aprobado' });
+
+      const r = await service.processWebhook(buildWebhook());
+      expect(r.success).toBe(true);
+      expect(r.action).toBe('updated');
+      expect(paymentProcessingService.confirmPayment).toHaveBeenCalledWith(ID_VENTA, expect.any(Object));
     });
 
     it('SÍ procesa si el pago existe pero con otro status (updated)', async () => {
@@ -195,8 +221,7 @@ describe('PaymentWebhookService', () => {
         updated_at: new Date(),
       });
       prisma.mercado_pago_payments.update.mockResolvedValue({});
-      prisma.venta.update.mockResolvedValue({});
-      paymentProcessingService.confirmPayment.mockResolvedValue({});
+      paymentProcessingService.confirmPayment.mockResolvedValue({ estado_pago: 'aprobado' });
 
       const r = await service.processWebhook(buildWebhook());
       expect(r.success).toBe(true);
@@ -212,7 +237,13 @@ describe('PaymentWebhookService', () => {
       prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
       prisma.mercado_pago_payments.create.mockResolvedValue({});
       prisma.venta.update.mockResolvedValue({});
-      paymentProcessingService.confirmPayment.mockResolvedValue({});
+      paymentProcessingService.confirmPayment.mockResolvedValue({ estado_pago: 'aprobado' });
+    });
+
+    it('confirma venta en estado rechazado cuando llega pago approved (segundo intento)', async () => {
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente({ estado_pago: 'rechazado' }));
+      await service.processWebhook(buildWebhook());
+      expect(paymentProcessingService.confirmPayment).toHaveBeenCalledWith(ID_VENTA, expect.any(Object));
     });
 
     it('llama a confirmPayment cuando MP devuelve approved y monto coincide con total_neto', async () => {
@@ -310,8 +341,7 @@ describe('PaymentWebhookService', () => {
         updated_at: new Date(),
       });
       prisma.mercado_pago_payments.update.mockResolvedValue({});
-      prisma.venta.update.mockResolvedValue({});
-      paymentProcessingService.confirmPayment.mockResolvedValue({});
+      paymentProcessingService.confirmPayment.mockResolvedValue({ estado_pago: 'aprobado' });
 
       const r = await service.processWebhook(buildWebhook());
       expect(r.action).toBe('updated');
@@ -334,6 +364,19 @@ describe('PaymentWebhookService', () => {
         where: { id_venta: ID_VENTA },
         data: expect.objectContaining({ estado_pago: 'rechazado' }),
       });
+    });
+
+    it('NO degrada venta aprobada por webhook rejected tardío', async () => {
+      mercadoPagoService.getPayment.mockResolvedValue(
+        buildMpPayment({ id: 999888777, status: 'rejected' })
+      );
+      prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente({ estado_pago: 'aprobado' }));
+      prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
+      prisma.mercado_pago_payments.create.mockResolvedValue({});
+
+      const r = await service.processWebhook(buildWebhook({ id: '999888777' }));
+      expect(r.success).toBe(true);
+      expect(prisma.venta.update).not.toHaveBeenCalled();
     });
   });
 
@@ -402,11 +445,11 @@ describe('PaymentWebhookService', () => {
         prisma.venta.findUnique.mockResolvedValue(mockVentaPendiente());
         prisma.mercado_pago_payments.findUnique.mockResolvedValue(null);
         prisma.mercado_pago_payments.create.mockResolvedValue({});
-        prisma.venta.update.mockResolvedValue({});
+        prisma.mercado_pago_payments.update.mockResolvedValue({});
         paymentProcessingService.confirmPayment.mockImplementation(
           () =>
-            new Promise((r) => {
-              setTimeout(r, 100);
+            new Promise((resolve) => {
+              setTimeout(() => resolve({ estado_pago: 'aprobado' }), 100);
             })
         );
 

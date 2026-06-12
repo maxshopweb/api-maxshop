@@ -5,10 +5,7 @@
 
 export enum SaleEventType {
   SALE_CREATED = 'SALE_CREATED',
-  // Preparado para futuros eventos:
-  // SALE_UPDATED = 'SALE_UPDATED',
-  // SALE_CANCELLED = 'SALE_CANCELLED',
-  // SALE_PAYMENT_CONFIRMED = 'SALE_PAYMENT_CONFIRMED',
+  MP_PAYMENT_UPDATED = 'MP_PAYMENT_UPDATED',
 }
 
 /**
@@ -20,7 +17,7 @@ import { IVenta } from '../../types';
 export interface SaleCreatedPayload {
   // Datos básicos
   id_venta: number;
-  estado_pago: 'pendiente' | 'aprobado' | 'cancelado';
+  estado_pago: 'pendiente' | 'aprobado' | 'cancelado' | 'rechazado';
   fecha: string; // ISO string
   
   // Datos completos de la venta (para handlers que los necesiten)
@@ -33,6 +30,15 @@ export interface SaleCreatedPayload {
     paymentDate?: string; // ISO string
     notas?: string;
   };
+}
+
+/** Payload emitido cuando Mercado Pago actualiza el estado de un pago */
+export interface MpPaymentUpdatedPayload {
+  id_venta: number;
+  payment_id: string;
+  status_mp: string;
+  estado_pago: string;
+  fecha: string;
 }
 
 /**
@@ -51,6 +57,14 @@ export class SaleEventFactory {
   static createSaleCreated(payload: SaleCreatedPayload): SaleEvent {
     return {
       type: SaleEventType.SALE_CREATED,
+      payload,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  static createMpPaymentUpdated(payload: MpPaymentUpdatedPayload): { type: SaleEventType.MP_PAYMENT_UPDATED; payload: MpPaymentUpdatedPayload; timestamp: string } {
+    return {
+      type: SaleEventType.MP_PAYMENT_UPDATED,
       payload,
       timestamp: new Date().toISOString(),
     };

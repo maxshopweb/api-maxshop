@@ -68,8 +68,11 @@ export class PaymentProcessingService {
                 throw new Error(`No se puede confirmar una venta cancelada (Venta #${idVenta})`);
             }
 
-            if (venta.estado_pago !== 'pendiente' && venta.estado_pago !== 'vencido') {
-                throw new Error(`Solo se puede confirmar una venta en estado pendiente o vencido. Estado actual: ${venta.estado_pago}`);
+            const estadosConfirmables = ['pendiente', 'vencido', 'rechazado'] as const;
+            if (!estadosConfirmables.includes(venta.estado_pago as typeof estadosConfirmables[number])) {
+                throw new Error(
+                    `Solo se puede confirmar una venta en estado pendiente, vencido o rechazado. Estado actual: ${venta.estado_pago}`
+                );
             }
 
             assertClienteDireccionCompletaParaEnvio(

@@ -4,6 +4,8 @@ import * as path from 'path';
 import { asSingleString } from '../utils/validation.utils';
 import { VentasService } from '../services/ventas.service';
 import { paymentProcessingService } from '../services/payment-processing.service';
+import { paymentWebhookService } from '../services/payment-webhook.service';
+import { MercadoPagoService } from '../services/mercado-pago.service';
 import { IApiResponse } from '../types';
 import { IVentaFilters, ICreateVentaDTO, IUpdateVentaDTO, IVenta } from '../types';
 import ftpService from '../services/ftp.service';
@@ -611,6 +613,79 @@ export class VentasController {
             res.status(statusCode).json({
                 success: false,
                 error: error.message || 'Error al confirmar pago'
+            });
+        }
+    }
+
+    /**
+     * Sincroniza el estado de un pago MP desde el retorno de checkout (back_url).
+     * Público con rate-limit; idempotente vía PaymentWebhookService.
+     */
+    async syncMercadoPagoPayment(req: Request, res: Response): Promise<void> {
+        try {
+            const paymentId = typeof req.body?.payment_id === 'string'
+                ? req.body.payment_id.trim()
+                : '';
+            const idVentaRaw = req.body?.id_venta;
+            const externalReference = typeof req.body?.external_reference === 'string'
+                ? req.body.external_reference.trim()
+                : undefined;
+
+            if (!paymentId) {
+                res.status(400).json({
+                    success: false,
+                    error: 'payment_id es requerido',
+                });
+                return;
+            }
+
+            const idVentaFromBody = idVentaRaw != null && idVentaRaw !== ''
+                ? parseInt(String(idVentaRaw), 10)
+                : undefined;
+
+            const idVentaFromRef = externalReference
+                ? MercadoPagoService.extractVentaIdFromExternalReference(externalReference)
+                : null;
+
+            const expectedVentaId = idVentaFromBody ?? idVentaFromRef ?? undefined;
+
+            const result = await paymentWebhookService.processManualPayment(paymentId);
+
+            if (
+                expectedVentaId != null &&
+                result.ventaId != null &&
+                result.ventaId !== expectedVentaId
+            ) {
+                res.status(400).json({
+                    success: false,
+                    error: 'El pago no corresponde a la venta indicada',
+                });
+                return;
+            }
+
+            const ventaId = result.ventaId ?? expectedVentaId;
+            let venta: IVenta | null = null;
+            if (ventaId != null && !Number.isNaN(ventaId)) {
+                try {
+                    venta = await ventasService.getById(ventaId);
+                } catch {
+                    venta = null;
+                }
+            }
+
+            res.status(result.success ? 200 : 500).json({
+                success: result.success,
+                data: {
+                    processResult: result,
+                    venta,
+                },
+                error: result.error,
+            });
+        } catch (error: any) {
+            console.error('❌ Error en syncMercadoPagoPayment:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message || 'Error al sincronizar pago con Mercado Pago',
             });
         }
     }

@@ -23,11 +23,12 @@ import { mercadoPagoService, MercadoPagoService, MercadoPagoPaymentResponse } fr
 import { amountsMatch, roundMoney } from '../utils/money.utils';
 import { paymentProcessingService } from './payment-processing.service';
 import { lockService } from './lock.service';
+import { eventBus } from '../infrastructure/event-bus/event-bus';
+import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
 import { 
     IMercadoPagoWebhookEvent, 
     MP_STATUS_TO_VENTA_STATUS, 
     EstadoPago,
-    IMercadoPagoPayment 
 } from '../types';
 
 // ============================================
@@ -70,7 +71,7 @@ interface PaymentDataForPrisma {
     payer_info: any;
     processing_mode: string | null;
     live_mode: boolean;
-    webhook_processed_at: Date;
+    webhook_processed_at: Date | null;
     updated_at: Date;
     notes?: string;
 }
@@ -136,9 +137,10 @@ class PaymentWebhookService {
             }
 
             const paymentId = webhookData.data.id.toString();
+            const paymentLockKey = `webhook:${paymentId}`;
 
-            // 3. Intentar adquirir lock distribuido (Redis con fallback in-memory)
-            if (!(await lockService.acquireLock(`webhook:${paymentId}`, this.lockTimeoutMs))) {
+            // 3. Lock por paymentId (evita duplicados del mismo pago)
+            if (!(await lockService.acquireLock(paymentLockKey, this.lockTimeoutMs))) {
                 if (process.env.NODE_ENV !== 'production') {
                     console.log(`⏳ [PaymentWebhookService] Pago ${paymentId} ya está siendo procesado (lock activo)`);
                 }
@@ -149,16 +151,15 @@ class PaymentWebhookService {
                 };
             }
 
+            let ventaLockKey: string | null = null;
+
             try {
-                // 4. Obtener datos completos del pago desde la API de MP
-                // Esta es la FUENTE DE VERDAD, no confiamos en el payload del webhook
                 const fullPaymentData = await this.getPaymentFromMercadoPago(paymentId);
                 
                 if (!fullPaymentData) {
                     throw new Error(`No se pudo obtener datos del pago ${paymentId} desde MP`);
                 }
 
-                // 5. Extraer y validar external_reference
                 const externalReference = fullPaymentData.external_reference;
                 if (!externalReference) {
                     console.error(`❌ [PaymentWebhookService] Pago ${paymentId} sin external_reference`);
@@ -170,7 +171,6 @@ class PaymentWebhookService {
                     };
                 }
 
-                // 6. Extraer idVenta desde external_reference
                 const idVenta = MercadoPagoService.extractVentaIdFromExternalReference(externalReference);
                 if (!idVenta) {
                     console.error(`❌ [PaymentWebhookService] No se pudo extraer idVenta de: ${externalReference}`);
@@ -182,15 +182,27 @@ class PaymentWebhookService {
                     };
                 }
 
-                // Log solo en desarrollo
+                // Lock adicional por venta (evita race entre payment_ids distintos)
+                ventaLockKey = `webhook:venta:${idVenta}`;
+                if (!(await lockService.acquireLock(ventaLockKey, this.lockTimeoutMs))) {
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log(`⏳ [PaymentWebhookService] Venta #${idVenta} ya está siendo procesada (lock activo)`);
+                    }
+                    return {
+                        success: true,
+                        paymentId,
+                        action: 'skipped',
+                        ventaId: idVenta,
+                    };
+                }
+
                 if (process.env.NODE_ENV !== 'production') {
                     console.log(`🔗 [PaymentWebhookService] Pago ${paymentId} → Venta #${idVenta} (${fullPaymentData.status})`);
                 }
 
-                // 7. Verificar que la venta existe
                 const ventaExistente = await prisma.venta.findUnique({
                     where: { id_venta: idVenta },
-                    select: { id_venta: true, estado_pago: true, total_neto: true, observaciones: true },
+                    select: { id_venta: true, estado_pago: true, total_neto: true, observaciones: true, fecha: true },
                 });
 
                 if (!ventaExistente) {
@@ -198,19 +210,28 @@ class PaymentWebhookService {
                     throw new Error(`Venta #${idVenta} no encontrada`);
                 }
 
-                // 8. Verificar idempotencia - ¿Ya procesamos este pago?
                 const existingPayment = await prisma.mercado_pago_payments.findUnique({
                     where: { payment_id: paymentId },
                     select: { 
                         id: true, 
                         status_mp: true, 
+                        webhook_processed_at: true,
                         updated_at: true,
                     },
                 });
 
-                // Si el pago ya existe con el mismo estado, es un duplicado
-                if (existingPayment && existingPayment.status_mp === fullPaymentData.status) {
-                    // Log solo en desarrollo
+                const isApprovedMp = MercadoPagoService.isApprovedStatus(fullPaymentData.status);
+                const needsReconciliation = this.needsApprovedReconciliation(
+                    existingPayment,
+                    fullPaymentData,
+                    ventaExistente.estado_pago
+                );
+
+                if (
+                    existingPayment &&
+                    existingPayment.status_mp === fullPaymentData.status &&
+                    !needsReconciliation
+                ) {
                     if (process.env.NODE_ENV !== 'production') {
                         console.log(`ℹ️ [PaymentWebhookService] Pago ${paymentId} ya procesado (idempotencia)`);
                     }
@@ -224,14 +245,18 @@ class PaymentWebhookService {
                     };
                 }
 
-                // 9. Preparar datos para crear/actualizar el registro de pago
-                const paymentData = this.buildPaymentData(fullPaymentData, idVenta, externalReference);
+                const nuevoEstadoVenta = MP_STATUS_TO_VENTA_STATUS[fullPaymentData.status] || 'pendiente';
+                const markProcessedNow = !isApprovedMp;
+                const paymentData = this.buildPaymentData(
+                    fullPaymentData,
+                    idVenta,
+                    externalReference,
+                    markProcessedNow
+                );
 
-                // 10. Crear o actualizar registro de pago (UPSERT)
                 let action: 'created' | 'updated';
-                
+
                 if (existingPayment) {
-                    // Log solo en desarrollo
                     if (process.env.NODE_ENV !== 'production') {
                         console.log(`📝 [PaymentWebhookService] Actualizando pago ${paymentId}`);
                     }
@@ -241,7 +266,6 @@ class PaymentWebhookService {
                     });
                     action = 'updated';
                 } else {
-                    // Log solo en desarrollo
                     if (process.env.NODE_ENV !== 'production') {
                         console.log(`✨ [PaymentWebhookService] Creando registro de pago ${paymentId}`);
                     }
@@ -251,49 +275,34 @@ class PaymentWebhookService {
                     action = 'created';
                 }
 
-                // 11. Determinar nuevo estado de la venta
-                const nuevoEstadoVenta = MP_STATUS_TO_VENTA_STATUS[fullPaymentData.status] || 'pendiente';
+                let estadoVentaFinal = ventaExistente.estado_pago;
 
-                // 12. Actualizar estado de la venta si cambió
-                if (ventaExistente.estado_pago !== nuevoEstadoVenta) {
-                    console.log(`🔄 [PaymentWebhookService] Actualizando estado de venta #${idVenta}: ${ventaExistente.estado_pago} → ${nuevoEstadoVenta}`);
-                    
-                    // Si el pago fue APROBADO, usar PaymentProcessingService
-                    // Este servicio maneja: descuento de stock, envío a Andreani, emails, Event Bus
-                    if (nuevoEstadoVenta === 'aprobado') {
-                        const expectedTotal = ventaExistente.total_neto != null
-                            ? Number(ventaExistente.total_neto)
-                            : NaN;
-                        const paidAmount = Number(fullPaymentData.transaction_amount);
+                if (isApprovedMp) {
+                    estadoVentaFinal = await this.processApprovedPayment(
+                        idVenta,
+                        paymentId,
+                        fullPaymentData,
+                        ventaExistente
+                    );
+                    await this.markPaymentProcessed(paymentId);
+                } else if (ventaExistente.estado_pago !== nuevoEstadoVenta) {
+                    const blocked = await this.shouldBlockVentaDegradation(
+                        idVenta,
+                        ventaExistente.estado_pago,
+                        nuevoEstadoVenta,
+                        paymentId
+                    );
 
-                        if (!amountsMatch(paidAmount, expectedTotal)) {
-                            const msg =
-                                `[MP] Monto cobrado $${roundMoney(paidAmount)} no coincide con total_neto $${roundMoney(expectedTotal)} (pago #${paymentId})`;
-                            console.error(`❌ [PaymentWebhookService] Venta #${idVenta}: ${msg}`);
-                            await prisma.venta.update({
-                                where: { id_venta: idVenta },
-                                data: {
-                                    estado_pago: 'cancelado',
-                                    observaciones: [ventaExistente.observaciones, msg]
-                                        .filter(Boolean)
-                                        .join('\n'),
-                                    actualizado_en: new Date(),
-                                },
-                            });
-                            throw new Error(msg);
-                        } else {
-                            console.log(`💰 [PaymentWebhookService] Pago APROBADO - Confirmando venta #${idVenta}`);
-                            await paymentProcessingService.confirmPayment(idVenta, {
-                                metodoPago: 'mercadopago',
-                                transactionId: paymentId,
-                                paymentDate: fullPaymentData.date_approved
-                                    ? new Date(fullPaymentData.date_approved)
-                                    : new Date(),
-                                notas: `Pago MP #${paymentId} - ${fullPaymentData.payment_method_id || fullPaymentData.payment_type_id}`,
-                            });
+                    if (blocked) {
+                        if (process.env.NODE_ENV !== 'production') {
+                            console.log(
+                                `ℹ️ [PaymentWebhookService] No se degrada venta #${idVenta} (${ventaExistente.estado_pago} → ${nuevoEstadoVenta}) por pago ${paymentId}`
+                            );
                         }
                     } else {
-                        // Para otros estados, solo actualizar el estado de la venta
+                        console.log(
+                            `🔄 [PaymentWebhookService] Actualizando estado de venta #${idVenta}: ${ventaExistente.estado_pago} → ${nuevoEstadoVenta}`
+                        );
                         await prisma.venta.update({
                             where: { id_venta: idVenta },
                             data: {
@@ -301,16 +310,21 @@ class PaymentWebhookService {
                                 actualizado_en: new Date(),
                             },
                         });
+                        estadoVentaFinal = nuevoEstadoVenta;
                     }
-                } else {
-                    // Log solo en desarrollo
-                if (process.env.NODE_ENV !== 'production') {
-                    console.log(`ℹ️ [PaymentWebhookService] Venta #${idVenta} ya está en estado '${nuevoEstadoVenta}'`);
-                }
                 }
 
+                await this.emitMpPaymentUpdated(
+                    idVenta,
+                    paymentId,
+                    fullPaymentData.status,
+                    estadoVentaFinal ?? ventaExistente.estado_pago
+                );
+
                 const duration = Date.now() - startTime;
-                console.log(`✅ [PaymentWebhookService] Pago ${paymentId} procesado - Venta #${idVenta} → ${nuevoEstadoVenta} (${duration}ms)`);
+                console.log(
+                    `✅ [PaymentWebhookService] Pago ${paymentId} procesado - Venta #${idVenta} → ${estadoVentaFinal} (${duration}ms)`
+                );
 
                 return {
                     success: true,
@@ -322,7 +336,10 @@ class PaymentWebhookService {
                 };
 
             } finally {
-                await lockService.releaseLock(`webhook:${paymentId}`);
+                if (ventaLockKey) {
+                    await lockService.releaseLock(ventaLockKey);
+                }
+                await lockService.releaseLock(paymentLockKey);
             }
 
         } catch (error: any) {
@@ -346,6 +363,133 @@ class PaymentWebhookService {
     }
 
     /**
+     * Reconciliación: pago approved en BD pero venta aún no aprobada (confirm falló antes).
+     */
+    private needsApprovedReconciliation(
+        existingPayment: { status_mp: string; webhook_processed_at: Date | null } | null,
+        fullPaymentData: MercadoPagoPaymentResponse,
+        estadoVentaActual: string | null
+    ): boolean {
+        if (!MercadoPagoService.isApprovedStatus(fullPaymentData.status)) {
+            return false;
+        }
+        if (estadoVentaActual === 'aprobado') {
+            return false;
+        }
+        if (!existingPayment || existingPayment.status_mp !== fullPaymentData.status) {
+            return false;
+        }
+        return true;
+    }
+
+    private async processApprovedPayment(
+        idVenta: number,
+        paymentId: string,
+        fullPaymentData: MercadoPagoPaymentResponse,
+        ventaExistente: {
+            total_neto: unknown;
+            observaciones: string | null;
+            estado_pago: string | null;
+        }
+    ): Promise<string> {
+        const expectedTotal = ventaExistente.total_neto != null
+            ? Number(ventaExistente.total_neto)
+            : NaN;
+        const paidAmount = Number(fullPaymentData.transaction_amount);
+
+        if (!amountsMatch(paidAmount, expectedTotal)) {
+            const msg =
+                `[MP] Monto cobrado $${roundMoney(paidAmount)} no coincide con total_neto $${roundMoney(expectedTotal)} (pago #${paymentId})`;
+            console.error(`❌ [PaymentWebhookService] Venta #${idVenta}: ${msg}`);
+            await prisma.venta.update({
+                where: { id_venta: idVenta },
+                data: {
+                    estado_pago: 'cancelado',
+                    observaciones: [ventaExistente.observaciones, msg]
+                        .filter(Boolean)
+                        .join('\n'),
+                    actualizado_en: new Date(),
+                },
+            });
+            throw new Error(msg);
+        }
+
+        console.log(`💰 [PaymentWebhookService] Pago APROBADO - Confirmando venta #${idVenta}`);
+        const ventaConfirmada = await paymentProcessingService.confirmPayment(idVenta, {
+            metodoPago: 'mercadopago',
+            transactionId: paymentId,
+            paymentDate: fullPaymentData.date_approved
+                ? new Date(fullPaymentData.date_approved)
+                : new Date(),
+            notas: `Pago MP #${paymentId} - ${fullPaymentData.payment_method_id || fullPaymentData.payment_type_id}`,
+        });
+
+        return ventaConfirmada.estado_pago ?? 'aprobado';
+    }
+
+    private async markPaymentProcessed(paymentId: string): Promise<void> {
+        await prisma.mercado_pago_payments.update({
+            where: { payment_id: paymentId },
+            data: {
+                webhook_processed_at: new Date(),
+                updated_at: new Date(),
+            },
+        });
+    }
+
+    private async hasApprovedPaymentForVenta(
+        idVenta: number,
+        excludePaymentId?: string
+    ): Promise<boolean> {
+        const localApproved = await prisma.mercado_pago_payments.findFirst({
+            where: {
+                venta_id: idVenta,
+                status_mp: { in: ['approved', 'authorized'] },
+                ...(excludePaymentId ? { payment_id: { not: excludePaymentId } } : {}),
+            },
+            select: { payment_id: true },
+        });
+        return localApproved != null;
+    }
+
+    private async shouldBlockVentaDegradation(
+        idVenta: number,
+        estadoActual: string | null,
+        nuevoEstado: EstadoPago | string,
+        currentPaymentId: string
+    ): Promise<boolean> {
+        if (estadoActual === 'aprobado') {
+            return true;
+        }
+        if (nuevoEstado === 'aprobado') {
+            return false;
+        }
+        const degradingStates: string[] = ['rechazado', 'cancelado'];
+        if (!degradingStates.includes(String(nuevoEstado))) {
+            return false;
+        }
+        return this.hasApprovedPaymentForVenta(idVenta, currentPaymentId);
+    }
+
+    private async emitMpPaymentUpdated(
+        idVenta: number,
+        paymentId: string,
+        statusMp: string,
+        estadoPago: string | null
+    ): Promise<void> {
+        const event = SaleEventFactory.createMpPaymentUpdated({
+            id_venta: idVenta,
+            payment_id: paymentId,
+            status_mp: statusMp,
+            estado_pago: estadoPago ?? 'pendiente',
+            fecha: new Date().toISOString(),
+        });
+        await eventBus.emit(SaleEventType.MP_PAYMENT_UPDATED, event.payload).catch((error) => {
+            console.error('❌ [PaymentWebhookService] Error al emitir MP_PAYMENT_UPDATED:', error);
+        });
+    }
+
+    /**
      * Obtiene información completa del pago desde la API de Mercado Pago
      */
     private async getPaymentFromMercadoPago(paymentId: string): Promise<MercadoPagoPaymentResponse | null> {
@@ -364,7 +508,8 @@ class PaymentWebhookService {
     private buildPaymentData(
         fullPaymentData: MercadoPagoPaymentResponse,
         idVenta: number,
-        externalReference: string
+        externalReference: string,
+        markAsProcessed = true
     ): PaymentDataForPrisma {
         const estadoVenta = MP_STATUS_TO_VENTA_STATUS[fullPaymentData.status] || 'pendiente';
         const transactionDetails = fullPaymentData.transaction_details || {};
@@ -439,7 +584,7 @@ class PaymentWebhookService {
             payer_info: payerInfo,
             processing_mode: fullPaymentData.processing_mode || null,
             live_mode: fullPaymentData.live_mode,
-            webhook_processed_at: new Date(),
+            webhook_processed_at: markAsProcessed ? new Date() : null,
             updated_at: new Date(),
         };
     }

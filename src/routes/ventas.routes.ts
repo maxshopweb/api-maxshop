@@ -49,6 +49,12 @@ router.post(
     ventasController.createFromCheckout.bind(ventasController)
 );
 
+router.post(
+    '/checkout/mercadopago/sync',
+    checkoutRateLimiter,
+    ventasController.syncMercadoPagoPayment.bind(ventasController)
+);
+
 // Ruta para confirmar pago manual (solo admin)
 router.post(
     '/:id/confirmar-pago',

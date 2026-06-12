@@ -230,12 +230,18 @@ describe('PaymentProcessingService.confirmPayment', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('rechaza venta en estado no confirmable', async () => {
-      ventasState.getById.mockResolvedValue(
-        buildVentaPendiente({ estado_pago: 'rechazado' })
-      );
+    it('confirma venta en estado rechazado (segundo intento MP)', async () => {
+      const ventaRechazada = buildVentaPendiente({ estado_pago: 'rechazado' });
+      const ventaAprobada = buildVentaAprobadaSinEnvio();
 
-      await expect(service.confirmPayment(ID_VENTA)).rejects.toThrow(/pendiente o vencido/i);
+      ventasState.getById
+        .mockResolvedValueOnce(ventaRechazada)
+        .mockResolvedValueOnce(ventaAprobada)
+        .mockResolvedValue(ventaAprobada);
+
+      const result = await service.confirmPayment(ID_VENTA);
+      expect(result.estado_pago).toBe('aprobado');
+      expect(prisma.$transaction).toHaveBeenCalled();
     });
 
     it('confirma venta en estado vencido', async () => {

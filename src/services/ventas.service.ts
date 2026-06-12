@@ -1332,9 +1332,9 @@ export class VentasService {
 
         // 2. Si el estado de pago cambió a 'aprobado' (y antes era 'pendiente'), ejecutar confirmación primero
         if (
-            estadoPagoNuevo === 'aprobado' && 
+            estadoPagoNuevo === 'aprobado' &&
             estadoPagoAnterior !== 'aprobado' &&
-            estadoPagoAnterior === 'pendiente'
+            (estadoPagoAnterior === 'pendiente' || estadoPagoAnterior === 'rechazado')
         ) {
             
             try {
