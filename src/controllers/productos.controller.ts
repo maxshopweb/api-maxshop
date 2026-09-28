@@ -239,8 +239,15 @@ export class ProductosController {
             };
 
             res.json(response);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error en update:', error);
+            if (error?.code === 'P2002' && error?.meta?.target?.includes('codi_arti')) {
+                res.status(409).json({
+                    success: false,
+                    error: 'Ya existe un producto con ese código de artículo. Usá otro código.'
+                });
+                return;
+            }
             res.status(500).json({
                 success: false,
                 error: 'Error al actualizar producto'

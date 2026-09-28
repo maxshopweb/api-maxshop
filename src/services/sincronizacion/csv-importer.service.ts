@@ -1402,7 +1402,8 @@ export class CSVImporterService {
               img_principal: datos.img_principal,
               lista_precio_activa: 'V',
               activo: 'I',
-              estado: 0,
+              // Inactivo visible en admin (2). El 0 queda solo para soft-delete del panel.
+              estado: 2,
               publicado: false,
             },
           });
@@ -1549,8 +1550,13 @@ export class CSVImporterService {
     else if (codiimp2 && impuestosKeys.has(codiimp2)) codi_impuesto = codiimp2;
     else if (codiimp3 && impuestosKeys.has(codiimp3)) codi_impuesto = codiimp3;
 
+    // No revivir productos eliminados por el admin (estado 0).
     await prisma.productos.updateMany({
-      where: { codi_arti: codi_arti_truncado, ...this.whereProductoPermiteSyncErp() },
+      where: {
+        codi_arti: codi_arti_truncado,
+        estado: { not: 0 },
+        ...this.whereProductoPermiteSyncErp(),
+      },
       data: {
         codi_grupo,
         codi_categoria,
@@ -1561,7 +1567,7 @@ export class CSVImporterService {
         unidades_por_producto: unenarti != null ? unenarti : null,
         codi_barras: partarti || null,
         activo: actiarti === 'A' ? 'A' : (actiarti || 'I'),
-        estado: actiarti === 'A' ? 1 : 0,
+        estado: actiarti === 'A' ? 1 : 2,
         actualizado_en: new Date(),
       },
     });
@@ -1800,7 +1806,8 @@ export class CSVImporterService {
             stock_min,
             img_principal_csv: imagarti,
             activo: actiarti,
-            estado: actiarti === 'A' ? 1 : 0,
+            // Activo en ERP → 1; si no → 2 (inactivo visible). Nunca 0 (soft-delete admin).
+            estado: actiarti === 'A' ? 1 : 2,
           };
 
           todosLosProductos.push(producto);
@@ -1856,18 +1863,21 @@ export class CSVImporterService {
       try {
         const existente = await prisma.productos.findUnique({
           where: { codi_arti: producto.codi_arti },
-          select: { img_principal: true, precio_editado_manualmente: true },
+          select: { img_principal: true, precio_editado_manualmente: true, estado: true },
         });
+        const eliminadoPorAdmin = existente?.estado === 0;
 
         if (existente?.precio_editado_manualmente === true) {
-          // Si el precio está bloqueado por edición manual, igual sincronizamos stock y estado.
+          // Si el precio está bloqueado por edición manual, igual sincronizamos stock.
+          // No tocamos activo/estado si el admin ya lo eliminó (estado 0).
           await prisma.productos.update({
             where: { codi_arti: producto.codi_arti },
             data: {
               stock: producto.stock,
               stock_min: producto.stock_min,
-              activo: producto.activo,
-              estado: producto.estado,
+              ...(eliminadoPorAdmin
+                ? {}
+                : { activo: producto.activo, estado: producto.estado }),
               actualizado_en: new Date(),
             },
           });
@@ -1890,8 +1900,10 @@ export class CSVImporterService {
           codi_barras: producto.codi_barras,
           stock: producto.stock,
           stock_min: producto.stock_min,
-          activo: producto.activo,
-          estado: producto.estado,
+          // No revivir soft-delete del admin
+          ...(eliminadoPorAdmin
+            ? {}
+            : { activo: producto.activo, estado: producto.estado }),
           actualizado_en: new Date(),
         };
 
@@ -1965,7 +1977,8 @@ export class CSVImporterService {
             stock_min: producto.stock_min,
             img_principal: imgPrincipalCreate,
             activo: 'I',
-            estado: 0,
+            // Inactivo visible en admin (2). El 0 queda solo para soft-delete del panel.
+            estado: 2,
             publicado: false,
           },
         });
