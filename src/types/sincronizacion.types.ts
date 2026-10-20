@@ -73,6 +73,7 @@ export interface PrecioData {
   precioEspecial: number | null; // CODILIST = O
   precioPvp: number | null;     // CODILIST = P
   precioCampanya: number | null; // CODILIST = Q
+  precioManual: number | null;   // CODILIST = E (lista ESPECIAL del ERP)
   precioCosto?: number | null;   // CODILIST = C (opcional)
 }
 

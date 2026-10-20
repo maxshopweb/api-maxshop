@@ -337,7 +337,7 @@ model productos {
   precio_especial         Decimal?        @db.Decimal(19, 6)
   precio_pvp              Decimal?        @db.Decimal(19, 6)
   precio_venta            Decimal?        @db.Decimal(19, 6)
-  /** Precio cuando lista_precio_activa = 'E' (Precio especial). No se sobreescribe por sync. */
+  /** Precio de lista E (ERP). Se actualiza por sync salvo precio_editado_manualmente. */
   precio_manual            Decimal?        @db.Decimal(19, 6)
   /** Bonificación porcentual por defecto del producto (0-100). */
   bonificacion_porcentaje Decimal?        @db.Decimal(5, 2)

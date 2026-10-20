@@ -13,6 +13,11 @@ import sincronizacionService from './sincronizacion/sincronizacion.service';
 import { buildPrecioPresentacion } from './pricing.service';
 import { buildProductoTextSearchSql } from '../utils/search.utils';
 import { findProductoIdsByTextSearch } from '../utils/search-queries';
+import {
+    ERR_LISTA_E_SIN_PRECIO,
+    getPrecioNetoListaActiva,
+    isPrecioListaEValido,
+} from '../utils/precio-lista.utils';
 
 export type ProductoAuditContext = {
     userId: string;
@@ -55,21 +60,10 @@ export class ProductosService {
 
     /**
      * Obtiene el precio de la lista activa (sin IVA) según lista_precio_activa.
-     * Lista E (Precio especial): usa precio_manual, no se sobreescribe por sync.
+     * Lista E usa precio_manual (precio ERP de esa lista).
      */
     private getPrecioListaActiva(producto: any): number | null {
-        const lista = (producto.lista_precio_activa || 'V').toUpperCase();
-        const pv = producto.precio_venta != null ? Number(producto.precio_venta) : null;
-        const pe = producto.precio_especial != null ? Number(producto.precio_especial) : null;
-        const pp = producto.precio_pvp != null ? Number(producto.precio_pvp) : null;
-        const pc = producto.precio_campanya != null ? Number(producto.precio_campanya) : null;
-        const pm = producto.precio_manual != null ? Number(producto.precio_manual) : null;
-        if (lista === 'E') return pm;
-        if (lista === 'V') return pv;
-        if (lista === 'O') return pe;
-        if (lista === 'P') return pp;
-        if (lista === 'Q') return pc;
-        return pv ?? pe ?? pp ?? pc ?? pm;
+        return getPrecioNetoListaActiva(producto);
     }
 
     /**
@@ -147,7 +141,7 @@ export class ProductosService {
         return map;
     }
 
-    /** Solo flags para UI (oferta/campaña/precio especial E). No exponer nombre ni datos internos de lista. */
+    /** Flags y nombre de lista para UI (admin / tienda). */
     private buildListaActivaInfo(lista: IListaPrecio | undefined, codiListaOverride?: string): IListaActivaInfo | null {
         const codi = (lista?.codi_lista ?? codiListaOverride ?? '').toUpperCase();
         if (!codi) return null;
@@ -155,6 +149,7 @@ export class ProductosService {
         return {
             codi_lista: codi,
             tipo_lista: lista?.tipo_lista ?? null,
+            nombre: lista?.nombre ?? null,
             es_oferta: codi === 'O' || codi === 'E' || tipo === 'O' || tipo === 'E',
             es_campanya: codi === 'Q' || tipo === 'Q'
         };
@@ -325,7 +320,7 @@ export class ProductosService {
         if (destacado !== undefined) conditions.push(Prisma.sql`p.destacado = ${destacado}`);
         if (financiacion !== undefined) conditions.push(Prisma.sql`p.financiacion = ${financiacion}`);
         if (oferta === true) {
-            conditions.push(Prisma.sql`UPPER(COALESCE(p.lista_precio_activa, '')) IN ('O', 'Q')`);
+            conditions.push(Prisma.sql`UPPER(COALESCE(p.lista_precio_activa, '')) IN ('O', 'Q', 'E')`);
         }
         return conditions;
     }
@@ -474,8 +469,8 @@ export class ProductosService {
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (publicado !== undefined) whereClause.publicado = publicado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
-        // Filtro oferta: lista Especial (O) + campaña (Q), alineado con tienda
-        if (oferta === true) whereClause.lista_precio_activa = { in: ['O', 'Q'] };
+        // Filtro oferta: especial ERP (O, E) + campaña (Q)
+        if (oferta === true) whereClause.lista_precio_activa = { in: ['O', 'Q', 'E'] };
 
         // Filtros usando códigos del CSV
         // Si id_marca es un número, buscar el código primero
@@ -863,8 +858,10 @@ export class ProductosService {
                 : (rest.stock ?? 0) > 0
                     ? 1
                     : 2;
-        const esListaE = listaActiva === 'E';
-        const precioManual = esListaE && rest.precio_manual != null ? Number(rest.precio_manual) : null;
+        if (!isPrecioListaEValido(listaActiva, rest.precio_manual)) {
+            throw new Error(ERR_LISTA_E_SIN_PRECIO);
+        }
+        const precioManual = rest.precio_manual != null ? Number(rest.precio_manual) : null;
         const bonificacionPorcentaje = this.normalizePorcentajeBonificacion((rest as any).bonificacion_porcentaje);
         const manualEditCreate = this.shouldMarkManualEdit(auditContext);
 
@@ -972,12 +969,18 @@ export class ProductosService {
             precio_venta_referencia,
             ...updateData
         } = cleanDataForUpdate;
+        const listaFinal = listaActiva !== undefined
+            ? listaActiva
+            : productoAntes?.lista_precio_activa ?? null;
+        const precioManualFinal = data.precio_manual !== undefined
+            ? data.precio_manual
+            : productoAntes?.precio_manual ?? null;
+        if (!isPrecioListaEValido(listaFinal, precioManualFinal)) {
+            throw new Error(ERR_LISTA_E_SIN_PRECIO);
+        }
         const manualEditUpdate = this.shouldMarkManualEdit(auditContext);
-        const esListaE = listaActiva === 'E';
-        const precioManualUpdate = listaActiva !== undefined
-            ? (esListaE
-                ? (data.precio_manual !== undefined ? (data.precio_manual != null ? Number(data.precio_manual) : null) : undefined)
-                : null)
+        const precioManualUpdate = data.precio_manual !== undefined
+            ? (data.precio_manual != null ? Number(data.precio_manual) : null)
             : undefined;
         const bonificacionPorcentajeUpdate = (data as any).bonificacion_porcentaje !== undefined
             ? this.normalizePorcentajeBonificacion((data as any).bonificacion_porcentaje)
@@ -1092,7 +1095,7 @@ export class ProductosService {
     /**
      * Quita el bloqueo de sincronización ERP: pone `precio_editado_manualmente` en false para que
      * stock, precios, maestros e importación completa desde FTP/CSV vuelvan a actualizar el producto.
-     * También resetea lista E (`precio_manual` null, lista `V`) para alinear con datos del ERP.
+     * No cambia lista_precio_activa ni precios; la próxima sync completa E (precio_manual) y el resto.
      * No ejecuta la sync ni lee CSV; solo actualiza flags en BD.
      */
     async reanudarSincronizacionErp(id: number): Promise<IProductos> {
@@ -1107,8 +1110,6 @@ export class ProductosService {
             where: { id_prod: id },
             data: {
                 precio_editado_manualmente: false,
-                precio_manual: null,
-                lista_precio_activa: 'V',
                 actualizado_en: new Date()
             } as Prisma.productosUpdateInput,
         });
@@ -1164,8 +1165,6 @@ export class ProductosService {
             where: { id_prod: id },
             data: {
                 precio_editado_manualmente: false,
-                precio_manual: null,
-                lista_precio_activa: 'V',
                 actualizado_en: new Date(),
             } as Prisma.productosUpdateInput,
         });
@@ -1200,8 +1199,6 @@ export class ProductosService {
         const result = await prisma.productos.updateMany({
             data: {
                 precio_editado_manualmente: false,
-                precio_manual: null,
-                lista_precio_activa: 'V',
                 actualizado_en: new Date(),
             } as Prisma.productosUpdateInput,
         });
@@ -1796,7 +1793,7 @@ export class ProductosService {
 
         if (destacado !== undefined) whereClause.destacado = destacado;
         if (financiacion !== undefined) whereClause.financiacion = financiacion;
-        if (oferta === true) whereClause.lista_precio_activa = { in: ['O', 'Q'] };
+        if (oferta === true) whereClause.lista_precio_activa = { in: ['O', 'Q', 'E'] };
 
         const hasPrecioFilter = precio_min !== undefined || precio_max !== undefined;
         const useSqlPath = hasPrecioFilter || order_by === 'precio';

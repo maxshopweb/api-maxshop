@@ -18,7 +18,7 @@ La tabla `productos` incluye:
 - `codi_arti` (CODIARTI) - Código único del producto
 - `nombre` (DESCARTI)
 - Relaciones por código: `codi_categoria`, `codi_marca`, `codi_grupo`, `codi_impuesto`
-- **Listas de precio:** `precio_venta` (V), `precio_especial` (O), `precio_pvp` (P), `precio_campanya` (Q), `lista_precio_activa` (V|O|P|Q)
+- **Listas de precio:** `precio_venta` (V), `precio_especial` (O), `precio_pvp` (P), `precio_campanya` (Q), `precio_manual` (E), `lista_precio_activa` (V|O|P|Q|E; en updates no se pisa)
 - `unidad_medida` (UNMEARTI), `unidades_por_producto` (UNENARTI)
 - `codi_barras` (PARTARTI), `stock` (desde MAESSTOK), `img_principal` (IMAGARTI), `activo` (ACTIARTI)
 

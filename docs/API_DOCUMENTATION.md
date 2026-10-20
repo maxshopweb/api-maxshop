@@ -400,7 +400,7 @@ Convierte un usuario invitado a usuario completo.
 
 ## Productos
 
-**Listas de precio y bonificación:** Los productos tienen `lista_precio_activa` con valores `V` | `O` | `P` | `Q` | `E`. Con **E** (Precio especial) se usa el campo `precio_manual`, que no se sobreescribe por sincronización CSV. La bonificación se modela como `bonificacion_porcentaje` (0-100). En ventas, cada detalle puede incluir `bonificacion_porcentaje`; si no se envía, se usa la del producto y se aplica sobre el total de la línea.
+**Listas de precio y bonificación:** Los productos tienen `lista_precio_activa` con valores `V` | `O` | `P` | `Q` | `E`. **E** usa `precio_manual` y se actualiza por sincronización CSV (igual que V/O/P/Q), salvo que el producto esté en modo `precio_editado_manualmente`. Publicar con lista E requiere `precio_manual > 0`. La bonificación se modela como `bonificacion_porcentaje` (0-100). En ventas, cada detalle puede incluir `bonificacion_porcentaje`; si no se envía, se usa la del producto y se aplica sobre el total de la línea.
 
 ### GET /api/productos
 

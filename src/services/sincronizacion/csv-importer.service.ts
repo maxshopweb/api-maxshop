@@ -1039,6 +1039,7 @@ export class CSVImporterService {
           precioEspecial: null,
           precioPvp: null,
           precioCampanya: null,
+          precioManual: null,
           precioCosto: null,
         };
 
@@ -1060,6 +1061,11 @@ export class CSVImporterService {
         } else if (codilist === 'Q') {
           if (actual.precioCampanya === null || precio > actual.precioCampanya) {
             actual.precioCampanya = precio;
+            preciosCargados++;
+          }
+        } else if (codilist === 'E') {
+          if (actual.precioManual === null || precio > actual.precioManual) {
+            actual.precioManual = precio;
             preciosCargados++;
           }
         } else if (codilist === 'C') {
@@ -1189,7 +1195,7 @@ export class CSVImporterService {
    * Etapa 3: Actualiza solo precios en productos desde maesprec.csv.
    * No toca stock ni datos maestros. Reutiliza cargarPrecios().
    * No actualiza si precio_editado_manualmente es true (producto bajo edición manual en panel).
-   * No toca precio_manual ni lista_precio_activa.
+   * No toca lista_precio_activa (el admin elige con cuál lista se publica).
    */
   async actualizarSoloPrecios(csvDir: string): Promise<{ actualizados: number }> {
     const csvPath = path.join(csvDir, 'maesprec.csv');
@@ -1212,6 +1218,7 @@ export class CSVImporterService {
             precio_especial: precios.precioEspecial ?? null,
             precio_pvp: precios.precioPvp ?? null,
             precio_campanya: precios.precioCampanya ?? null,
+            precio_manual: precios.precioManual ?? null,
             actualizado_en: new Date(),
           },
         });
@@ -1501,6 +1508,7 @@ export class CSVImporterService {
           precio_especial: precios.precioEspecial ?? null,
           precio_pvp: precios.precioPvp ?? null,
           precio_campanya: precios.precioCampanya ?? null,
+          precio_manual: precios.precioManual ?? null,
           actualizado_en: new Date(),
         },
       });
@@ -1621,7 +1629,7 @@ export class CSVImporterService {
   private calcularScoreCompletitud(producto: any): number {
     let score = 0;
     if (producto.nombre && producto.nombre.trim()) score += 100;
-    const precioActivo = producto.precio_venta ?? producto.precio_especial ?? producto.precio_pvp ?? producto.precio_campanya;
+    const precioActivo = producto.precio_venta ?? producto.precio_especial ?? producto.precio_pvp ?? producto.precio_campanya ?? producto.precio_manual;
     if (precioActivo !== null && precioActivo > 0) score += 50;
     if (producto.codi_grupo && producto.codi_grupo.trim()) score += 20;
     if (producto.codi_categoria && producto.codi_categoria.trim()) score += 20;
@@ -1772,8 +1780,9 @@ export class CSVImporterService {
           const precio_especial = precios?.precioEspecial ?? null;
           const precio_pvp = precios?.precioPvp ?? null;
           const precio_campanya = precios?.precioCampanya ?? null;
+          const precio_manual = precios?.precioManual ?? null;
 
-          if (rowNum <= 100 && !precio_venta && !precio_especial && !precio_pvp && !precio_campanya) {
+          if (rowNum <= 100 && !precio_venta && !precio_especial && !precio_pvp && !precio_campanya && !precio_manual) {
             console.log(`⚠️ Producto ${codiartiLimpio} NO tiene precios en mapa`);
           }
 
@@ -1798,6 +1807,7 @@ export class CSVImporterService {
             precio_especial,
             precio_pvp,
             precio_campanya,
+            precio_manual,
             lista_precio_activa,
             unidad_medida: unmearti,
             unidades_por_producto: unenarti,
@@ -1884,8 +1894,8 @@ export class CSVImporterService {
           continue;
         }
 
-        // Listas V,O,P,Q desde CSV (producto no está en modo edición manual).
-        // No tocamos precio_manual ni lista_precio_activa (lista E u otras elecciones del usuario).
+        // Listas V,O,P,Q,E desde CSV (producto no está en modo edición manual).
+        // No tocamos lista_precio_activa: el admin elige con cuál lista se publica.
         const updateData: Record<string, unknown> = {
           codi_impuesto: producto.codi_impuesto,
           modelo: producto.modelo ?? null,
@@ -1893,7 +1903,8 @@ export class CSVImporterService {
           precio_especial: producto.precio_especial,
           precio_pvp: producto.precio_pvp,
           precio_campanya: producto.precio_campanya,
-          // No actualizar lista_precio_activa ni precio_manual: el usuario puede tener lista E
+          precio_manual: producto.precio_manual,
+          // No actualizar lista_precio_activa: el admin elige con cuál lista se publica
           // No actualizar codi_grupo, codi_categoria, codi_marca: pueden haber sido editados en el panel
           unidad_medida: producto.unidad_medida,
           unidades_por_producto: producto.unidades_por_producto,
@@ -1969,6 +1980,7 @@ export class CSVImporterService {
             precio_especial: producto.precio_especial,
             precio_pvp: producto.precio_pvp,
             precio_campanya: producto.precio_campanya,
+            precio_manual: producto.precio_manual,
             lista_precio_activa: producto.lista_precio_activa,
             unidad_medida: producto.unidad_medida,
             unidades_por_producto: producto.unidades_por_producto,

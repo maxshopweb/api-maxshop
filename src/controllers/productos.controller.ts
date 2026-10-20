@@ -5,6 +5,7 @@ import { ProductosService } from '../services/productos.service';
 import { ConfigTiendaService } from '../services/config-tienda.service';
 import { IApiResponse } from '../types';
 import { IProductoFilters, ICreateProductoDTO, IUpdateProductoDTO } from '../types/product.type';
+import { ERR_LISTA_E_SIN_PRECIO } from '../utils/precio-lista.utils';
 
 const productosService = new ProductosService();
 const configTiendaService = new ConfigTiendaService();
@@ -136,11 +137,19 @@ export class ProductosController {
             }
 
             const tienePrecio = data.precio_venta != null || data.precio_especial != null || data.precio_pvp != null || data.precio_campanya != null
-                || ((data.lista_precio_activa as string)?.toUpperCase() === 'E' && data.precio_manual != null);
+                || data.precio_manual != null;
             if (!data.nombre || !tienePrecio) {
                 res.status(400).json({
                     success: false,
-                    error: 'Nombre y al menos un precio por lista (precio_venta/V, precio_especial/O, precio_pvp/P, precio_campanya/Q, o lista E con precio_manual) son requeridos'
+                    error: 'Nombre y al menos un precio por lista (precio_venta/V, precio_especial/O, precio_pvp/P, precio_campanya/Q, precio_manual/E) son requeridos'
+                });
+                return;
+            }
+            if ((data.lista_precio_activa as string)?.toUpperCase() === 'E'
+                && (data.precio_manual == null || Number(data.precio_manual) <= 0)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Si la lista pública es E, el precio de lista E (precio_manual) debe ser mayor a 0'
                 });
                 return;
             }
@@ -182,6 +191,13 @@ export class ProductosController {
                 res.status(400).json({
                     success: false,
                     error: 'Algún dato es demasiado largo. Código de artículo máx. 10 caracteres, nombre 255, código de barras 22, unidad de medida 3.'
+                });
+                return;
+            }
+            if (error?.message === ERR_LISTA_E_SIN_PRECIO) {
+                res.status(400).json({
+                    success: false,
+                    error: ERR_LISTA_E_SIN_PRECIO
                 });
                 return;
             }
@@ -245,6 +261,13 @@ export class ProductosController {
                 res.status(409).json({
                     success: false,
                     error: 'Ya existe un producto con ese código de artículo. Usá otro código.'
+                });
+                return;
+            }
+            if (error?.message === ERR_LISTA_E_SIN_PRECIO) {
+                res.status(400).json({
+                    success: false,
+                    error: ERR_LISTA_E_SIN_PRECIO
                 });
                 return;
             }
