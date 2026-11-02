@@ -9,9 +9,13 @@ import { bannersService } from '../services/banners.service';
 import { buildImageUrl } from '../config/upload.config';
 
 function addUrl(banner: Record<string, unknown>) {
+  const imageUrl = banner.path_img ? buildImageUrl(String(banner.path_img)) : null;
+  const updatedAt = banner.actualizado_en;
+  const version = updatedAt ? new Date(String(updatedAt)).getTime() : NaN;
+
   return {
     ...banner,
-    url: banner.path_img ? buildImageUrl(String(banner.path_img)) : null,
+    url: imageUrl && Number.isFinite(version) ? `${imageUrl}?v=${version}` : imageUrl,
   };
 }
 

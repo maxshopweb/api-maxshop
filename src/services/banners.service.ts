@@ -62,7 +62,14 @@ export class BannersService {
         ...(tipo ? { tipo } : {}),
       },
       orderBy: { orden: 'asc' },
-      select: { id: true, orden: true, tipo: true, path_img: true, link: true },
+      select: {
+        id: true,
+        orden: true,
+        tipo: true,
+        path_img: true,
+        link: true,
+        actualizado_en: true,
+      },
     });
   }
 
