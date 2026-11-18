@@ -307,6 +307,11 @@ export interface IVenta {
     total_con_iva?: number | null;
     descuento_total?: number | null;
     total_neto?: number | null;
+    /** Cupón de checkout (pedido). Distinto de descuento_total (bonificación). */
+    id_cupon?: number | null;
+    codigo_cupon?: string | null;
+    descuento_cupon?: number | null;
+    descuento_transferencia?: number | null;
     metodo_pago?: MetodoPago | null;
     estado_pago?: EstadoPago | null;
     estado_envio?: EstadoEnvio | null;
@@ -407,6 +412,8 @@ export interface ICreateVentaDTO {
     observaciones?: string;
     detalles: IVentaDetalleDTO[];
     costo_envio?: number; // Costo del envío calculado desde cotización
+    /** Solo checkout online: código de cupón a aplicar sobre el subtotal de productos. */
+    codigo_cupon?: string | null;
     direccion?: IDireccionDTO; // Dirección de envío
     direccionFacturacion?: IDireccionDTO; // Dirección de facturación (opcional)
 }

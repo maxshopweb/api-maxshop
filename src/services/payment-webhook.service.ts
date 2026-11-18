@@ -22,6 +22,7 @@ import { prisma } from '../index';
 import { mercadoPagoService, MercadoPagoService, MercadoPagoPaymentResponse } from './mercado-pago.service';
 import { amountsMatch, roundMoney } from '../utils/money.utils';
 import { paymentProcessingService } from './payment-processing.service';
+import { cuponesService } from './cupones.service';
 import { lockService } from './lock.service';
 import { eventBus } from '../infrastructure/event-bus/event-bus';
 import { SaleEventType, SaleEventFactory } from '../domain/events/sale.events';
@@ -410,6 +411,9 @@ class PaymentWebhookService {
                         .join('\n'),
                     actualizado_en: new Date(),
                 },
+            });
+            await cuponesService.releaseForVenta(idVenta).catch((err) => {
+                console.error(`❌ [PaymentWebhookService] Error al liberar cupón venta #${idVenta}:`, err);
             });
             throw new Error(msg);
         }

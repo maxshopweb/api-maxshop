@@ -299,6 +299,9 @@ model negocio {
   cuotas_sin_interes        Decimal? @db.Decimal(12, 2)
   cuotas_sin_interes_activo Boolean  @default(true)
   cuotas_sin_interes_minimo Decimal? @db.Decimal(12, 2)
+  /** Descuento global (%) sobre el precio publicado al pagar por transferencia. */
+  descuento_transferencia_activo Boolean @default(false)
+  descuento_transferencia_pct    Decimal? @db.Decimal(5, 2)
   // Datos bancarios (transferencia / efectivo)
   banco                     String?  @db.VarChar(100)
   tipo_cuenta               String?  @db.VarChar(50)
@@ -441,6 +444,12 @@ model venta {
   total_con_iva         Decimal?                @db.Decimal(10, 2)
   descuento_total       Decimal?                @db.Decimal(10, 2)
   total_neto            Decimal?                @db.Decimal(10, 2)
+  /** Cupón de checkout (pedido). Distinto de descuento_total (bonificación de producto). */
+  id_cupon              Int?
+  codigo_cupon          String?                 @db.VarChar(64)
+  descuento_cupon       Decimal?                @db.Decimal(10, 2)
+  /** Descuento por transferencia (pedido). Distinto de cupón y de bonificación. */
+  descuento_transferencia Decimal?              @db.Decimal(10, 2)
   metodo_pago           String?                 @db.VarChar(50)
   estado_pago           String?                 @db.VarChar(50)
   estado_envio          String?                 @db.VarChar(50)
@@ -459,6 +468,8 @@ model venta {
   envios                envios[]
   cliente               cliente?                @relation(fields: [id_cliente], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
   usuarios              usuarios?               @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction)
+  cupon                 cupones?                @relation(fields: [id_cupon], references: [id_cupon], onDelete: SetNull, onUpdate: NoAction)
+  cupon_canjes          cupon_canjes[]
   venta_detalle         venta_detalle[]
   mercado_pago_payments mercado_pago_payments[]
   direcciones           direcciones[]
@@ -468,6 +479,45 @@ model venta {
   @@index([fecha], map: "idx_venta_fecha")
   @@index([estado_pago], map: "idx_venta_estado_pago")
   @@index([cod_interno], map: "idx_venta_cod_interno")
+  @@index([id_cupon], map: "idx_venta_cupon")
+}
+
+model cupones {
+  id_cupon       Int            @id @default(autoincrement())
+  codigo         String         @unique @db.VarChar(64)
+  tipo           String         @db.VarChar(20) // porcentaje | monto_fijo
+  valor          Decimal        @db.Decimal(10, 2)
+  monto_minimo   Decimal        @default(0) @db.Decimal(10, 2)
+  usos_maximos   Int            @default(1)
+  usos_actuales  Int            @default(0)
+  fecha_inicio   DateTime?      @db.Timestamp(6)
+  fecha_fin      DateTime?      @db.Timestamp(6)
+  activo         Boolean        @default(true)
+  creado_en      DateTime       @default(now()) @db.Timestamp(6)
+  actualizado_en DateTime       @default(now()) @db.Timestamp(6)
+  ventas         venta[]
+  canjes         cupon_canjes[]
+
+  @@index([activo], map: "idx_cupones_activo")
+  @@index([activo, codigo], map: "idx_cupones_activo_codigo")
+  @@map("cupones")
+}
+
+model cupon_canjes {
+  id_canje       Int      @id @default(autoincrement())
+  id_cupon       Int
+  id_venta       Int
+  monto_aplicado Decimal  @db.Decimal(10, 2)
+  estado         String   @default("aplicado") @db.VarChar(20) // aplicado | liberado
+  creado_en      DateTime @default(now()) @db.Timestamp(6)
+  liberado_en    DateTime? @db.Timestamp(6)
+  cupon          cupones  @relation(fields: [id_cupon], references: [id_cupon], onDelete: Restrict, onUpdate: NoAction)
+  venta          venta    @relation(fields: [id_venta], references: [id_venta], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([id_venta], map: "uk_cupon_canjes_venta")
+  @@index([id_cupon], map: "idx_cupon_canjes_cupon")
+  @@index([estado], map: "idx_cupon_canjes_estado")
+  @@map("cupon_canjes")
 }
 
 model venta_detalle {

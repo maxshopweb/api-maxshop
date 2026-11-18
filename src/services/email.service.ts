@@ -247,6 +247,26 @@ class EmailService {
                                     </tr>
                                     `
                                         : ''}
+                                    ${venta.descuento_transferencia != null && Number(venta.descuento_transferencia) > 0
+                                        ? `
+                                    <tr>
+                                        <td style="padding: 5px 0; color: #666666;">Descuento por transferencia:</td>
+                                        <td style="padding: 5px 0; text-align: right; color: #22c55e;">
+                                            -$${Number(venta.descuento_transferencia).toFixed(2)}
+                                        </td>
+                                    </tr>
+                                    `
+                                        : ''}
+                                    ${venta.descuento_cupon != null && Number(venta.descuento_cupon) > 0
+                                        ? `
+                                    <tr>
+                                        <td style="padding: 5px 0; color: #666666;">Cupón${venta.codigo_cupon ? ` ${venta.codigo_cupon}` : ''}:</td>
+                                        <td style="padding: 5px 0; text-align: right; color: #22c55e;">
+                                            -$${Number(venta.descuento_cupon).toFixed(2)}
+                                        </td>
+                                    </tr>
+                                    `
+                                        : ''}
                                     <tr>
                                         <td style="padding: 10px 0; font-size: 18px; font-weight: bold; color: #171c35;">Total:</td>
                                         <td style="padding: 10px 0; text-align: right; font-size: 18px; font-weight: bold; color: #e88a42;">

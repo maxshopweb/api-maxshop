@@ -12,6 +12,8 @@ const ALLOWED_KEYS: (keyof IUpdateConfigTiendaDTO)[] = [
   'cuotas_sin_interes',
   'cuotas_sin_interes_activo',
   'cuotas_sin_interes_minimo',
+  'descuento_transferencia_activo',
+  'descuento_transferencia_pct',
   'datos_bancarios',
   'modo_mantenimiento',
   'nombre',
@@ -33,12 +35,17 @@ function toUpdateDto(body: unknown): IUpdateConfigTiendaDTO {
     dto.cuotas_sin_interes_activo = Boolean(src.cuotas_sin_interes_activo);
   if ('cuotas_sin_interes_minimo' in src && src.cuotas_sin_interes_minimo !== undefined)
     dto.cuotas_sin_interes_minimo = Number(src.cuotas_sin_interes_minimo);
+  if ('descuento_transferencia_activo' in src && src.descuento_transferencia_activo !== undefined)
+    dto.descuento_transferencia_activo = Boolean(src.descuento_transferencia_activo);
+  if ('descuento_transferencia_pct' in src && src.descuento_transferencia_pct !== undefined)
+    dto.descuento_transferencia_pct = Number(src.descuento_transferencia_pct);
   if ('datos_bancarios' in src) dto.datos_bancarios = src.datos_bancarios as IUpdateConfigTiendaDTO['datos_bancarios'];
   if ('modo_mantenimiento' in src && src.modo_mantenimiento !== undefined)
     dto.modo_mantenimiento = Boolean(src.modo_mantenimiento);
   if ('nombre' in src) dto.nombre = src.nombre == null ? null : String(src.nombre);
   if ('direccion' in src) dto.direccion = src.direccion == null ? null : String(src.direccion);
   if ('telefono' in src) dto.telefono = src.telefono == null ? null : String(src.telefono);
+  void ALLOWED_KEYS;
   return dto;
 }
 

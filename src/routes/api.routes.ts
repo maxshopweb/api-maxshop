@@ -23,6 +23,7 @@ import configTiendaRoutes from './config-tienda.routes';
 import bannersRoutes from './banners.routes';
 import auditoriaRoutes from './auditoria.routes';
 import adminStaffRoutes from './admin-staff.routes';
+import cuponesRoutes from './cupones.routes';
 import { publicRateLimiter, webhookRateLimiter } from '../middlewares/rate-limit.middleware';
 
 const apiRoutes = Router();
@@ -39,6 +40,7 @@ apiRoutes.use('/productos', productosRoutes);
 apiRoutes.use('/config/tienda', configTiendaRoutes);
 apiRoutes.use('/banners', bannersRoutes);
 apiRoutes.use('/location', locationRoutes);
+apiRoutes.use('/cupones', cuponesRoutes);
 
 // Webhooks (rate limiting especial)
 apiRoutes.use('/webhooks', webhookRateLimiter, webhookRoutes);

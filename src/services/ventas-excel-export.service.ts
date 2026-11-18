@@ -15,6 +15,7 @@ import {
     normalizarNombreProvincia,
 } from './handlers/sale-created/utils/excel-formatters';
 import { EventContext } from './handlers/handler.interface';
+import { computeCabeceraDiferenciaEnvio } from '../utils/ventas-excel-cabecera.utils';
 
 /** Columnas obligatorias del diccionario: vacías se rellenan con espacio para lectores externos. */
 const REQUIRED_VENTAS_EXCEL_KEYS = [
@@ -82,6 +83,11 @@ export class VentasExcelExportService {
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
             total_neto: venta.total_neto ? Number(venta.total_neto) : null,
+            id_cupon: venta.id_cupon ?? null,
+            codigo_cupon: venta.codigo_cupon ?? null,
+            descuento_cupon: venta.descuento_cupon != null ? Number(venta.descuento_cupon) : null,
+            descuento_transferencia:
+                venta.descuento_transferencia != null ? Number(venta.descuento_transferencia) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
@@ -494,7 +500,17 @@ export class VentasExcelExportService {
 
             const totalConIvaNum = venta.total_con_iva ? Number(venta.total_con_iva) : 0;
             const totalNetoNum = venta.total_neto ? Number(venta.total_neto) : 0;
-            const diferencia = totalConIvaNum - totalNetoNum;
+            // Cupón y transferencia bajan total_neto sin tocar total_con_iva; se restan
+            // para que AH siga reflejando solo la diferencia de envío (legacy).
+            const descuentoCuponNum = venta.descuento_cupon != null ? Number(venta.descuento_cupon) : 0;
+            const descuentoTransferNum =
+                venta.descuento_transferencia != null ? Number(venta.descuento_transferencia) : 0;
+            const diferencia = computeCabeceraDiferenciaEnvio(
+                totalConIvaNum,
+                totalNetoNum,
+                descuentoCuponNum,
+                descuentoTransferNum
+            );
 
             const cabeceraVenta: VentaExcelRow = {
                 ...buildVentaBaseRow(),

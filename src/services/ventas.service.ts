@@ -17,6 +17,9 @@ import { computeLineaVentaPricing, normalizeBonificacionPct } from './pricing.se
 import { ventasExcelExportService, VENTA_EXCEL_INCLUDE } from './ventas-excel-export.service';
 import { EMPTY_ID_FILTER, findVentaIdsByTextSearch } from '../utils/search-queries';
 import { buildCheckoutResultUrl } from '../utils/checkout-result-url.utils';
+import { cuponesService } from './cupones.service';
+import type { ICuponAplicado } from '../types/cupones.type';
+import { computeDescuentoTransferencia } from '../utils/precio-medios.utils';
 
 const configTiendaService = new ConfigTiendaService();
 const productosService = new ProductosService();
@@ -195,6 +198,10 @@ export class VentasService {
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
             total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
+            id_cupon: venta.id_cupon ?? null,
+            codigo_cupon: venta.codigo_cupon ?? null,
+            descuento_cupon: venta.descuento_cupon != null ? Number(venta.descuento_cupon) : null,
+            descuento_transferencia: venta.descuento_transferencia != null ? Number(venta.descuento_transferencia) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
@@ -303,6 +310,10 @@ export class VentasService {
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
             total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
+            id_cupon: venta.id_cupon ?? null,
+            codigo_cupon: venta.codigo_cupon ?? null,
+            descuento_cupon: venta.descuento_cupon != null ? Number(venta.descuento_cupon) : null,
+            descuento_transferencia: venta.descuento_transferencia != null ? Number(venta.descuento_transferencia) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
@@ -397,6 +408,10 @@ export class VentasService {
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
             total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
+            id_cupon: venta.id_cupon ?? null,
+            codigo_cupon: venta.codigo_cupon ?? null,
+            descuento_cupon: venta.descuento_cupon != null ? Number(venta.descuento_cupon) : null,
+            descuento_transferencia: venta.descuento_transferencia != null ? Number(venta.descuento_transferencia) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,
@@ -553,8 +568,35 @@ export class VentasService {
         totalSinIva = roundMoney(totalSinIva);
         totalConIva = roundMoney(totalConIva);
 
+        // Descuento por transferencia: solo online + método transferencia. No toca líneas.
+        let descuentoTransferencia = 0;
+        if (data.tipo_venta === 'online' && data.metodo_pago === 'transferencia') {
+            const configTienda = await configTiendaService.getConfig();
+            descuentoTransferencia = computeDescuentoTransferencia(totalConIva, configTienda);
+        }
+        const subtotalTrasTransferencia = roundMoney(
+            Math.max(0, totalConIva - descuentoTransferencia)
+        );
+
+        // Cupón de pedido: solo checkout online. No altera líneas ni descuento_total (bonificación).
+        // Se valida sobre el subtotal ya descontado por transferencia.
+        let cuponAplicado: ICuponAplicado | null = null;
+        if (data.tipo_venta === 'online' && data.codigo_cupon) {
+            cuponAplicado = await cuponesService.resolveForCheckout(
+                data.codigo_cupon,
+                subtotalTrasTransferencia
+            );
+        } else if (data.tipo_venta !== 'online' && data.codigo_cupon) {
+            throw Object.assign(new Error('Los cupones solo aplican en ventas online'), {
+                statusCode: 400,
+            });
+        }
+        const descuentoCupon = cuponAplicado ? cuponAplicado.monto_descuento : 0;
+
         const costoEnvio = data.costo_envio || 0;
-        const totalNeto = roundMoney(totalConIva + costoEnvio);
+        const totalNeto = roundMoney(
+            totalConIva - descuentoTransferencia - descuentoCupon + costoEnvio
+        );
 
         // Si se proporciona id_cliente, verificar que exista o crearlo
         let idClienteFinal = data.id_cliente;
@@ -609,6 +651,10 @@ export class VentasService {
                     total_con_iva: totalConIva,
                     descuento_total: descuentoTotal,
                     total_neto: totalNeto,
+                    id_cupon: cuponAplicado?.id_cupon ?? null,
+                    codigo_cupon: cuponAplicado?.codigo ?? null,
+                    descuento_cupon: cuponAplicado ? descuentoCupon : null,
+                    descuento_transferencia: descuentoTransferencia > 0 ? descuentoTransferencia : null,
                     metodo_pago: data.metodo_pago,
                     estado_pago: 'pendiente',
                     estado_envio: 'pendiente',
@@ -630,6 +676,10 @@ export class VentasService {
                     },
                 },
             });
+
+            if (cuponAplicado) {
+                await cuponesService.redeemAtomically(tx, cuponAplicado, ventaCreada.id_venta);
+            }
 
             // 2. Generar cod_interno en formato "MAX-00000001"
             const codInterno = 'MAX-' + ventaCreada.id_venta.toString().padStart(8, '0');
@@ -715,6 +765,7 @@ export class VentasService {
             }>;
             observaciones?: string;
             costo_envio?: number; // Costo del envío calculado desde cotización
+            codigo_cupon?: string | null;
             id_direccion?: string; // ID de dirección guardada (opcional)
             // Datos de documento del cliente
             tipo_documento?: string; // DNI, CUIT, etc.
@@ -866,6 +917,7 @@ export class VentasService {
                 tipo_venta: 'online', // Siempre online desde checkout
                 observaciones: data.observaciones,
                 costo_envio: data.costo_envio,
+                codigo_cupon: data.codigo_cupon || null,
                 detalles: data.detalles.map((detalle) => ({
                     id_prod: detalle.id_prod,
                     cantidad: detalle.cantidad,
@@ -1065,6 +1117,7 @@ export class VentasService {
                                 actualizado_en: new Date(),
                             },
                         });
+                        await cuponesService.releaseForVenta(venta.id_venta);
                     } catch (cleanupError) {
                         console.error(`❌ [VentasService] Error al cancelar venta #${venta.id_venta} tras falla de MP:`, cleanupError);
                     }
@@ -1459,6 +1512,10 @@ export class VentasService {
             },
         });
 
+        await cuponesService.releaseForVenta(id).catch((error) => {
+            console.error(`❌ [VentasService] Error al liberar cupón de venta #${id}:`, error);
+        });
+
         await cacheService.delete(`venta:${id}`);
         await cacheService.deletePattern('ventas:*');
 
@@ -1777,6 +1834,10 @@ export class VentasService {
             total_con_iva: venta.total_con_iva ? Number(venta.total_con_iva) : null,
             descuento_total: venta.descuento_total ? Number(venta.descuento_total) : null,
             total_neto: venta.total_neto != null ? Number(venta.total_neto) : null,
+            id_cupon: venta.id_cupon ?? null,
+            codigo_cupon: venta.codigo_cupon ?? null,
+            descuento_cupon: venta.descuento_cupon != null ? Number(venta.descuento_cupon) : null,
+            descuento_transferencia: venta.descuento_transferencia != null ? Number(venta.descuento_transferencia) : null,
             metodo_pago: venta.metodo_pago as any,
             estado_pago: venta.estado_pago as any,
             estado_envio: venta.estado_envio as any,

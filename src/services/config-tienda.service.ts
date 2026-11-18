@@ -18,6 +18,8 @@ const DEFAULTS: IConfigTienda = {
   cuotas_sin_interes: 3,
   cuotas_sin_interes_activo: true,
   cuotas_sin_interes_minimo: 80000,
+  descuento_transferencia_activo: false,
+  descuento_transferencia_pct: 0,
   datos_bancarios: null,
   modo_mantenimiento: false,
   nombre: null,
@@ -32,6 +34,8 @@ type NegocioRow = {
   cuotas_sin_interes: unknown;
   cuotas_sin_interes_activo: boolean | null;
   cuotas_sin_interes_minimo: unknown;
+  descuento_transferencia_activo?: boolean | null;
+  descuento_transferencia_pct?: unknown;
   modo_mantenimiento?: boolean | null;
   nombre?: string | null;
   direccion?: string | null;
@@ -95,6 +99,9 @@ function fromDb(row: NegocioRow): IConfigTienda {
     cuotas_sin_interes_activo: row.cuotas_sin_interes_activo ?? true,
     cuotas_sin_interes_minimo:
       row.cuotas_sin_interes_minimo != null ? Number(row.cuotas_sin_interes_minimo) : null,
+    descuento_transferencia_activo: row.descuento_transferencia_activo ?? false,
+    descuento_transferencia_pct:
+      row.descuento_transferencia_pct != null ? Number(row.descuento_transferencia_pct) : null,
     datos_bancarios: mapToDatosBancarios(row),
     modo_mantenimiento: row.modo_mantenimiento ?? false,
     nombre: toStr(row.nombre),
@@ -117,6 +124,8 @@ export class ConfigTiendaService {
     cuotas_sin_interes: true,
     cuotas_sin_interes_activo: true,
     cuotas_sin_interes_minimo: true,
+    descuento_transferencia_activo: true,
+    descuento_transferencia_pct: true,
     modo_mantenimiento: true,
     direccion: true,
     logo: true,
@@ -139,6 +148,10 @@ export class ConfigTiendaService {
       cuotas_sin_interes_activo: config.cuotas_sin_interes_activo ?? DEFAULTS.cuotas_sin_interes_activo,
       cuotas_sin_interes_minimo:
         config.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo,
+      descuento_transferencia_activo:
+        config.descuento_transferencia_activo ?? DEFAULTS.descuento_transferencia_activo,
+      descuento_transferencia_pct:
+        config.descuento_transferencia_pct ?? DEFAULTS.descuento_transferencia_pct,
       datos_bancarios: config.datos_bancarios,
       modo_mantenimiento: config.modo_mantenimiento ?? DEFAULTS.modo_mantenimiento,
       nombre: config.nombre ?? DEFAULTS.nombre,
@@ -179,20 +192,36 @@ export class ConfigTiendaService {
       DEFAULTS.cuotas_sin_interes_activo;
     const cuotasMin =
       dto.cuotas_sin_interes_minimo ?? current.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo;
+    const transferActivo =
+      dto.descuento_transferencia_activo ??
+      current.descuento_transferencia_activo ??
+      DEFAULTS.descuento_transferencia_activo;
+    const transferPct =
+      dto.descuento_transferencia_pct ??
+      current.descuento_transferencia_pct ??
+      DEFAULTS.descuento_transferencia_pct ??
+      0;
     const envioNum = Number(envio);
     const cuotasNum = Number(cuotas);
     const cuotasMinNum = Number(cuotasMin);
+    const transferPctNum = Math.min(100, Math.max(0, Number(transferPct)));
     const currentEnvio = current.envio_gratis_minimo ?? DEFAULTS.envio_gratis_minimo;
     const currentEnvioActivo = current.envio_gratis_activo ?? DEFAULTS.envio_gratis_activo;
     const currentCuotas = current.cuotas_sin_interes ?? DEFAULTS.cuotas_sin_interes;
     const currentCuotasActivo = current.cuotas_sin_interes_activo ?? DEFAULTS.cuotas_sin_interes_activo;
     const currentCuotasMin = current.cuotas_sin_interes_minimo ?? DEFAULTS.cuotas_sin_interes_minimo;
+    const currentTransferActivo =
+      current.descuento_transferencia_activo ?? DEFAULTS.descuento_transferencia_activo;
+    const currentTransferPct =
+      current.descuento_transferencia_pct ?? DEFAULTS.descuento_transferencia_pct ?? 0;
     const reglasUnchanged =
       envioNum === currentEnvio &&
       envioActivo === currentEnvioActivo &&
       cuotasNum === currentCuotas &&
       cuotasActivo === currentCuotasActivo &&
-      cuotasMinNum === currentCuotasMin;
+      cuotasMinNum === currentCuotasMin &&
+      transferActivo === currentTransferActivo &&
+      transferPctNum === Number(currentTransferPct);
     const noBankUpdate = dto.datos_bancarios === undefined;
     const noMaintenanceUpdate = dto.modo_mantenimiento === undefined;
     const noStoreUpdate =
@@ -205,6 +234,8 @@ export class ConfigTiendaService {
       cuotas_sin_interes: String(cuotasNum),
       cuotas_sin_interes_activo: cuotasActivo,
       cuotas_sin_interes_minimo: String(cuotasMinNum),
+      descuento_transferencia_activo: transferActivo,
+      descuento_transferencia_pct: String(transferPctNum),
     };
 
     if (dto.modo_mantenimiento !== undefined) {
@@ -270,6 +301,10 @@ export class ConfigTiendaService {
       cuotas_sin_interes: String(dto.cuotas_sin_interes ?? 3),
       cuotas_sin_interes_activo: dto.cuotas_sin_interes_activo ?? true,
       cuotas_sin_interes_minimo: String(dto.cuotas_sin_interes_minimo ?? 80000),
+      descuento_transferencia_activo: dto.descuento_transferencia_activo ?? false,
+      descuento_transferencia_pct: String(
+        Math.min(100, Math.max(0, Number(dto.descuento_transferencia_pct ?? 0)))
+      ),
       modo_mantenimiento: dto.modo_mantenimiento ?? false,
     };
     if (dto.datos_bancarios && typeof dto.datos_bancarios === 'object') {

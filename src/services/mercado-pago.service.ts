@@ -672,25 +672,72 @@ class MercadoPagoService {
 
     /**
      * Ítems de preferencia MP: precio final por línea + envío si total_neto lo incluye.
+     * Con cupón de pedido: se prorratea el descuento entre productos (última línea absorbe
+     * el redondeo) y el envío se toma del costo real (no de la diferencia bruta).
      */
     static buildPreferenceItemsFromVenta(venta: IVenta, totalNeto: number): PreferenceItem[] {
         const detalles = venta.detalles || [];
-        const items: PreferenceItem[] = detalles.map((detalle: IVentaDetalle) => {
-            const nombre = detalle.producto?.nombre || `Producto ${detalle.id_prod}`;
+        const descuentoCupon = roundMoney(Math.max(0, Number(venta.descuento_cupon) || 0));
+
+        const lineBases = detalles.map((detalle: IVentaDetalle) => {
             const cantidad = detalle.cantidad != null && detalle.cantidad > 0 ? detalle.cantidad : 1;
+            const subtotal = MercadoPagoService.getDetalleSubtotalFinal(detalle);
+            return { detalle, cantidad, subtotal };
+        });
+        const linesGross = roundMoney(
+            lineBases.reduce((sum, line) => sum + line.subtotal, 0)
+        );
+
+        let remainingCoupon = descuentoCupon;
+        const items: PreferenceItem[] = lineBases.map((line, index) => {
+            const isLast = index === lineBases.length - 1;
+            let share = 0;
+            if (descuentoCupon > 0 && linesGross > 0) {
+                share = isLast
+                    ? remainingCoupon
+                    : roundMoney(descuentoCupon * (line.subtotal / linesGross));
+                if (!isLast) {
+                    remainingCoupon = roundMoney(remainingCoupon - share);
+                }
+            }
+            const netLine = roundMoney(Math.max(0, line.subtotal - share));
+            const unitPrice = roundMoney(netLine / line.cantidad);
+            const nombre = line.detalle.producto?.nombre || `Producto ${line.detalle.id_prod}`;
             return {
-                id: detalle.id_prod?.toString(),
+                id: line.detalle.id_prod?.toString(),
                 title: nombre.length > 256 ? nombre.substring(0, 256) : nombre,
-                description: detalle.producto?.descripcion?.substring(0, 256) || undefined,
-                quantity: cantidad,
-                unit_price: MercadoPagoService.getDetalleUnitPriceForMp(detalle),
+                description: line.detalle.producto?.descripcion?.substring(0, 256) || undefined,
+                quantity: line.cantidad,
+                unit_price: unitPrice,
                 currency_id: 'ARS',
-                picture_url: MercadoPagoService.resolvePictureUrl(detalle.producto?.img_principal),
+                picture_url: MercadoPagoService.resolvePictureUrl(line.detalle.producto?.img_principal),
             };
         });
 
-        const linesTotal = sumPreferenceItems(items);
-        const envioMonto = roundMoney(totalNeto - linesTotal);
+        // Ajuste de centavos: unit_price * qty puede diferir del neto prorrateado.
+        const productsSum = sumPreferenceItems(items);
+        const expectedProducts = roundMoney(Math.max(0, linesGross - descuentoCupon));
+        const productsDiff = roundMoney(expectedProducts - productsSum);
+        if (Math.abs(productsDiff) >= 0.01 && items.length > 0) {
+            const last = items[items.length - 1];
+            const qty = last.quantity > 0 ? last.quantity : 1;
+            last.unit_price = roundMoney(last.unit_price + productsDiff / qty);
+        }
+
+        let envioMonto: number;
+        if (descuentoCupon > 0) {
+            const envioFromRecord =
+                venta.envio?.costo_envio != null && Number.isFinite(Number(venta.envio.costo_envio))
+                    ? roundMoney(Math.max(0, Number(venta.envio.costo_envio)))
+                    : null;
+            envioMonto =
+                envioFromRecord != null
+                    ? envioFromRecord
+                    : roundMoney(Math.max(0, totalNeto - expectedProducts));
+        } else {
+            envioMonto = roundMoney(totalNeto - sumPreferenceItems(items));
+        }
+
         if (envioMonto > 0.01) {
             items.push({
                 id: 'envio',

@@ -74,6 +74,39 @@ describe('MercadoPagoService — pricing estático', () => {
     const items = MercadoPagoService.buildPreferenceItemsFromVenta(venta as any, 1089);
     expect(items[0].unit_price).toBe(1089);
   });
+
+  it('buildPreferenceItemsFromVenta prorratea cupón y mantiene envío real', () => {
+    const venta = {
+      id_venta: 2,
+      total_neto: 1100, // productos 1200 - cupón 200 + envío 100
+      descuento_cupon: 200,
+      envio: { costo_envio: 100 },
+      detalles: [
+        {
+          id_prod: 1,
+          cantidad: 1,
+          precio_unitario: 800,
+          sub_total: 800,
+          producto: { nombre: 'A' },
+        },
+        {
+          id_prod: 2,
+          cantidad: 1,
+          precio_unitario: 400,
+          sub_total: 400,
+          producto: { nombre: 'B' },
+        },
+      ],
+    };
+    const items = MercadoPagoService.buildPreferenceItemsFromVenta(venta as any, 1100);
+    const products = items.filter((i) => i.id !== 'envio');
+    const envio = items.find((i) => i.id === 'envio');
+    const productsSum = products.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+    expect(Math.round(productsSum * 100) / 100).toBe(1000);
+    expect(envio?.unit_price).toBe(100);
+    const total = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+    expect(Math.round(total * 100) / 100).toBe(1100);
+  });
 });
 
 describe('MercadoPagoService — utilidades estáticas', () => {

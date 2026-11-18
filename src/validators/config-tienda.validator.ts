@@ -42,6 +42,16 @@ export function configTiendaUpdateValidators(): ValidationChain[] {
       .isNumeric()
       .withMessage('cuotas_sin_interes_minimo debe ser numérico')
       .toFloat(),
+    body('descuento_transferencia_activo')
+      .optional()
+      .isBoolean({ strict: true })
+      .withMessage('descuento_transferencia_activo debe ser booleano')
+      .toBoolean(),
+    body('descuento_transferencia_pct')
+      .optional()
+      .isFloat({ min: 0, max: 100 })
+      .withMessage('descuento_transferencia_pct debe ser un número entre 0 y 100')
+      .toFloat(),
     body('modo_mantenimiento')
       .optional()
       .isBoolean({ strict: true })
