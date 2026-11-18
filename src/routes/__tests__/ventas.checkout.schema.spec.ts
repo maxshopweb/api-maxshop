@@ -51,4 +51,58 @@ describe('checkoutBodySchema', () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it.each(['mercadopago', 'efectivo', 'transferencia'] as const)(
+    'acepta codigo_cupon con medio %s',
+    (metodo) => {
+      const r = checkoutBodySchema.safeParse({
+        metodo_pago: metodo,
+        detalles: [{ id_prod: 1, cantidad: 1 }],
+        codigo_cupon: 'PROMO10',
+      });
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data.codigo_cupon).toBe('PROMO10');
+      }
+    }
+  );
+
+  it('acepta payload sin codigo_cupon', () => {
+    const r = checkoutBodySchema.safeParse(validPayload);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.codigo_cupon).toBeUndefined();
+    }
+  });
+
+  it('normaliza codigo_cupon vacío a undefined', () => {
+    const r = checkoutBodySchema.safeParse({
+      ...validPayload,
+      codigo_cupon: '',
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.codigo_cupon).toBeUndefined();
+    }
+  });
+
+  it('normaliza codigo_cupon null a undefined', () => {
+    const r = checkoutBodySchema.safeParse({
+      ...validPayload,
+      codigo_cupon: null,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.codigo_cupon).toBeUndefined();
+    }
+  });
+
+  it('sigue rechazando clave desconocida aunque venga codigo_cupon', () => {
+    const r = checkoutBodySchema.safeParse({
+      ...validPayload,
+      codigo_cupon: 'PROMO10',
+      campo_extra: true,
+    });
+    expect(r.success).toBe(false);
+  });
 });

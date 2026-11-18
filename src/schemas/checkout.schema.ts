@@ -5,6 +5,13 @@ export const checkoutBodySchema = z.object({
   metodo_pago: z.string().trim().min(2).max(32),
   observaciones: z.string().trim().max(500).optional(),
   costo_envio: z.number().finite().min(0).max(2_000_000).optional(),
+  /** Cupón de pedido; vacío/null → undefined. Max 64 = cupones.codigo. */
+  codigo_cupon: z
+    .string()
+    .trim()
+    .max(64)
+    .nullish()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
   id_direccion: z.string().trim().min(1).max(128).optional(),
   tipo_documento: z.string().trim().min(2).max(32).optional(),
   numero_documento: z.string().trim().min(3).max(32).optional(),
